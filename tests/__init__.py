@@ -1,1 +1,1 @@
-"""Test suite for tap-polygon."""
+"""Test suite for tap-massive."""

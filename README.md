@@ -1,6 +1,6 @@
-# tap-polygon
+# tap-massive
 
-`tap-polygon` is a Singer tap for Polygon.
+`tap-massive` is a Singer tap for Massive.
 
 Built with the [Meltano Tap SDK](https://sdk.meltano.com) for Singer Taps.
 
@@ -13,13 +13,13 @@ Developer TODO: Update the below as needed to correctly describe the install pro
 Install from PyPI:
 
 ```bash
-pipx install tap-polygon
+pipx install tap-massive
 ```
 
 Install from GitHub:
 
 ```bash
-pipx install git+https://github.com/ORG_NAME/tap-polygon.git@main
+pipx install git+https://github.com/ORG_NAME/tap-massive.git@main
 ```
 
 -->
@@ -34,7 +34,7 @@ Developer TODO: Provide a list of config options accepted by the tap.
 This section can be created by copy-pasting the CLI output from:
 
 ```
-tap-polygon --about --format=markdown
+tap-massive --about --format=markdown
 ```
 -->
 
@@ -42,7 +42,7 @@ A full list of supported settings and capabilities for this
 tap is available by running:
 
 ```bash
-tap-polygon --about
+tap-massive --about
 ```
 
 ### Configure using environment variables
@@ -59,14 +59,14 @@ Developer TODO: If your tap requires special access on the source system, or any
 
 ## Usage
 
-You can easily run `tap-polygon` by itself or in a pipeline using [Meltano](https://meltano.com/).
+You can easily run `tap-massive` by itself or in a pipeline using [Meltano](https://meltano.com/).
 
 ### Executing the Tap Directly
 
 ```bash
-tap-polygon --version
-tap-polygon --help
-tap-polygon --config CONFIG --discover > ./catalog.json
+tap-massive --version
+tap-massive --help
+tap-massive --config CONFIG --discover > ./catalog.json
 ```
 
 ## Developer Resources
@@ -93,10 +93,10 @@ then run:
 uv run pytest
 ```
 
-You can also test the `tap-polygon` CLI interface directly using `uv run`:
+You can also test the `tap-massive` CLI interface directly using `uv run`:
 
 ```bash
-uv run tap-polygon --help
+uv run tap-massive --help
 ```
 
 ### Testing with [Meltano](https://www.meltano.com)
@@ -116,7 +116,7 @@ Next, install Meltano (if you haven't already) and any needed plugins:
 # Install meltano
 pipx install meltano
 # Initialize meltano within this directory
-cd tap-polygon
+cd tap-massive
 meltano install
 ```
 
@@ -124,10 +124,10 @@ Now you can test and orchestrate using Meltano:
 
 ```bash
 # Test invocation:
-meltano invoke tap-polygon --version
+meltano invoke tap-massive --version
 
 # OR run a test ELT pipeline:
-meltano run tap-polygon target-jsonl
+meltano run tap-massive target-jsonl
 ```
 
 ### SDK Dev Guide

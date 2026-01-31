@@ -1,6 +1,6 @@
 version: 1
 send_anonymous_usage_stats: true
-project_id: "tap-polygon"
+project_id: "tap-massive"
 
 default_environment: test
 
@@ -9,8 +9,8 @@ environments:
 
 plugins:
   extractors:
-  - name: "tap-polygon"
-    namespace: "tap_polygon"
+  - name: "tap-massive"
+    namespace: "tap_massive"
     pip_url: -e .
 
     capabilities:
@@ -23,8 +23,8 @@ plugins:
     settings:
     - name: api_key
       kind: password
-      label: Polygon API Key
-      description: Polygon.io API Key
+      label: Massive API Key
+      description: Massive API Key
       sensitive: true
 
     - name: start_date
@@ -104,8 +104,8 @@ plugins:
       # takes the max between this global config and the streams timestamp config param to get the starting timestamp.
       start_date: '2025-01-20T00:00:00Z'
 
-      api_key: ${POLYGON_API_KEY}
-      base_url: https://api.polygon.io
+      api_key: ${MASSIVE_API_KEY}
+      base_url: https://api.massive.com
 
       # The tickers that are set here persist across all streams that require a single stock ticker as input.
       # To run different tickers across different streams you need to call the tap N times,
@@ -115,7 +115,6 @@ plugins:
           sort: ticker
         select_tickers:
           - "AAPL"
-          - "META"
 
       option_tickers:
         query_params:
