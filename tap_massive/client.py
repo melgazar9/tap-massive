@@ -4,7 +4,6 @@ import socket
 import typing as t
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
-
 import backoff
 import requests
 from massive import RESTClient
