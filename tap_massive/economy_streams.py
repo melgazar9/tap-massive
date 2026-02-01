@@ -113,3 +113,37 @@ class InflationExpectationsStream(MassiveRestStream):
 
     def get_url(self, context: Context = None):
         return f"{self.url_base}/fed/v1/inflation-expectations"
+
+
+class LaborMarketStream(MassiveRestStream):
+    """Labor Market Stream
+
+    Provides key labor market indicators including unemployment rate,
+    job openings, labor force participation, and average hourly earnings.
+    Data is updated monthly from FRED sources.
+    """
+
+    name = "labor_market"
+
+    primary_keys = ["date"]
+    replication_key = "date"
+    replication_method = "INCREMENTAL"
+    is_timestamp_replication_key = True
+
+    _use_cached_tickers_default = False
+    _incremental_timestamp_is_date = True
+
+    schema = th.PropertiesList(
+        th.Property("date", th.DateType),
+        th.Property("unemployment_rate", th.NumberType),
+        th.Property("job_openings", th.NumberType),
+        th.Property("labor_force_participation_rate", th.NumberType),
+        th.Property("avg_hourly_earnings", th.NumberType),
+    ).to_dict()
+
+    def __init__(self, tap):
+        super().__init__(tap)
+        self.tap = tap
+
+    def get_url(self, context: Context = None):
+        return f"{self.url_base}/fed/v1/labor-market"

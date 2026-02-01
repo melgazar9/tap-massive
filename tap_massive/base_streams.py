@@ -691,6 +691,8 @@ class BaseIndicatorStream(BaseTickerPartitionedStream):
     _unix_timestamp_unit = "ms"
     _ticker_in_path_params = True
 
+    indicator_type = None  # Must be set by subclass: "sma", "ema", "macd", "rsi"
+
     schema = th.PropertiesList(
         th.Property("timestamp", th.DateTimeType),  # Indicator value timestamp
         th.Property("underlying_timestamp", th.DateTimeType),
@@ -727,6 +729,12 @@ class BaseIndicatorStream(BaseTickerPartitionedStream):
 
     def base_indicator_url(self):
         return f"{self.url_base}/v1/indicators"
+
+    def get_url(self, context: Context):
+        if self.indicator_type is None:
+            raise NotImplementedError("indicator_type must be set by subclass")
+        ticker = context.get(self._ticker_param)
+        return f"{self.base_indicator_url()}/{self.indicator_type}/{ticker}"
 
     def parse_response(self, record: dict, context: dict) -> t.Iterable[dict]:
         # Flatten a single API record (which may have many "values") into flat records

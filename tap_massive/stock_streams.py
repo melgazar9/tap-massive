@@ -226,34 +226,22 @@ class StockBars1MonthStream(StockTickerPartitionedStream, BaseCustomBarsStream):
 
 class SmaStream(StockIndicatorStream):
     name = "stock_sma"
-
-    def get_url(self, context: Context):
-        ticker = context.get(self._ticker_param)
-        return f"{self.base_indicator_url()}/sma/{ticker}"
+    indicator_type = "sma"
 
 
 class EmaStream(StockIndicatorStream):
     name = "stock_ema"
-
-    def get_url(self, context: Context):
-        ticker = context.get(self._ticker_param)
-        return f"{self.base_indicator_url()}/ema/{ticker}"
+    indicator_type = "ema"
 
 
 class MACDStream(StockIndicatorStream):
     name = "stock_macd"
-
-    def get_url(self, context: Context):
-        ticker = context.get(self._ticker_param)
-        return f"{self.base_indicator_url()}/macd/{ticker}"
+    indicator_type = "macd"
 
 
 class RSIStream(StockIndicatorStream):
     name = "stock_rsi"
-
-    def get_url(self, context: Context):
-        ticker = context.get(self._ticker_param)
-        return f"{self.base_indicator_url()}/rsi/{ticker}"
+    indicator_type = "rsi"
 
 class ExchangesStream(MassiveRestStream):
     """Fetch Exchanges"""

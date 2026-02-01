@@ -75,6 +75,7 @@ from tap_massive.option_streams import (
 from tap_massive.economy_streams import (
     InflationExpectationsStream,
     InflationStream,
+    LaborMarketStream,
     TreasuryYieldStream,
 )
 
@@ -183,6 +184,7 @@ class TapMassive(Tap):
             TreasuryYieldStream(self),
             InflationExpectationsStream(self),
             InflationStream(self),
+            LaborMarketStream(self),
             StockBars1SecondStream(self),
             StockBars30SecondStream(self),
             StockBars1MinuteStream(self),

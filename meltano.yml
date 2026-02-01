@@ -71,22 +71,18 @@ plugins:
       - treasury_yields.*
       - inflation.*
       - inflation_expectations.*
+      - labor_market.*
       - options_contracts.*
       - options_contract_overview.*
-#      - options_bars_1_second.*
-#      - options_bars_30_second.*
-#      - options_bars_1_minute.*
-#      - options_bars_5_minute.*
-#      - options_bars_30_minute.*
-#      - options_bars_1_hour.*
-#      - options_bars_1_day.*
-#      - options_bars_1_week.*
-#      - options_bars_1_month.*
+      - options_bars_1_second.*
+      - options_bars_1_minute.*
+      - options_bars_5_minute.*
+      - options_bars_1_hour.*
       - options_daily_ticker_summary.*
       - options_previous_day_bar.*
-#      - options_trades.*
-#      - options_quotes.*
-#      - options_last_trade.*
+      - options_trades.*
+      - options_quotes.*
+      - options_last_trade.*
       - options_contract_snapshot.*
       - options_chain_snapshot.*
       - options_unified_snapshot.*
@@ -118,7 +114,7 @@ plugins:
 
       option_tickers:
         query_params:
-          expired: false
+          expired: true    # Include ALL contracts (active + expired)
           sort: ticker
         select_tickers:
           - "AAPL"
@@ -267,7 +263,7 @@ plugins:
           include_otc: false
           limit: 50000
 
-      trades:
+      stock_trades:
         query_params:
           sort: timestamp
           order: "asc"
@@ -277,7 +273,7 @@ plugins:
         other_params:
           use_cached_tickers: true
 
-      quotes:
+      stock_quotes:
         query_params:
           timestamp__gte: "2025-01-20T23:59:00Z"
           timestamp__lte: "2025-01-21T00:59:00Z"
@@ -599,6 +595,17 @@ plugins:
           series_type: close
           expand_underlying: true
           limit: 5000
+
+      options_unified_snapshot:
+        query_params:
+          type: options
+          limit: 250
+
+      labor_market:
+        query_params:
+          date__gte: "2025-01-01"
+          date__lte: "2026-02-28"
+          limit: 50000
 
   loaders:
   - name: target-jsonl
