@@ -6,7 +6,6 @@ from singer_sdk import typing as th
 from singer_sdk.helpers.types import Context
 
 from tap_massive.base_streams import (
-    BaseTickerStream,
     BaseCustomBarsStream,
     BaseDailyMarketSummaryStream,
     BaseDailyTickerSummaryStream,
@@ -15,6 +14,7 @@ from tap_massive.base_streams import (
     BasePreviousDayBarSummaryStream,
     BaseTickerDetailsStream,
     BaseTickerPartitionStream,
+    BaseTickerStream,
     BaseTopMarketMoversStream,
     BaseTradeStream,
 )
@@ -103,13 +103,17 @@ class CryptoDailyMarketSummaryStream(BaseDailyMarketSummaryStream):
         return f"{self.url_base}/v2/aggs/grouped/locale/global/market/crypto/{date}"
 
 
-class CryptoDailyTickerSummaryStream(CryptoTickerPartitionStream, BaseDailyTickerSummaryStream):
+class CryptoDailyTickerSummaryStream(
+    CryptoTickerPartitionStream, BaseDailyTickerSummaryStream
+):
     """Stream for retrieving crypto daily ticker summary."""
 
     name = "crypto_daily_ticker_summary"
 
 
-class CryptoPreviousDayBarStream(CryptoTickerPartitionStream, BasePreviousDayBarSummaryStream):
+class CryptoPreviousDayBarStream(
+    CryptoTickerPartitionStream, BasePreviousDayBarSummaryStream
+):
     """Stream for retrieving crypto previous day bar data."""
 
     name = "crypto_previous_day_bar"
@@ -149,46 +153,60 @@ class CryptoTickerSnapshotStream(CryptoTickerPartitionStream):
         th.Property("todays_change_perc", th.NumberType),
         th.Property("updated", th.IntegerType),
         th.Property("fmv", th.NumberType),
-        th.Property("day", th.ObjectType(
-            th.Property("o", th.NumberType),
-            th.Property("h", th.NumberType),
-            th.Property("l", th.NumberType),
-            th.Property("c", th.NumberType),
-            th.Property("v", th.NumberType),
-            th.Property("vw", th.NumberType),
-        )),
-        th.Property("min", th.ObjectType(
-            th.Property("o", th.NumberType),
-            th.Property("h", th.NumberType),
-            th.Property("l", th.NumberType),
-            th.Property("c", th.NumberType),
-            th.Property("v", th.NumberType),
-            th.Property("vw", th.NumberType),
-            th.Property("av", th.NumberType),
-            th.Property("t", th.IntegerType),
-            th.Property("n", th.IntegerType),
-        )),
-        th.Property("prev_day", th.ObjectType(
-            th.Property("o", th.NumberType),
-            th.Property("h", th.NumberType),
-            th.Property("l", th.NumberType),
-            th.Property("c", th.NumberType),
-            th.Property("v", th.NumberType),
-            th.Property("vw", th.NumberType),
-        )),
-        th.Property("last_trade", th.ObjectType(
-            th.Property("p", th.NumberType),
-            th.Property("s", th.NumberType),
-            th.Property("t", th.IntegerType),
-            th.Property("x", th.IntegerType),
-            th.Property("c", th.ArrayType(th.IntegerType)),
-            th.Property("i", th.StringType),
-        )),
+        th.Property(
+            "day",
+            th.ObjectType(
+                th.Property("o", th.NumberType),
+                th.Property("h", th.NumberType),
+                th.Property("l", th.NumberType),
+                th.Property("c", th.NumberType),
+                th.Property("v", th.NumberType),
+                th.Property("vw", th.NumberType),
+            ),
+        ),
+        th.Property(
+            "min",
+            th.ObjectType(
+                th.Property("o", th.NumberType),
+                th.Property("h", th.NumberType),
+                th.Property("l", th.NumberType),
+                th.Property("c", th.NumberType),
+                th.Property("v", th.NumberType),
+                th.Property("vw", th.NumberType),
+                th.Property("av", th.NumberType),
+                th.Property("t", th.IntegerType),
+                th.Property("n", th.IntegerType),
+            ),
+        ),
+        th.Property(
+            "prev_day",
+            th.ObjectType(
+                th.Property("o", th.NumberType),
+                th.Property("h", th.NumberType),
+                th.Property("l", th.NumberType),
+                th.Property("c", th.NumberType),
+                th.Property("v", th.NumberType),
+                th.Property("vw", th.NumberType),
+            ),
+        ),
+        th.Property(
+            "last_trade",
+            th.ObjectType(
+                th.Property("p", th.NumberType),
+                th.Property("s", th.NumberType),
+                th.Property("t", th.IntegerType),
+                th.Property("x", th.IntegerType),
+                th.Property("c", th.ArrayType(th.IntegerType)),
+                th.Property("i", th.StringType),
+            ),
+        ),
     ).to_dict()
 
     def get_url(self, context: Context):
         ticker = context.get(self._ticker_param)
-        return f"{self.url_base}/v2/snapshot/locale/global/markets/crypto/tickers/{ticker}"
+        return (
+            f"{self.url_base}/v2/snapshot/locale/global/markets/crypto/tickers/{ticker}"
+        )
 
 
 class CryptoFullMarketSnapshotStream(MassiveRestStream):

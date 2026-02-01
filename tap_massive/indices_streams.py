@@ -6,13 +6,13 @@ from singer_sdk import typing as th
 from singer_sdk.helpers.types import Context
 
 from tap_massive.base_streams import (
-    BaseTickerStream,
     BaseCustomBarsStream,
     BaseDailyTickerSummaryStream,
     BaseIndicatorStream,
     BasePreviousDayBarSummaryStream,
     BaseTickerDetailsStream,
     BaseTickerPartitionStream,
+    BaseTickerStream,
 )
 from tap_massive.client import MassiveRestStream
 
@@ -88,13 +88,17 @@ class IndicesBars1MonthStream(IndicesCustomBarsStream):
     name = "indices_bars_1_month"
 
 
-class IndicesDailyTickerSummaryStream(IndicesTickerPartitionStream, BaseDailyTickerSummaryStream):
+class IndicesDailyTickerSummaryStream(
+    IndicesTickerPartitionStream, BaseDailyTickerSummaryStream
+):
     """Stream for retrieving indices daily ticker summary."""
 
     name = "indices_daily_ticker_summary"
 
 
-class IndicesPreviousDayBarStream(IndicesTickerPartitionStream, BasePreviousDayBarSummaryStream):
+class IndicesPreviousDayBarStream(
+    IndicesTickerPartitionStream, BasePreviousDayBarSummaryStream
+):
     """Stream for retrieving indices previous day bar data."""
 
     name = "indices_previous_day_bar"
@@ -116,15 +120,18 @@ class IndicesSnapshotStream(MassiveRestStream):
         th.Property("type", th.StringType),
         th.Property("market_status", th.StringType),
         th.Property("value", th.NumberType),
-        th.Property("session", th.ObjectType(
-            th.Property("open", th.NumberType),
-            th.Property("high", th.NumberType),
-            th.Property("low", th.NumberType),
-            th.Property("close", th.NumberType),
-            th.Property("change", th.NumberType),
-            th.Property("change_percent", th.NumberType),
-            th.Property("previous_close", th.NumberType),
-        )),
+        th.Property(
+            "session",
+            th.ObjectType(
+                th.Property("open", th.NumberType),
+                th.Property("high", th.NumberType),
+                th.Property("low", th.NumberType),
+                th.Property("close", th.NumberType),
+                th.Property("change", th.NumberType),
+                th.Property("change_percent", th.NumberType),
+                th.Property("previous_close", th.NumberType),
+            ),
+        ),
         th.Property("error", th.StringType),
         th.Property("message", th.StringType),
     ).to_dict()

@@ -10,7 +10,6 @@ from singer_sdk import typing as th
 from singer_sdk.helpers.types import Context, Record
 
 from tap_massive.base_streams import (
-    BaseTickerStream,
     BaseCustomBarsStream,
     BaseDailyMarketSummaryStream,
     BaseDailyTickerSummaryStream,
@@ -21,10 +20,11 @@ from tap_massive.base_streams import (
     BaseQuoteStream,
     BaseTickerDetailsStream,
     BaseTickerPartitionStream,
+    BaseTickerStream,
     BaseTopMarketMoversStream,
     BaseTradeStream,
 )
-from tap_massive.client import OptionalTickerPartitionStream, MassiveRestStream
+from tap_massive.client import MassiveRestStream, OptionalTickerPartitionStream
 
 
 class StockTickerStream(BaseTickerStream):
@@ -56,7 +56,6 @@ class StockTickerStream(BaseTickerStream):
         th.Property("source_feed", th.StringType),
     ).to_dict()
 
-
     def get_url(self, context: Context = None) -> str:
         return f"{self.url_base}/v3/reference/tickers"
 
@@ -74,9 +73,11 @@ class StockTickerDetailsStream(StockTickerPartitionStream, BaseTickerDetailsStre
 class StockDailyTickerSummaryStream(BaseDailyTickerSummaryStream):
     name = "stock_daily_ticker_summary"
 
+
 class StockIndicatorStream(StockTickerPartitionStream, BaseIndicatorStream):
     def get_url(self, context: Context) -> str:
         raise ValueError("URL Must be overridden by subclass.")
+
 
 class StockDailyMarketSummaryStream(BaseDailyMarketSummaryStream):
     name = "stock_daily_market_summary"
@@ -127,48 +128,63 @@ class StockTickerSnapshotStream(StockTickerPartitionStream):
         th.Property("todays_change_percent", th.NumberType),
         th.Property("updated", th.IntegerType),
         th.Property("fmv", th.NumberType),
-        th.Property("day", th.ObjectType(
-            th.Property("o", th.NumberType),
-            th.Property("h", th.NumberType),
-            th.Property("l", th.NumberType),
-            th.Property("c", th.NumberType),
-            th.Property("v", th.NumberType),
-            th.Property("vw", th.NumberType),
-        )),
-        th.Property("min", th.ObjectType(
-            th.Property("o", th.NumberType),
-            th.Property("h", th.NumberType),
-            th.Property("l", th.NumberType),
-            th.Property("c", th.NumberType),
-            th.Property("v", th.NumberType),
-            th.Property("vw", th.NumberType),
-            th.Property("av", th.NumberType),
-            th.Property("t", th.IntegerType),
-            th.Property("n", th.IntegerType),
-        )),
-        th.Property("prev_day", th.ObjectType(
-            th.Property("o", th.NumberType),
-            th.Property("h", th.NumberType),
-            th.Property("l", th.NumberType),
-            th.Property("c", th.NumberType),
-            th.Property("v", th.NumberType),
-            th.Property("vw", th.NumberType),
-        )),
-        th.Property("last_quote", th.ObjectType(
-            th.Property("p", th.NumberType),
-            th.Property("s", th.IntegerType),
-            th.Property("P", th.NumberType),
-            th.Property("S", th.IntegerType),
-            th.Property("t", th.IntegerType),
-        )),
-        th.Property("last_trade", th.ObjectType(
-            th.Property("p", th.NumberType),
-            th.Property("s", th.IntegerType),
-            th.Property("t", th.IntegerType),
-            th.Property("c", th.ArrayType(th.IntegerType)),
-            th.Property("i", th.StringType),
-            th.Property("x", th.IntegerType),
-        )),
+        th.Property(
+            "day",
+            th.ObjectType(
+                th.Property("o", th.NumberType),
+                th.Property("h", th.NumberType),
+                th.Property("l", th.NumberType),
+                th.Property("c", th.NumberType),
+                th.Property("v", th.NumberType),
+                th.Property("vw", th.NumberType),
+            ),
+        ),
+        th.Property(
+            "min",
+            th.ObjectType(
+                th.Property("o", th.NumberType),
+                th.Property("h", th.NumberType),
+                th.Property("l", th.NumberType),
+                th.Property("c", th.NumberType),
+                th.Property("v", th.NumberType),
+                th.Property("vw", th.NumberType),
+                th.Property("av", th.NumberType),
+                th.Property("t", th.IntegerType),
+                th.Property("n", th.IntegerType),
+            ),
+        ),
+        th.Property(
+            "prev_day",
+            th.ObjectType(
+                th.Property("o", th.NumberType),
+                th.Property("h", th.NumberType),
+                th.Property("l", th.NumberType),
+                th.Property("c", th.NumberType),
+                th.Property("v", th.NumberType),
+                th.Property("vw", th.NumberType),
+            ),
+        ),
+        th.Property(
+            "last_quote",
+            th.ObjectType(
+                th.Property("p", th.NumberType),
+                th.Property("s", th.IntegerType),
+                th.Property("P", th.NumberType),
+                th.Property("S", th.IntegerType),
+                th.Property("t", th.IntegerType),
+            ),
+        ),
+        th.Property(
+            "last_trade",
+            th.ObjectType(
+                th.Property("p", th.NumberType),
+                th.Property("s", th.IntegerType),
+                th.Property("t", th.IntegerType),
+                th.Property("c", th.ArrayType(th.IntegerType)),
+                th.Property("i", th.StringType),
+                th.Property("x", th.IntegerType),
+            ),
+        ),
     ).to_dict()
 
     def get_url(self, context: Context):
@@ -242,7 +258,6 @@ class RelatedCompaniesStream(StockTickerPartitionStream):
         th.Property("status", th.StringType),
     ).to_dict()
 
-
     def get_url(self, context: Context):
         ticker = context.get(self._ticker_param)
         return f"{self.url_base}/v1/related-companies/{ticker}"
@@ -308,6 +323,7 @@ class RSIStream(StockIndicatorStream):
     name = "stock_rsi"
     indicator_type = "rsi"
 
+
 class ExchangesStream(MassiveRestStream):
     """Fetch Exchanges"""
 
@@ -330,7 +346,6 @@ class ExchangesStream(MassiveRestStream):
         th.Property("url", th.StringType),
     ).to_dict()
 
-
     def get_url(self, context: Context = None):
         return f"{self.url_base}/v3/reference/exchanges"
 
@@ -352,7 +367,6 @@ class MarketHolidaysStream(MassiveRestStream):
         th.Property("open", th.StringType),
         th.Property("status", th.StringType),
     ).to_dict()
-
 
     def get_url(self, context: Context = None):
         return f"{self.url_base}/v1/marketstatus/upcoming"
@@ -484,7 +498,6 @@ class ConditionCodesStream(MassiveRestStream):
         ),
     ).to_dict()
 
-
     def get_url(self, context: Context = None):
         return f"{self.url_base}/v3/reference/conditions"
 
@@ -538,7 +551,6 @@ class IPOsStream(OptionalTickerPartitionStream):
         th.Property("us_code", th.StringType),
     ).to_dict()
 
-
     def get_url(self, context: Context = None):
         return f"{self.url_base}/vX/reference/ipos"
 
@@ -569,7 +581,6 @@ class SplitsStream(OptionalTickerPartitionStream):
         th.Property("split_to", th.NumberType),
         th.Property("ticker", th.StringType),
     ).to_dict()
-
 
     def get_url(self, context: Context = None):
         return f"{self.url_base}/v3/reference/splits"
@@ -610,7 +621,6 @@ class DividendsStream(OptionalTickerPartitionStream):
         th.Property("frequency", th.IntegerType),
     ).to_dict()
 
-
     def get_url(self, context: Context = None):
         return f"{self.url_base}/v3/reference/dividends"
 
@@ -632,7 +642,6 @@ class TickerEventsStream(StockTickerPartitionStream):
         th.Property("type", th.StringType),
         th.Property("ticker", th.StringType),
     ).to_dict()
-
 
     def get_url(self, context: Context):
         ticker = context.get(self._ticker_param, {})
@@ -910,7 +919,6 @@ class FinancialsStream(MassiveRestStream):
         th.Property("timeframe", th.StringType),
     ).to_dict()
 
-
     def get_url(self, context: Context = None):
         return f"{self.url_base}/vX/reference/financials"
 
@@ -947,7 +955,6 @@ class ShortInterestStream(OptionalTickerPartitionStream):
         th.Property("days_to_cover", th.NumberType),
     ).to_dict()
 
-
     def get_url(self, context: Context = None):
         return f"{self.url_base}/stocks/v1/short-interest"
 
@@ -983,7 +990,6 @@ class ShortVolumeStream(OptionalTickerPartitionStream):
         th.Property("nyse_short_volume", th.IntegerType),
         th.Property("nyse_short_volume_exempt", th.IntegerType),
     ).to_dict()
-
 
     def get_url(self, context: Context = None):
         return f"{self.url_base}/stocks/v1/short-volume"
@@ -1030,7 +1036,6 @@ class NewsStream(OptionalTickerPartitionStream):
         th.Property("description", th.StringType),
         th.Property("image_url", th.StringType),
     ).to_dict()
-
 
     def get_url(self, context: Context = None):
         return f"{self.url_base}/v2/reference/news"

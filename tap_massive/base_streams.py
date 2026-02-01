@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import logging
-import re
 import typing as t
 from datetime import datetime
 from decimal import Decimal, InvalidOperation
@@ -78,6 +77,7 @@ class BaseTickerStream(MassiveRestStream):
                 query_params.update({self._ticker_param: ticker})
                 context["query_params"] = query_params
                 yield from self.paginate_records(context)
+
 
 class BaseTickerPartitionStream(MassiveRestStream):
     @property

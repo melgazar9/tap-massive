@@ -6,7 +6,6 @@ from singer_sdk import typing as th
 from singer_sdk.helpers.types import Context
 
 from tap_massive.base_streams import (
-    BaseTickerStream,
     BaseCustomBarsStream,
     BaseDailyMarketSummaryStream,
     BaseIndicatorStream,
@@ -15,6 +14,7 @@ from tap_massive.base_streams import (
     BaseQuoteStream,
     BaseTickerDetailsStream,
     BaseTickerPartitionStream,
+    BaseTickerStream,
     BaseTopMarketMoversStream,
 )
 from tap_massive.client import MassiveRestStream
@@ -102,7 +102,9 @@ class ForexDailyMarketSummaryStream(BaseDailyMarketSummaryStream):
         return f"{self.url_base}/v2/aggs/grouped/locale/global/market/fx/{date}"
 
 
-class ForexPreviousDayBarStream(ForexTickerPartitionStream, BasePreviousDayBarSummaryStream):
+class ForexPreviousDayBarStream(
+    ForexTickerPartitionStream, BasePreviousDayBarSummaryStream
+):
     """Stream for retrieving forex previous day bar data."""
 
     name = "forex_previous_day_bar"
@@ -142,44 +144,58 @@ class ForexTickerSnapshotStream(ForexTickerPartitionStream):
         th.Property("todays_change_perc", th.NumberType),
         th.Property("updated", th.IntegerType),
         th.Property("fmv", th.NumberType),
-        th.Property("day", th.ObjectType(
-            th.Property("o", th.NumberType),
-            th.Property("h", th.NumberType),
-            th.Property("l", th.NumberType),
-            th.Property("c", th.NumberType),
-            th.Property("v", th.NumberType),
-            th.Property("vw", th.NumberType),
-        )),
-        th.Property("min", th.ObjectType(
-            th.Property("o", th.NumberType),
-            th.Property("h", th.NumberType),
-            th.Property("l", th.NumberType),
-            th.Property("c", th.NumberType),
-            th.Property("v", th.NumberType),
-            th.Property("vw", th.NumberType),
-            th.Property("av", th.NumberType),
-            th.Property("t", th.IntegerType),
-            th.Property("n", th.IntegerType),
-        )),
-        th.Property("prev_day", th.ObjectType(
-            th.Property("o", th.NumberType),
-            th.Property("h", th.NumberType),
-            th.Property("l", th.NumberType),
-            th.Property("c", th.NumberType),
-            th.Property("v", th.NumberType),
-            th.Property("vw", th.NumberType),
-        )),
-        th.Property("last_quote", th.ObjectType(
-            th.Property("a", th.NumberType),
-            th.Property("b", th.NumberType),
-            th.Property("t", th.IntegerType),
-            th.Property("x", th.IntegerType),
-        )),
+        th.Property(
+            "day",
+            th.ObjectType(
+                th.Property("o", th.NumberType),
+                th.Property("h", th.NumberType),
+                th.Property("l", th.NumberType),
+                th.Property("c", th.NumberType),
+                th.Property("v", th.NumberType),
+                th.Property("vw", th.NumberType),
+            ),
+        ),
+        th.Property(
+            "min",
+            th.ObjectType(
+                th.Property("o", th.NumberType),
+                th.Property("h", th.NumberType),
+                th.Property("l", th.NumberType),
+                th.Property("c", th.NumberType),
+                th.Property("v", th.NumberType),
+                th.Property("vw", th.NumberType),
+                th.Property("av", th.NumberType),
+                th.Property("t", th.IntegerType),
+                th.Property("n", th.IntegerType),
+            ),
+        ),
+        th.Property(
+            "prev_day",
+            th.ObjectType(
+                th.Property("o", th.NumberType),
+                th.Property("h", th.NumberType),
+                th.Property("l", th.NumberType),
+                th.Property("c", th.NumberType),
+                th.Property("v", th.NumberType),
+                th.Property("vw", th.NumberType),
+            ),
+        ),
+        th.Property(
+            "last_quote",
+            th.ObjectType(
+                th.Property("a", th.NumberType),
+                th.Property("b", th.NumberType),
+                th.Property("t", th.IntegerType),
+                th.Property("x", th.IntegerType),
+            ),
+        ),
     ).to_dict()
 
     def get_url(self, context: Context):
         ticker = context.get(self._ticker_param)
-        return f"{self.url_base}/v2/snapshot/locale/global/markets/forex/tickers/{ticker}"
+        return (
+            f"{self.url_base}/v2/snapshot/locale/global/markets/forex/tickers/{ticker}"
+        )
 
 
 class ForexFullMarketSnapshotStream(MassiveRestStream):
@@ -247,12 +263,15 @@ class ForexCurrencyConversionStream(MassiveRestStream):
         th.Property("to", th.StringType),
         th.Property("converted", th.NumberType),
         th.Property("initialAmount", th.NumberType),
-        th.Property("last", th.ObjectType(
-            th.Property("ask", th.NumberType),
-            th.Property("bid", th.NumberType),
-            th.Property("exchange", th.IntegerType),
-            th.Property("timestamp", th.IntegerType),
-        )),
+        th.Property(
+            "last",
+            th.ObjectType(
+                th.Property("ask", th.NumberType),
+                th.Property("bid", th.NumberType),
+                th.Property("exchange", th.IntegerType),
+                th.Property("timestamp", th.IntegerType),
+            ),
+        ),
     ).to_dict()
 
     def get_url(self, context: Context = None) -> str:

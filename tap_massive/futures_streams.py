@@ -2,15 +2,13 @@
 
 from __future__ import annotations
 
-import typing as t
-
 from singer_sdk import typing as th
 from singer_sdk.helpers.types import Context
 
 from tap_massive.base_streams import (
     BaseCustomBarsStream,
-    BaseTickerPartitionStream,
     BaseQuoteStream,
+    BaseTickerPartitionStream,
     BaseTradeStream,
 )
 from tap_massive.client import MassiveRestStream
@@ -201,30 +199,39 @@ class FuturesContractsSnapshotStream(MassiveRestStream):
         th.Property("type", th.StringType),
         th.Property("market_status", th.StringType),
         th.Property("fmv", th.NumberType),
-        th.Property("session", th.ObjectType(
-            th.Property("open", th.NumberType),
-            th.Property("high", th.NumberType),
-            th.Property("low", th.NumberType),
-            th.Property("close", th.NumberType),
-            th.Property("volume", th.NumberType),
-            th.Property("vwap", th.NumberType),
-            th.Property("change", th.NumberType),
-            th.Property("change_percent", th.NumberType),
-            th.Property("previous_close", th.NumberType),
-        )),
-        th.Property("last_quote", th.ObjectType(
-            th.Property("ask", th.NumberType),
-            th.Property("ask_size", th.IntegerType),
-            th.Property("bid", th.NumberType),
-            th.Property("bid_size", th.IntegerType),
-            th.Property("last_updated", th.IntegerType),
-        )),
-        th.Property("last_trade", th.ObjectType(
-            th.Property("price", th.NumberType),
-            th.Property("size", th.IntegerType),
-            th.Property("sip_timestamp", th.IntegerType),
-            th.Property("conditions", th.ArrayType(th.IntegerType)),
-        )),
+        th.Property(
+            "session",
+            th.ObjectType(
+                th.Property("open", th.NumberType),
+                th.Property("high", th.NumberType),
+                th.Property("low", th.NumberType),
+                th.Property("close", th.NumberType),
+                th.Property("volume", th.NumberType),
+                th.Property("vwap", th.NumberType),
+                th.Property("change", th.NumberType),
+                th.Property("change_percent", th.NumberType),
+                th.Property("previous_close", th.NumberType),
+            ),
+        ),
+        th.Property(
+            "last_quote",
+            th.ObjectType(
+                th.Property("ask", th.NumberType),
+                th.Property("ask_size", th.IntegerType),
+                th.Property("bid", th.NumberType),
+                th.Property("bid_size", th.IntegerType),
+                th.Property("last_updated", th.IntegerType),
+            ),
+        ),
+        th.Property(
+            "last_trade",
+            th.ObjectType(
+                th.Property("price", th.NumberType),
+                th.Property("size", th.IntegerType),
+                th.Property("sip_timestamp", th.IntegerType),
+                th.Property("conditions", th.ArrayType(th.IntegerType)),
+            ),
+        ),
         th.Property("error", th.StringType),
         th.Property("message", th.StringType),
     ).to_dict()

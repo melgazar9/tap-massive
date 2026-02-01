@@ -6,7 +6,6 @@ from singer_sdk import typing as th
 from singer_sdk.helpers.types import Context
 
 from tap_massive.base_streams import (
-    BaseTickerStream,
     BaseCustomBarsStream,
     BaseDailyTickerSummaryStream,
     BaseIndicatorStream,
@@ -14,6 +13,7 @@ from tap_massive.base_streams import (
     BasePreviousDayBarSummaryStream,
     BaseQuoteStream,
     BaseTickerPartitionStream,
+    BaseTickerStream,
     BaseTradeStream,
 )
 from tap_massive.client import MassiveRestStream, OptionalTickerPartitionStream
@@ -93,57 +93,75 @@ class OptionsContractSnapshotStream(OptionsTickerPartitionStream):
         th.Property("fmv_last_updated", th.IntegerType),
         th.Property("implied_volatility", th.NumberType),
         th.Property("open_interest", th.NumberType),
-        th.Property("greeks", th.ObjectType(
-            th.Property("delta", th.NumberType),
-            th.Property("gamma", th.NumberType),
-            th.Property("theta", th.NumberType),
-            th.Property("vega", th.NumberType),
-        )),
-        th.Property("last_quote", th.ObjectType(
-            th.Property("ask", th.NumberType),
-            th.Property("ask_size", th.IntegerType),
-            th.Property("bid", th.NumberType),
-            th.Property("bid_size", th.IntegerType),
-            th.Property("ask_exchange", th.IntegerType),
-            th.Property("bid_exchange", th.IntegerType),
-            th.Property("last_updated", th.IntegerType),
-            th.Property("midpoint", th.NumberType),
-            th.Property("timeframe", th.StringType),
-        )),
-        th.Property("last_trade", th.ObjectType(
-            th.Property("price", th.NumberType),
-            th.Property("size", th.IntegerType),
-            th.Property("exchange", th.IntegerType),
-            th.Property("sip_timestamp", th.IntegerType),
-            th.Property("conditions", th.ArrayType(th.IntegerType)),
-            th.Property("timeframe", th.StringType),
-        )),
-        th.Property("day", th.ObjectType(
-            th.Property("open", th.NumberType),
-            th.Property("high", th.NumberType),
-            th.Property("low", th.NumberType),
-            th.Property("close", th.NumberType),
-            th.Property("volume", th.NumberType),
-            th.Property("vwap", th.NumberType),
-            th.Property("change", th.NumberType),
-            th.Property("change_percent", th.NumberType),
-            th.Property("previous_close", th.NumberType),
-        )),
-        th.Property("details", th.ObjectType(
-            th.Property("contract_type", th.StringType),
-            th.Property("exercise_style", th.StringType),
-            th.Property("expiration_date", th.StringType),
-            th.Property("shares_per_contract", th.NumberType),
-            th.Property("strike_price", th.NumberType),
-            th.Property("ticker", th.StringType),
-        )),
-        th.Property("underlying_asset", th.ObjectType(
-            th.Property("ticker", th.StringType),
-            th.Property("price", th.NumberType),
-            th.Property("change_to_break_even", th.NumberType),
-            th.Property("last_updated", th.IntegerType),
-            th.Property("timeframe", th.StringType),
-        )),
+        th.Property(
+            "greeks",
+            th.ObjectType(
+                th.Property("delta", th.NumberType),
+                th.Property("gamma", th.NumberType),
+                th.Property("theta", th.NumberType),
+                th.Property("vega", th.NumberType),
+            ),
+        ),
+        th.Property(
+            "last_quote",
+            th.ObjectType(
+                th.Property("ask", th.NumberType),
+                th.Property("ask_size", th.IntegerType),
+                th.Property("bid", th.NumberType),
+                th.Property("bid_size", th.IntegerType),
+                th.Property("ask_exchange", th.IntegerType),
+                th.Property("bid_exchange", th.IntegerType),
+                th.Property("last_updated", th.IntegerType),
+                th.Property("midpoint", th.NumberType),
+                th.Property("timeframe", th.StringType),
+            ),
+        ),
+        th.Property(
+            "last_trade",
+            th.ObjectType(
+                th.Property("price", th.NumberType),
+                th.Property("size", th.IntegerType),
+                th.Property("exchange", th.IntegerType),
+                th.Property("sip_timestamp", th.IntegerType),
+                th.Property("conditions", th.ArrayType(th.IntegerType)),
+                th.Property("timeframe", th.StringType),
+            ),
+        ),
+        th.Property(
+            "day",
+            th.ObjectType(
+                th.Property("open", th.NumberType),
+                th.Property("high", th.NumberType),
+                th.Property("low", th.NumberType),
+                th.Property("close", th.NumberType),
+                th.Property("volume", th.NumberType),
+                th.Property("vwap", th.NumberType),
+                th.Property("change", th.NumberType),
+                th.Property("change_percent", th.NumberType),
+                th.Property("previous_close", th.NumberType),
+            ),
+        ),
+        th.Property(
+            "details",
+            th.ObjectType(
+                th.Property("contract_type", th.StringType),
+                th.Property("exercise_style", th.StringType),
+                th.Property("expiration_date", th.StringType),
+                th.Property("shares_per_contract", th.NumberType),
+                th.Property("strike_price", th.NumberType),
+                th.Property("ticker", th.StringType),
+            ),
+        ),
+        th.Property(
+            "underlying_asset",
+            th.ObjectType(
+                th.Property("ticker", th.StringType),
+                th.Property("price", th.NumberType),
+                th.Property("change_to_break_even", th.NumberType),
+                th.Property("last_updated", th.IntegerType),
+                th.Property("timeframe", th.StringType),
+            ),
+        ),
     ).to_dict()
 
     def get_url(self, context: Context):
@@ -265,62 +283,83 @@ class OptionsChainSnapshotStream(OptionalTickerPartitionStream):
         th.Property("fmv_last_updated", th.IntegerType),
         th.Property("implied_volatility", th.NumberType),
         th.Property("open_interest", th.NumberType),
-        th.Property("greeks", th.ObjectType(
-            th.Property("delta", th.NumberType),
-            th.Property("gamma", th.NumberType),
-            th.Property("theta", th.NumberType),
-            th.Property("vega", th.NumberType),
-        )),
-        th.Property("last_quote", th.ObjectType(
-            th.Property("ask", th.NumberType),
-            th.Property("ask_size", th.IntegerType),
-            th.Property("bid", th.NumberType),
-            th.Property("bid_size", th.IntegerType),
-            th.Property("ask_exchange", th.IntegerType),
-            th.Property("bid_exchange", th.IntegerType),
-            th.Property("last_updated", th.IntegerType),
-            th.Property("midpoint", th.NumberType),
-            th.Property("timeframe", th.StringType),
-        )),
-        th.Property("last_trade", th.ObjectType(
-            th.Property("price", th.NumberType),
-            th.Property("size", th.IntegerType),
-            th.Property("exchange", th.IntegerType),
-            th.Property("sip_timestamp", th.IntegerType),
-            th.Property("conditions", th.ArrayType(th.IntegerType)),
-            th.Property("timeframe", th.StringType),
-        )),
-        th.Property("day", th.ObjectType(
-            th.Property("open", th.NumberType),
-            th.Property("high", th.NumberType),
-            th.Property("low", th.NumberType),
-            th.Property("close", th.NumberType),
-            th.Property("volume", th.NumberType),
-            th.Property("vwap", th.NumberType),
-            th.Property("change", th.NumberType),
-            th.Property("change_percent", th.NumberType),
-            th.Property("previous_close", th.NumberType),
-        )),
-        th.Property("details", th.ObjectType(
-            th.Property("contract_type", th.StringType),
-            th.Property("exercise_style", th.StringType),
-            th.Property("expiration_date", th.StringType),
-            th.Property("shares_per_contract", th.NumberType),
-            th.Property("strike_price", th.NumberType),
-            th.Property("ticker", th.StringType),
-        )),
-        th.Property("underlying_asset", th.ObjectType(
-            th.Property("ticker", th.StringType),
-            th.Property("price", th.NumberType),
-            th.Property("change_to_break_even", th.NumberType),
-            th.Property("last_updated", th.IntegerType),
-            th.Property("timeframe", th.StringType),
-        )),
+        th.Property(
+            "greeks",
+            th.ObjectType(
+                th.Property("delta", th.NumberType),
+                th.Property("gamma", th.NumberType),
+                th.Property("theta", th.NumberType),
+                th.Property("vega", th.NumberType),
+            ),
+        ),
+        th.Property(
+            "last_quote",
+            th.ObjectType(
+                th.Property("ask", th.NumberType),
+                th.Property("ask_size", th.IntegerType),
+                th.Property("bid", th.NumberType),
+                th.Property("bid_size", th.IntegerType),
+                th.Property("ask_exchange", th.IntegerType),
+                th.Property("bid_exchange", th.IntegerType),
+                th.Property("last_updated", th.IntegerType),
+                th.Property("midpoint", th.NumberType),
+                th.Property("timeframe", th.StringType),
+            ),
+        ),
+        th.Property(
+            "last_trade",
+            th.ObjectType(
+                th.Property("price", th.NumberType),
+                th.Property("size", th.IntegerType),
+                th.Property("exchange", th.IntegerType),
+                th.Property("sip_timestamp", th.IntegerType),
+                th.Property("conditions", th.ArrayType(th.IntegerType)),
+                th.Property("timeframe", th.StringType),
+            ),
+        ),
+        th.Property(
+            "day",
+            th.ObjectType(
+                th.Property("open", th.NumberType),
+                th.Property("high", th.NumberType),
+                th.Property("low", th.NumberType),
+                th.Property("close", th.NumberType),
+                th.Property("volume", th.NumberType),
+                th.Property("vwap", th.NumberType),
+                th.Property("change", th.NumberType),
+                th.Property("change_percent", th.NumberType),
+                th.Property("previous_close", th.NumberType),
+            ),
+        ),
+        th.Property(
+            "details",
+            th.ObjectType(
+                th.Property("contract_type", th.StringType),
+                th.Property("exercise_style", th.StringType),
+                th.Property("expiration_date", th.StringType),
+                th.Property("shares_per_contract", th.NumberType),
+                th.Property("strike_price", th.NumberType),
+                th.Property("ticker", th.StringType),
+            ),
+        ),
+        th.Property(
+            "underlying_asset",
+            th.ObjectType(
+                th.Property("ticker", th.StringType),
+                th.Property("price", th.NumberType),
+                th.Property("change_to_break_even", th.NumberType),
+                th.Property("last_updated", th.IntegerType),
+                th.Property("timeframe", th.StringType),
+            ),
+        ),
     ).to_dict()
 
     @property
     def partitions(self):
-        return [{self._ticker_param: t["ticker"]} for t in self._tap.get_cached_stock_tickers()]
+        return [
+            {self._ticker_param: t["ticker"]}
+            for t in self._tap.get_cached_stock_tickers()
+        ]
 
     def get_url(self, context: Context = None) -> str:
         return f"{self.url_base}/v3/snapshot/options/{context.get('path_params').get(self._ticker_param)}"
@@ -345,7 +384,9 @@ class OptionsUnifiedSnapshotStream(MassiveRestStream):
 
     schema = th.PropertiesList(
         th.Property("ticker", th.StringType),
-        th.Property("type", th.StringType),  # enum: crypto, fx, indices, options, stocks
+        th.Property(
+            "type", th.StringType
+        ),  # enum: crypto, fx, indices, options, stocks
         th.Property("name", th.StringType),
         th.Property("market_status", th.StringType),
         th.Property("error", th.StringType),
@@ -354,58 +395,76 @@ class OptionsUnifiedSnapshotStream(MassiveRestStream):
         th.Property("open_interest", th.NumberType),
         th.Property("fmv", th.NumberType),
         th.Property("fmv_last_updated", th.IntegerType),
-        th.Property("session", th.ObjectType(
-            th.Property("open", th.NumberType),
-            th.Property("high", th.NumberType),
-            th.Property("low", th.NumberType),
-            th.Property("close", th.NumberType),
-            th.Property("volume", th.NumberType),
-            th.Property("vwap", th.NumberType),
-            th.Property("change", th.NumberType),
-            th.Property("change_percent", th.NumberType),
-            th.Property("previous_close", th.NumberType),
-        )),
-        th.Property("last_quote", th.ObjectType(
-            th.Property("ask", th.NumberType),
-            th.Property("ask_size", th.IntegerType),
-            th.Property("bid", th.NumberType),
-            th.Property("bid_size", th.IntegerType),
-            th.Property("ask_exchange", th.IntegerType),
-            th.Property("bid_exchange", th.IntegerType),
-            th.Property("last_updated", th.IntegerType),
-            th.Property("midpoint", th.NumberType),
-            th.Property("timeframe", th.StringType),
-        )),
-        th.Property("last_trade", th.ObjectType(
-            th.Property("price", th.NumberType),
-            th.Property("size", th.IntegerType),
-            th.Property("exchange", th.IntegerType),
-            th.Property("sip_timestamp", th.IntegerType),
-            th.Property("conditions", th.ArrayType(th.IntegerType)),
-            th.Property("timeframe", th.StringType),
-        )),
-        th.Property("greeks", th.ObjectType(
-            th.Property("delta", th.NumberType),
-            th.Property("gamma", th.NumberType),
-            th.Property("theta", th.NumberType),
-            th.Property("vega", th.NumberType),
-            th.Property("implied_volatility", th.NumberType),
-        )),
-        th.Property("details", th.ObjectType(
-            th.Property("contract_type", th.StringType),
-            th.Property("exercise_style", th.StringType),
-            th.Property("expiration_date", th.StringType),
-            th.Property("shares_per_contract", th.NumberType),
-            th.Property("strike_price", th.NumberType),
-            th.Property("ticker", th.StringType),
-        )),
-        th.Property("underlying_asset", th.ObjectType(
-            th.Property("ticker", th.StringType),
-            th.Property("price", th.NumberType),
-            th.Property("change_to_break_even", th.NumberType),
-            th.Property("last_updated", th.IntegerType),
-            th.Property("timeframe", th.StringType),
-        )),
+        th.Property(
+            "session",
+            th.ObjectType(
+                th.Property("open", th.NumberType),
+                th.Property("high", th.NumberType),
+                th.Property("low", th.NumberType),
+                th.Property("close", th.NumberType),
+                th.Property("volume", th.NumberType),
+                th.Property("vwap", th.NumberType),
+                th.Property("change", th.NumberType),
+                th.Property("change_percent", th.NumberType),
+                th.Property("previous_close", th.NumberType),
+            ),
+        ),
+        th.Property(
+            "last_quote",
+            th.ObjectType(
+                th.Property("ask", th.NumberType),
+                th.Property("ask_size", th.IntegerType),
+                th.Property("bid", th.NumberType),
+                th.Property("bid_size", th.IntegerType),
+                th.Property("ask_exchange", th.IntegerType),
+                th.Property("bid_exchange", th.IntegerType),
+                th.Property("last_updated", th.IntegerType),
+                th.Property("midpoint", th.NumberType),
+                th.Property("timeframe", th.StringType),
+            ),
+        ),
+        th.Property(
+            "last_trade",
+            th.ObjectType(
+                th.Property("price", th.NumberType),
+                th.Property("size", th.IntegerType),
+                th.Property("exchange", th.IntegerType),
+                th.Property("sip_timestamp", th.IntegerType),
+                th.Property("conditions", th.ArrayType(th.IntegerType)),
+                th.Property("timeframe", th.StringType),
+            ),
+        ),
+        th.Property(
+            "greeks",
+            th.ObjectType(
+                th.Property("delta", th.NumberType),
+                th.Property("gamma", th.NumberType),
+                th.Property("theta", th.NumberType),
+                th.Property("vega", th.NumberType),
+                th.Property("implied_volatility", th.NumberType),
+            ),
+        ),
+        th.Property(
+            "details",
+            th.ObjectType(
+                th.Property("contract_type", th.StringType),
+                th.Property("exercise_style", th.StringType),
+                th.Property("expiration_date", th.StringType),
+                th.Property("shares_per_contract", th.NumberType),
+                th.Property("strike_price", th.NumberType),
+                th.Property("ticker", th.StringType),
+            ),
+        ),
+        th.Property(
+            "underlying_asset",
+            th.ObjectType(
+                th.Property("ticker", th.StringType),
+                th.Property("price", th.NumberType),
+                th.Property("change_to_break_even", th.NumberType),
+                th.Property("last_updated", th.IntegerType),
+                th.Property("timeframe", th.StringType),
+            ),
+        ),
     ).to_dict()
 
     def get_url(self, context: Context = None) -> str:

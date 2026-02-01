@@ -4,6 +4,7 @@ import socket
 import typing as t
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
+
 import backoff
 import requests
 from massive import RESTClient
@@ -492,7 +493,11 @@ class MassiveRestStream(RESTStream):
             except requests.exceptions.RequestException as e:
                 safe_exception = self.redact_api_key(str(e))
                 # For 403 errors, log and continue to next ticker instead of breaking
-                if isinstance(e, requests.exceptions.HTTPError) and e.response is not None and e.response.status_code == 403:
+                if (
+                    isinstance(e, requests.exceptions.HTTPError)
+                    and e.response is not None
+                    and e.response.status_code == 403
+                ):
                     logging.warning(
                         f"*** Access denied (403) for {self.name} at {request_url}: {safe_exception} - skipping this ticker ***"
                     )
