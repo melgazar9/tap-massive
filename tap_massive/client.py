@@ -23,6 +23,21 @@ class MassiveRestStream(RESTStream):
     _requires_end_timestamp_in_path_params = False
     _ticker_param = "ticker"
 
+    @staticmethod
+    def to_snake_case(s: str) -> str:
+        """Convert camelCase or PascalCase string to snake_case."""
+        return re.sub(r"(?<!^)(?=[A-Z])", "_", s).lower()
+
+    def clean_keys(self, d: dict) -> None:
+        """Recursively convert all dict keys to snake_case in-place."""
+        keys = list(d.keys())
+        for key in keys:
+            value = d.pop(key)
+            new_key = self.to_snake_case(key)
+            if isinstance(value, dict):
+                self.clean_keys(value)
+            d[new_key] = value
+
     def __init__(self, tap):
         super().__init__(tap=tap)
         self.tap = tap
@@ -586,6 +601,11 @@ class MassiveRestStream(RESTStream):
     def parse_response(self, record: dict, context: Context) -> t.Iterable[dict]:
         """Default passthrough: yield the record unchanged."""
         yield record
+
+    def post_process(self, row: dict, context: Context | None = None) -> dict | None:
+        """Default post-processing: convert all keys to snake_case."""
+        self.clean_keys(row)
+        return row
 
     def parse_config_params(self) -> None:
         cfg_params = self.config.get(self.name)

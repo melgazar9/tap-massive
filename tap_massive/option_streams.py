@@ -13,7 +13,7 @@ from tap_massive.base_streams import (
     BaseLastTradeStream,
     BasePreviousDayBarSummaryStream,
     BaseQuoteStream,
-    BaseTickerPartitionedStream,
+    BaseTickerPartitionStream,
     BaseTradeStream,
 )
 from tap_massive.client import MassiveRestStream, OptionalTickerPartitionStream
@@ -45,17 +45,17 @@ class OptionsContractsStream(BaseTickerStream):
         return f"{self.url_base}/v3/reference/options/contracts"
 
 
-class OptionsTickerPartitionedStream(BaseTickerPartitionedStream):
+class OptionsTickerPartitionStream(BaseTickerPartitionStream):
     @property
     def partitions(self):
         return [{"ticker": t["ticker"]} for t in self._tap.get_cached_option_tickers()]
 
 
-class OptionsCustomBarsStream(OptionsTickerPartitionedStream, BaseCustomBarsStream):
+class OptionsCustomBarsStream(OptionsTickerPartitionStream, BaseCustomBarsStream):
     pass
 
 
-class OptionsContractOverviewStream(OptionsTickerPartitionedStream):
+class OptionsContractOverviewStream(OptionsTickerPartitionStream):
     """Stream for retrieving detailed information about options contracts."""
 
     name = "options_contract_overview"
@@ -80,7 +80,7 @@ class OptionsContractOverviewStream(OptionsTickerPartitionedStream):
         return f"{self.url_base}/v3/reference/options/contracts/{ticker}"
 
 
-class OptionsContractSnapshotStream(OptionsTickerPartitionedStream):
+class OptionsContractSnapshotStream(OptionsTickerPartitionStream):
     """Stream for retrieving options contract snapshot data."""
 
     name = "options_contract_snapshot"
@@ -188,7 +188,7 @@ class OptionsBars1MonthStream(OptionsCustomBarsStream):
 
 
 class OptionsDailyTickerSummaryStream(
-    OptionsTickerPartitionedStream, BaseDailyTickerSummaryStream
+    OptionsTickerPartitionStream, BaseDailyTickerSummaryStream
 ):
     """Stream for retrieving options daily ticker summary."""
 
@@ -196,54 +196,54 @@ class OptionsDailyTickerSummaryStream(
 
 
 class OptionsPreviousDayBarStream(
-    OptionsTickerPartitionedStream, BasePreviousDayBarSummaryStream
+    OptionsTickerPartitionStream, BasePreviousDayBarSummaryStream
 ):
     """Stream for retrieving options previous day bar data."""
 
     name = "options_previous_day_bar"
 
 
-class OptionsTradeStream(OptionsTickerPartitionedStream, BaseTradeStream):
+class OptionsTradeStream(OptionsTickerPartitionStream, BaseTradeStream):
     """Stream for retrieving options trade data."""
 
     name = "options_trades"
 
 
-class OptionsQuoteStream(OptionsTickerPartitionedStream, BaseQuoteStream):
+class OptionsQuoteStream(OptionsTickerPartitionStream, BaseQuoteStream):
     """Stream for retrieving options quote data."""
 
     name = "options_quotes"
 
 
-class OptionsSmaStream(OptionsTickerPartitionedStream, BaseIndicatorStream):
+class OptionsSmaStream(OptionsTickerPartitionStream, BaseIndicatorStream):
     """Stream for retrieving options SMA indicator data."""
 
     name = "options_sma"
     indicator_type = "sma"
 
 
-class OptionsEmaStream(OptionsTickerPartitionedStream, BaseIndicatorStream):
+class OptionsEmaStream(OptionsTickerPartitionStream, BaseIndicatorStream):
     """Stream for retrieving options EMA indicator data."""
 
     name = "options_ema"
     indicator_type = "ema"
 
 
-class OptionsMACDStream(OptionsTickerPartitionedStream, BaseIndicatorStream):
+class OptionsMACDStream(OptionsTickerPartitionStream, BaseIndicatorStream):
     """Stream for retrieving options MACD indicator data."""
 
     name = "options_macd"
     indicator_type = "macd"
 
 
-class OptionsRSIStream(OptionsTickerPartitionedStream, BaseIndicatorStream):
+class OptionsRSIStream(OptionsTickerPartitionStream, BaseIndicatorStream):
     """Stream for retrieving options RSI indicator data."""
 
     name = "options_rsi"
     indicator_type = "rsi"
 
 
-class OptionsLastTradeStream(OptionsTickerPartitionedStream, BaseLastTradeStream):
+class OptionsLastTradeStream(OptionsTickerPartitionStream, BaseLastTradeStream):
     """Stream for retrieving options last trade data."""
 
     name = "options_last_trade"

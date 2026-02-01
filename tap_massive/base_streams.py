@@ -31,6 +31,7 @@ def safe_int(x):
     except (ValueError, TypeError):
         return None
 
+
 class BaseTickerStream(MassiveRestStream):
     market = None
     _ticker_param = "ticker"
@@ -78,13 +79,13 @@ class BaseTickerStream(MassiveRestStream):
                 context["query_params"] = query_params
                 yield from self.paginate_records(context)
 
-class BaseTickerPartitionedStream(MassiveRestStream):
+class BaseTickerPartitionStream(MassiveRestStream):
     @property
     def partitions(self):
         raise ValueError("Method partitions must be overridden by subclass.")
 
 
-class BaseTickerDetailsStream(BaseTickerPartitionedStream):
+class BaseTickerDetailsStream(BaseTickerPartitionStream):
     primary_keys = ["ticker"]
 
     schema = th.PropertiesList(
@@ -148,7 +149,7 @@ class BaseTickerDetailsStream(BaseTickerPartitionedStream):
         return f"{self.url_base}/v3/reference/tickers/{ticker}"
 
 
-class BaseCustomBarsStream(BaseTickerPartitionedStream):
+class BaseCustomBarsStream(BaseTickerPartitionStream):
     primary_keys = ["timestamp", "ticker"]
     replication_key = "timestamp"
     replication_method = "INCREMENTAL"
@@ -264,7 +265,7 @@ class BaseDailyMarketSummaryStream(MassiveRestStream):
         return row
 
 
-class BaseDailyTickerSummaryStream(BaseTickerPartitionedStream):
+class BaseDailyTickerSummaryStream(BaseTickerPartitionStream):
     primary_keys = ["from", "ticker"]
     replication_key = "from"
     replication_method = "INCREMENTAL"
@@ -305,7 +306,7 @@ class BaseDailyTickerSummaryStream(BaseTickerPartitionedStream):
         return row
 
 
-class BasePreviousDayBarSummaryStream(BaseTickerPartitionedStream):
+class BasePreviousDayBarSummaryStream(BaseTickerPartitionStream):
     """Retrieve the previous trading day's OHLCV data for a specified ticker.
     Not really useful given we have the other streams."""
 
@@ -458,24 +459,12 @@ class BaseTopMarketMoversStream(MassiveRestStream):
                 return
 
     def post_process(self, row: Record, context: Context | None = None) -> dict | None:
-        def to_snake_case(s):
-            return re.sub(r"(?<!^)(?=[A-Z])", "_", s).lower()
-
-        def clean_keys(d):
-            keys = list(d.keys())
-            for key in keys:
-                value = d.pop(key)
-                new_key = to_snake_case(key)
-                if isinstance(value, dict):
-                    clean_keys(value)
-                d[new_key] = value
-
-        clean_keys(row)
+        row = super().post_process(row, context)
         row["updated"] = self.safe_parse_datetime(row["updated"])
         return row
 
 
-class BaseTradeStream(BaseTickerPartitionedStream):
+class BaseTradeStream(BaseTickerPartitionStream):
     """
     Retrieve comprehensive, tick-level trade data for a specified stock ticker within a defined time range.
     Each record includes price, size, exchange, trade conditions, and precise timestamp information.
@@ -545,7 +534,7 @@ class BaseTradeStream(BaseTickerPartitionedStream):
         return row
 
 
-class BaseLastTradeStream(BaseTickerPartitionedStream):
+class BaseLastTradeStream(BaseTickerPartitionStream):
     primary_keys = ["t", "ticker", "q"]
     replication_key = "t"
     replication_method = "INCREMENTAL"
@@ -599,7 +588,7 @@ class BaseLastTradeStream(BaseTickerPartitionedStream):
         return row
 
 
-class BaseQuoteStream(BaseTickerPartitionedStream):
+class BaseQuoteStream(BaseTickerPartitionStream):
     primary_keys = ["ticker", "sip_timestamp", "sequence_number"]
     replication_key = "sip_timestamp"
     replication_method = "INCREMENTAL"
@@ -642,7 +631,7 @@ class BaseQuoteStream(BaseTickerPartitionedStream):
         return row
 
 
-class BaseLastQuoteStream(BaseTickerPartitionedStream):
+class BaseLastQuoteStream(BaseTickerPartitionStream):
     primary_keys = ["t", "ticker", "q"]
     replication_key = "t"
     replication_method = "INCREMENTAL"
@@ -680,7 +669,7 @@ class BaseLastQuoteStream(BaseTickerPartitionedStream):
         return row
 
 
-class BaseIndicatorStream(BaseTickerPartitionedStream):
+class BaseIndicatorStream(BaseTickerPartitionStream):
     primary_keys = ["timestamp", "ticker", "indicator", "series_window_timespan"]
     replication_key = "timestamp"
     replication_method = "INCREMENTAL"

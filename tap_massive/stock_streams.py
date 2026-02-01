@@ -20,7 +20,7 @@ from tap_massive.base_streams import (
     BasePreviousDayBarSummaryStream,
     BaseQuoteStream,
     BaseTickerDetailsStream,
-    BaseTickerPartitionedStream,
+    BaseTickerPartitionStream,
     BaseTopMarketMoversStream,
     BaseTradeStream,
 )
@@ -61,20 +61,20 @@ class StockTickerStream(BaseTickerStream):
         return f"{self.url_base}/v3/reference/tickers"
 
 
-class StockTickerPartitionedStream(BaseTickerPartitionedStream):
+class StockTickerPartitionStream(BaseTickerPartitionStream):
     @property
     def partitions(self):
         return [{"ticker": t["ticker"]} for t in self._tap.get_cached_stock_tickers()]
 
 
-class StockTickerDetailsStream(StockTickerPartitionedStream, BaseTickerDetailsStream):
+class StockTickerDetailsStream(StockTickerPartitionStream, BaseTickerDetailsStream):
     name = "stock_ticker_details"
 
 
 class StockDailyTickerSummaryStream(BaseDailyTickerSummaryStream):
     name = "stock_daily_ticker_summary"
 
-class StockIndicatorStream(StockTickerPartitionedStream, BaseIndicatorStream):
+class StockIndicatorStream(StockTickerPartitionStream, BaseIndicatorStream):
     def get_url(self, context: Context) -> str:
         raise ValueError("URL Must be overridden by subclass.")
 
@@ -109,6 +109,71 @@ class StockTopMarketMoversStream(BaseTopMarketMoversStream):
     def get_url(self, context: Context):
         direction = context.get("direction")
         return f"{self.url_base}/v2/snapshot/locale/us/markets/stocks/{direction}"
+
+
+class StockTickerSnapshotStream(StockTickerPartitionStream):
+    """Stream for retrieving stock single ticker snapshot data.
+
+    Returns real-time snapshot data for a single stock ticker including
+    current prices, volumes, and session data.
+    """
+
+    name = "stock_ticker_snapshot"
+    primary_keys = ["ticker"]
+
+    schema = th.PropertiesList(
+        th.Property("ticker", th.StringType),
+        th.Property("todays_change", th.NumberType),
+        th.Property("todays_change_percent", th.NumberType),
+        th.Property("updated", th.IntegerType),
+        th.Property("fmv", th.NumberType),
+        th.Property("day", th.ObjectType(
+            th.Property("o", th.NumberType),
+            th.Property("h", th.NumberType),
+            th.Property("l", th.NumberType),
+            th.Property("c", th.NumberType),
+            th.Property("v", th.NumberType),
+            th.Property("vw", th.NumberType),
+        )),
+        th.Property("min", th.ObjectType(
+            th.Property("o", th.NumberType),
+            th.Property("h", th.NumberType),
+            th.Property("l", th.NumberType),
+            th.Property("c", th.NumberType),
+            th.Property("v", th.NumberType),
+            th.Property("vw", th.NumberType),
+            th.Property("av", th.NumberType),
+            th.Property("t", th.IntegerType),
+            th.Property("n", th.IntegerType),
+        )),
+        th.Property("prev_day", th.ObjectType(
+            th.Property("o", th.NumberType),
+            th.Property("h", th.NumberType),
+            th.Property("l", th.NumberType),
+            th.Property("c", th.NumberType),
+            th.Property("v", th.NumberType),
+            th.Property("vw", th.NumberType),
+        )),
+        th.Property("last_quote", th.ObjectType(
+            th.Property("p", th.NumberType),
+            th.Property("s", th.IntegerType),
+            th.Property("P", th.NumberType),
+            th.Property("S", th.IntegerType),
+            th.Property("t", th.IntegerType),
+        )),
+        th.Property("last_trade", th.ObjectType(
+            th.Property("p", th.NumberType),
+            th.Property("s", th.IntegerType),
+            th.Property("t", th.IntegerType),
+            th.Property("c", th.ArrayType(th.IntegerType)),
+            th.Property("i", th.StringType),
+            th.Property("x", th.IntegerType),
+        )),
+    ).to_dict()
+
+    def get_url(self, context: Context):
+        ticker = context.get(self._ticker_param)
+        return f"{self.url_base}/v2/snapshot/locale/us/markets/stocks/tickers/{ticker}"
 
 
 class StockTradeStream(BaseTradeStream):
@@ -165,7 +230,7 @@ class TickerTypesStream(MassiveRestStream):
             yield tt
 
 
-class RelatedCompaniesStream(StockTickerPartitionedStream):
+class RelatedCompaniesStream(StockTickerPartitionStream):
     name = "related_companies"
 
     primary_keys = ["ticker"]
@@ -188,39 +253,39 @@ class RelatedCompaniesStream(StockTickerPartitionedStream):
         return row
 
 
-class StockBars1SecondStream(StockTickerPartitionedStream, BaseCustomBarsStream):
+class StockBars1SecondStream(StockTickerPartitionStream, BaseCustomBarsStream):
     name = "stock_bars_1_second"
 
 
-class StockBars30SecondStream(StockTickerPartitionedStream, BaseCustomBarsStream):
+class StockBars30SecondStream(StockTickerPartitionStream, BaseCustomBarsStream):
     name = "stock_bars_30_second"
 
 
-class StockBars1MinuteStream(StockTickerPartitionedStream, BaseCustomBarsStream):
+class StockBars1MinuteStream(StockTickerPartitionStream, BaseCustomBarsStream):
     name = "stock_bars_1_minute"
 
 
-class StockBars5MinuteStream(StockTickerPartitionedStream, BaseCustomBarsStream):
+class StockBars5MinuteStream(StockTickerPartitionStream, BaseCustomBarsStream):
     name = "stock_bars_5_minute"
 
 
-class StockBars30MinuteStream(StockTickerPartitionedStream, BaseCustomBarsStream):
+class StockBars30MinuteStream(StockTickerPartitionStream, BaseCustomBarsStream):
     name = "stock_bars_30_minute"
 
 
-class StockBars1HourStream(StockTickerPartitionedStream, BaseCustomBarsStream):
+class StockBars1HourStream(StockTickerPartitionStream, BaseCustomBarsStream):
     name = "stock_bars_1_hour"
 
 
-class StockBars1DayStream(StockTickerPartitionedStream, BaseCustomBarsStream):
+class StockBars1DayStream(StockTickerPartitionStream, BaseCustomBarsStream):
     name = "stock_bars_1_day"
 
 
-class StockBars1WeekStream(StockTickerPartitionedStream, BaseCustomBarsStream):
+class StockBars1WeekStream(StockTickerPartitionStream, BaseCustomBarsStream):
     name = "stock_bars_1_week"
 
 
-class StockBars1MonthStream(StockTickerPartitionedStream, BaseCustomBarsStream):
+class StockBars1MonthStream(StockTickerPartitionStream, BaseCustomBarsStream):
     name = "stock_bars_1_month"
 
 
@@ -550,7 +615,7 @@ class DividendsStream(OptionalTickerPartitionStream):
         return f"{self.url_base}/v3/reference/dividends"
 
 
-class TickerEventsStream(StockTickerPartitionedStream):
+class TickerEventsStream(StockTickerPartitionStream):
     """Ticker Events Stream"""
 
     name = "ticker_events"
