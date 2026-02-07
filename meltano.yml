@@ -385,23 +385,26 @@ plugins:
         other_params:
           use_cached_tickers: true
 
+      # earliest start date is 1962-01-02 per documentation
       treasury_yields:
         query_params:
           date__gte: "2025-05-01"
           date__lte: "2025-05-30"
-          limit: 5000
+          limit: 50000
 
+      # earliest start date is 1947-01-01 per documentation
       inflation:
         query_params:
-          date__gte: "2025-05-01"
+          date__gte: "1995-01-01"
           date__lte: "2025-06-30"
-          limit: 5000
+          limit: 50000
 
+      # earliest start date is 1982-01-01 per documentation
       inflation_expectations:
         query_params:
-          date__gte: "2025-05-01"
+          date__gte: "1982-01-01"
           date__lte: "2025-06-30"
-          limit: 5000
+          limit: 50000
 
       options_contract_overview:
         other_params:
@@ -601,6 +604,7 @@ plugins:
           type: options
           limit: 250
 
+      # earliest start date is 1948-01-01 per documentation
       labor_market:
         query_params:
           date__gte: "2025-01-01"
