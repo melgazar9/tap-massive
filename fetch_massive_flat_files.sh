@@ -12,7 +12,7 @@ if [[ -z "$MASSIVE_FLAT_FILE_AWS_KEY" || -z "$MASSIVE_FLAT_FILE_AWS_SECRET_KEY" 
   exit 1
 fi
 
-ENDPOINT="--endpoint-url https://files.massive.io"
+ENDPOINT="--endpoint-url https://files.massive.com"
 
 usage() {
   echo "Usage: $0 --trades|--quotes|--bars-1m|--days|--all --start-date YYYY-MM-DD --end-date YYYY-MM-DD --asset-class ASSET_CLASS"
