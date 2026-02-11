@@ -409,20 +409,6 @@ class BaseConditionCodesStream(MassiveRestStream):
     name = "condition_codes"
 
     primary_keys = ["id", "asset_class", "type"]
-    _type_enum_values = [
-        "financial_status_indicator",
-        "market_condition",
-        "quote_condition",
-        "sale_condition",
-        "settlement_condition",
-        "short_sale_restriction_indicator",
-        "sip_generated_flag",
-        "trade_thru_exempt",
-        # Massive can return additional values that are not listed in docs.
-        "condition",
-        "regular",
-    ]
-
     _use_cached_tickers_default = False
 
     schema = th.PropertiesList(
@@ -447,7 +433,6 @@ class BaseConditionCodesStream(MassiveRestStream):
         th.Property(
             "type",
             th.StringType,
-            enum=_type_enum_values,
         ),
         th.Property(
             "update_rules",
