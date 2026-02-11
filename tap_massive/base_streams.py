@@ -140,16 +140,66 @@ class BaseTickerDetailsStream(BaseTickerPartitionStream):
         th.Property("last_updated_utc", th.DateTimeType),
     ).to_dict()
 
-    def __init__(self, tap):
-        super().__init__(tap)
-        self.tap = tap
-
     def get_url(self, context: Context):
         ticker = context.get(self._ticker_param)
         return f"{self.url_base}/v3/reference/tickers/{ticker}"
 
 
-class BaseCustomBarsStream(BaseTickerPartitionStream):
+class _OhlcMappingMixin:
+    ohlc_mapping = {
+        "T": "ticker",
+        "t": "timestamp",
+        "o": "open",
+        "h": "high",
+        "l": "low",
+        "c": "close",
+        "v": "volume",
+        "vw": "vwap",
+        "n": "transactions",
+    }
+    ohlc_decimal_keys = ("open", "high", "low", "close", "vwap")
+    ohlc_include_otc = False
+    ohlc_require_timestamp = True
+    ohlc_parse_timestamp = True
+    ohlc_timestamp_to_iso = False
+
+    def _apply_ohlc_mapping(
+        self,
+        row: dict,
+        *,
+        include_otc: bool = False,
+        decimal_keys: tuple[str, ...] | None = None,
+    ) -> dict:
+        mapping = dict(self.ohlc_mapping)
+        if include_otc:
+            mapping["otc"] = "otc"
+        decimal_keys = self.ohlc_decimal_keys if decimal_keys is None else decimal_keys
+        for old_key, new_key in mapping.items():
+            if old_key in row:
+                row[new_key] = row.pop(old_key)
+                if decimal_keys and new_key in decimal_keys:
+                    row[new_key] = safe_decimal(row[new_key])
+        return row
+
+    def post_process(self, row: Record, context: Context | None = None) -> dict | None:
+        if self.ohlc_require_timestamp and "t" not in row and "timestamp" not in row:
+            return None
+        row = self._apply_ohlc_mapping(
+            row,
+            include_otc=self.ohlc_include_otc,
+            decimal_keys=self.ohlc_decimal_keys,
+        )
+        if self.ohlc_parse_timestamp and "timestamp" in row:
+            timestamp = self.safe_parse_datetime(row["timestamp"])
+            row["timestamp"] = (
+                timestamp.isoformat()
+                if self.ohlc_timestamp_to_iso and timestamp is not None
+                else timestamp
+            )
+        return row
+
+
+class BaseCustomBarsStream(_OhlcMappingMixin, BaseTickerPartitionStream):
     primary_keys = ["timestamp", "ticker"]
     replication_key = "timestamp"
     replication_method = "INCREMENTAL"
@@ -161,6 +211,8 @@ class BaseCustomBarsStream(BaseTickerPartitionStream):
     _unix_timestamp_unit = "ms"
     _requires_end_timestamp_in_path_params = True
     _ticker_in_path_params = True
+    ohlc_include_otc = True
+    ohlc_timestamp_to_iso = True
 
     schema = th.PropertiesList(
         th.Property("timestamp", th.DateTimeType),
@@ -177,8 +229,6 @@ class BaseCustomBarsStream(BaseTickerPartitionStream):
 
     def __init__(self, tap):
         super().__init__(tap)
-        self.tap = tap
-
         self._cfg_ending_timestamp_key = "to"
 
     def build_path_params(self, path_params: dict) -> str:
@@ -191,29 +241,17 @@ class BaseCustomBarsStream(BaseTickerPartitionStream):
         return f"{self.url_base}/v2/aggs/ticker/{ticker}/range{path_params}"
 
     def post_process(self, row: Record, context: Context | None = None) -> dict | None:
-        rename_map = {
-            "t": "timestamp",
-            "o": "open",
-            "h": "high",
-            "l": "low",
-            "c": "close",
-            "v": "volume",
-            "vw": "vwap",
-            "n": "transactions",
-        }
-        for old_key, new_key in rename_map.items():
-            if old_key in row:
-                row[new_key] = row.pop(old_key)
-                if new_key in ("open", "high", "low", "close", "vwap"):
-                    row[new_key] = safe_decimal(row[new_key])
-
+        if "t" not in row and "timestamp" not in row:
+            return None
+        row = self._apply_ohlc_mapping(row, include_otc=self.ohlc_include_otc)
         row["ticker"] = context.get(self._ticker_param)
-        row["otc"] = row.get("otc", None)
+        if not self.ohlc_include_otc:
+            row.pop("otc", None)
         row["timestamp"] = self.safe_parse_datetime(row["timestamp"]).isoformat()
         return row
 
 
-class BaseDailyMarketSummaryStream(MassiveRestStream):
+class BaseDailyMarketSummaryStream(_OhlcMappingMixin, MassiveRestStream):
     primary_keys = ["timestamp", "ticker"]
     replication_key = "timestamp"
     replication_method = "INCREMENTAL"
@@ -221,6 +259,8 @@ class BaseDailyMarketSummaryStream(MassiveRestStream):
 
     _use_cached_tickers_default = False
     _incremental_timestamp_is_date = True
+    ohlc_include_otc = True
+    ohlc_decimal_keys: tuple[str, ...] = ()
 
     schema = th.PropertiesList(
         th.Property("ticker", th.StringType),
@@ -234,36 +274,6 @@ class BaseDailyMarketSummaryStream(MassiveRestStream):
         th.Property("transactions", th.IntegerType),
         th.Property("otc", th.BooleanType),
     ).to_dict()
-
-    def __init__(self, tap):
-        super().__init__(tap)
-        self.tap = tap
-
-    def post_process(self, row: Record, context: Context | None = None) -> dict | None:
-        if "t" not in row:
-            logging.warning(
-                f"Key 't' not found in record, likely metadata field ---> Skipping row... {row}"
-            )
-            return None
-        mapping = {
-            "T": "ticker",
-            "t": "timestamp",
-            "o": "open",
-            "h": "high",
-            "l": "low",
-            "c": "close",
-            "v": "volume",
-            "vw": "vwap",
-            "n": "transactions",
-            "otc": "otc",
-        }
-        for old_key, new_key in mapping.items():
-            if old_key in row:
-                row[new_key] = row.pop(old_key)
-        if "timestamp" in row:
-            row["timestamp"] = self.safe_parse_datetime(row["timestamp"])
-        return row
-
 
 class BaseDailyTickerSummaryStream(BaseTickerPartitionStream):
     primary_keys = ["from", "ticker"]
@@ -285,12 +295,7 @@ class BaseDailyTickerSummaryStream(BaseTickerPartitionStream):
         th.Property("otc", th.BooleanType),
         th.Property("pre_market", th.NumberType),
         th.Property("after_hours", th.NumberType),
-        th.Property("status", th.StringType),
     ).to_dict()
-
-    def __init__(self, tap):
-        super().__init__(tap)
-        self.tap = tap
 
     def get_url(self, context: Context):
         date = self.path_params.get("date")
@@ -306,14 +311,16 @@ class BaseDailyTickerSummaryStream(BaseTickerPartitionStream):
         return row
 
 
-class BasePreviousDayBarSummaryStream(BaseTickerPartitionStream):
+class BasePreviousDayBarSummaryStream(_OhlcMappingMixin, BaseTickerPartitionStream):
     """Retrieve the previous trading day's OHLCV data for a specified ticker.
-    Not really useful given we have the other streams."""
+       Not really useful given we have the other streams.
+    """
 
     primary_keys = ["timestamp", "ticker"]
     replication_key = "timestamp"
     replication_method = "INCREMENTAL"
     is_timestamp_replication_key = True
+    ohlc_include_otc = True
 
     schema = th.PropertiesList(
         th.Property("ticker", th.StringType),
@@ -328,67 +335,280 @@ class BasePreviousDayBarSummaryStream(BaseTickerPartitionStream):
         th.Property("otc", th.BooleanType),
     ).to_dict()
 
-    def __init__(self, tap):
-        super().__init__(tap)
-        self.tap = tap
-
     def get_url(self, context: Context):
         ticker = context.get(self._ticker_param)
         return f"{self.url_base}/v2/aggs/ticker/{ticker}/prev"
 
     def post_process(self, row: Record, context: Context | None = None) -> dict | None:
-        mapping = {
-            "T": "ticker",
-            "t": "timestamp",
-            "o": "open",
-            "h": "high",
-            "l": "low",
-            "c": "close",
-            "v": "volume",
-            "vw": "vwap",
-            "n": "transactions",
-            "otc": "otc",
-        }
-        for old_key, new_key in mapping.items():
-            if old_key in row:
-                row[new_key] = row.pop(old_key)
-                if new_key in ("open", "high", "low", "close", "vwap"):
-                    row[new_key] = safe_decimal(row[new_key])
-        row["timestamp"] = self.safe_parse_datetime(row["timestamp"])
+        if "t" not in row and "timestamp" not in row:
+            return None
+        row = self._apply_ohlc_mapping(row, include_otc=True)
+        if "timestamp" in row:
+            row["timestamp"] = self.safe_parse_datetime(row["timestamp"])
         return row
 
 
-class TickerSnapshotStream(MassiveRestStream):
-    """Retrieve the most recent market data snapshot for a single ticker.
-    Not really useful given we have the other streams."""
+class BaseTickerTypesStream(MassiveRestStream):
+    """Base class for ticker types. Set _asset_class in subclasses to filter by asset class."""
 
-    name = "ticker_snapshot"
-    pass
+    primary_keys = ["code"]
+    _asset_class = None
+    _use_cached_tickers_default = False
+
+    schema = th.PropertiesList(
+        th.Property("asset_class", th.StringType),
+        th.Property("code", th.StringType),
+        th.Property("description", th.StringType),
+        th.Property("locale", th.StringType),
+    ).to_dict()
+
+    def get_url(self, context: Context = None):
+        return f"{self.url_base}/v3/reference/tickers/types"
 
 
-class FullMarketSnapshotStream(MassiveRestStream):
-    """
-    Retrieve a comprehensive snapshot of the entire U.S. stock market, covering over 10,000+ actively traded
-    tickers in a single response. Not really useful given we have the other streams.
-    """
+class AllTickerTypesStream(BaseTickerTypesStream):
+    """All ticker types across all asset classes (no asset_class filter)."""
 
-    name = "full_market_snapshot"
-    pass
+    name = "ticker_types"
 
 
-class UnifiedSnapshotStream(MassiveRestStream):
-    """
-    Retrieve unified snapshots of market data for multiple asset classes including stocks, options, forex,
+class BaseExchangesStream(MassiveRestStream):
+    """Base class for exchanges. Set _asset_class in subclasses to filter by asset class."""
+
+    primary_keys = ["id"]
+    _asset_class = None
+    _use_cached_tickers_default = False
+
+    schema = th.PropertiesList(
+        th.Property("id", th.IntegerType),
+        th.Property("type", th.StringType),
+        th.Property("asset_class", th.StringType),
+        th.Property("locale", th.StringType),
+        th.Property("name", th.StringType),
+        th.Property("acronym", th.StringType),
+        th.Property("mic", th.StringType),
+        th.Property("operating_mic", th.StringType),
+        th.Property("participant_id", th.StringType),
+        th.Property("url", th.StringType),
+    ).to_dict()
+
+    def get_url(self, context: Context = None):
+        return f"{self.url_base}/v3/reference/exchanges"
+
+
+class AllExchangesStream(BaseExchangesStream):
+    """All exchanges across all asset classes (no asset_class filter)."""
+
+    name = "exchanges"
+
+
+class BaseConditionCodesStream(MassiveRestStream):
+    """Condition Codes Stream"""
+
+    name = "condition_codes"
+
+    primary_keys = ["id", "asset_class", "type"]
+
+    _use_cached_tickers_default = False
+
+    schema = th.PropertiesList(
+        th.Property("id", th.IntegerType),
+        th.Property("abbreviation", th.StringType),
+        th.Property(
+            "asset_class", th.StringType, enum=["stocks", "options", "crypto", "fx"]
+        ),
+        th.Property("data_types", th.ArrayType(th.StringType)),
+        th.Property("description", th.StringType),
+        th.Property("exchange", th.IntegerType),
+        th.Property("legacy", th.BooleanType),
+        th.Property("name", th.StringType),
+        th.Property(
+            "sip_mapping",
+            th.ObjectType(
+                th.Property("CTA", th.StringType),
+                th.Property("OPRA", th.StringType),
+                th.Property("UTP", th.StringType),
+            ),
+        ),
+        th.Property(
+            "type",
+            th.StringType,
+            enum=[
+                "sale_condition",
+                "quote_condition",
+                "sip_generated_flag",
+                "financial_status_indicator",
+                "short_sale_restriction_indicator",
+                "settlement_condition",
+                "market_condition",
+                "trade_thru_exempt",
+            ],
+        ),
+        th.Property(
+            "update_rules",
+            th.ObjectType(
+                th.Property(
+                    "consolidated",
+                    th.ObjectType(
+                        th.Property("updates_high_low", th.BooleanType),
+                        th.Property("updates_open_close", th.BooleanType),
+                        th.Property("updates_volume", th.BooleanType),
+                    ),
+                ),
+                th.Property(
+                    "market_center",
+                    th.ObjectType(
+                        th.Property("updates_high_low", th.BooleanType),
+                        th.Property("updates_open_close", th.BooleanType),
+                        th.Property("updates_volume", th.BooleanType),
+                    ),
+                ),
+            ),
+        ),
+    ).to_dict()
+
+    def get_url(self, context: Context = None):
+        return f"{self.url_base}/v3/reference/conditions"
+
+
+class AllConditionCodesStream(BaseConditionCodesStream):
+    """All condition codes across all asset classes (no asset_class filter)."""
+
+    name = "condition_codes"
+
+
+class _SnapshotNormalizationMixin:
+    _last_quote_slugs = ("lastquote",)
+    _last_trade_slugs = ("lasttrade",)
+    _ohlc_slugs = ("day", "min", "prevday", "lastminute")
+
+    last_quote_map = {
+        "P": "ask_price",
+        "S": "ask_size",
+        "p": "bid_price",
+        "s": "bid_size",
+        "T": "ticker",
+        "t": "timestamp",
+        "X": "ask_exchange",
+        "x": "bid_exchange",
+        "a": "ask_price",
+        "b": "bid_price",
+        "i": "indicators",
+        "c": "conditions",
+        "f": "trf_timestamp",
+        "q": "sequence_number",
+        "y": "participant_timestamp",
+        "z": "tape",
+    }
+
+    last_trade_map = {
+        "p": "price",
+        "s": "size",
+        "T": "ticker",
+        "t": "timestamp",
+        "x": "exchange",
+        "X": "exchange",
+        "c": "conditions",
+        "i": "id",
+        "e": "correction",
+        "f": "trf_timestamp",
+        "q": "sequence_number",
+        "r": "trf_id",
+        "y": "participant_timestamp",
+        "z": "tape",
+    }
+
+    _ohlc_map = {
+        "o": "open",
+        "h": "high",
+        "l": "low",
+        "c": "close",
+        "v": "volume",
+        "vw": "vwap",
+        "av": "accumulated_volume",
+        "n": "transactions",
+        "t": "timestamp",
+        "otc": "otc",
+    }
+
+    @staticmethod
+    def _slug(key: str) -> str:
+        return key.replace("_", "").lower()
+
+    @classmethod
+    def _apply_mapping(cls, obj: dict, mapping: dict) -> None:
+        for old_key, new_key in mapping.items():
+            if old_key in obj:
+                if new_key not in obj:
+                    obj[new_key] = obj[old_key]
+                obj.pop(old_key, None)
+
+    def _normalize_last_quote(self, payload: dict) -> None:
+        has_upper_x = "X" in payload
+        has_lower_x = "x" in payload
+        for old_key, new_key in self.last_quote_map.items():
+            if old_key not in payload:
+                continue
+            if old_key in ("x", "X") and not (has_upper_x and has_lower_x):
+                new_key = "exchange"
+            if new_key not in payload:
+                payload[new_key] = payload[old_key]
+            payload.pop(old_key, None)
+
+    def _normalize_last_trade(self, payload: dict) -> None:
+        for old_key, new_key in self.last_trade_map.items():
+            if old_key not in payload:
+                continue
+            if new_key not in payload:
+                payload[new_key] = payload[old_key]
+            payload.pop(old_key, None)
+
+    def _normalize_snapshot_fields(self, row: Record) -> None:
+        for key in list(row.keys()):
+            if not isinstance(key, str):
+                continue
+            slug = self._slug(key)
+            payload = row.get(key)
+            if not isinstance(payload, dict):
+                continue
+            if slug in self._last_quote_slugs:
+                self._normalize_last_quote(payload)
+            elif slug in self._last_trade_slugs:
+                self._normalize_last_trade(payload)
+            elif slug in self._ohlc_slugs:
+                self._apply_mapping(payload, self._ohlc_map)
+
+    def post_process(self, row: Record, context: Context | None = None) -> dict | None:
+        self._normalize_snapshot_fields(row)
+        return super().post_process(row, context)
+
+
+class _TodaysChangePercentMixin:
+    def post_process(self, row: Record, context: Context | None = None) -> dict | None:
+        row = super().post_process(row, context)
+        self._apply_todays_change_percent(row)
+        return row
+
+    @staticmethod
+    def _apply_todays_change_percent(row: Record) -> None:
+        if "todays_change_perc" in row:
+            row["todays_change_percent"] = row.pop("todays_change_perc")
+        elif "todaysChangePerc" in row:
+            row["todays_change_percent"] = row.pop("todaysChangePerc")
+
+
+class UnifiedSnapshotStream(_SnapshotNormalizationMixin, MassiveRestStream):
+    """Retrieve unified snapshots of market data for multiple asset classes including stocks, options, forex,
     and cryptocurrencies in a single request. Not really useful given we have the other streams.
     """
 
     name = "unified_snapshot"
-    pass
 
 
-class BaseTopMarketMoversStream(MassiveRestStream):
-    """
-    Retrieve snapshot data highlighting the top 20 gainers or losers
+class BaseTopMarketMoversStream(
+    _SnapshotNormalizationMixin, _TodaysChangePercentMixin, MassiveRestStream
+):
+    """Retrieve snapshot data highlighting the top 20 gainers or losers
     Gainers are <stocks, forex, etc> with the largest percentage increase since the previous day’s close, and losers are those
     with the largest percentage decrease.
     """
@@ -396,12 +616,12 @@ class BaseTopMarketMoversStream(MassiveRestStream):
     primary_keys = ["updated", "ticker"]
     replication_key = "updated"
     replication_method = "INCREMENTAL"
-    is_timestamp_replication_key = True
+    is_timestamp_replication_key = False
 
     _use_cached_tickers_default = False
 
     schema = th.PropertiesList(
-        th.Property("updated", th.DateTimeType),
+        th.Property("updated", th.IntegerType),
         th.Property("ticker", th.StringType),
         th.Property("day", th.AnyType()),
         th.Property("last_quote", th.AnyType()),
@@ -410,12 +630,8 @@ class BaseTopMarketMoversStream(MassiveRestStream):
         th.Property("prev_day", th.AnyType()),
         th.Property("todays_change", th.NumberType),
         th.Property("todays_change_percent", th.NumberType),
-        th.Property("fair_market_value", th.BooleanType),
+        th.Property("fmv", th.NumberType),
     ).to_dict()
-
-    def __init__(self, tap):
-        super().__init__(tap)
-        self.tap = tap
 
     def get_records(self, context: Context | None) -> t.Iterable[dict[str, t.Any]]:
         if (
@@ -463,10 +679,50 @@ class BaseTopMarketMoversStream(MassiveRestStream):
         row["updated"] = self.safe_parse_datetime(row["updated"])
         return row
 
+class _NanosecondIncrementalMixin:
+    """Use integer nanoseconds for incremental replication keys."""
 
-class BaseTradeStream(BaseTickerPartitionStream):
-    """
-    Retrieve comprehensive, tick-level trade data for a specified stock ticker within a defined time range.
+    def get_starting_replication_key_value(
+        self, context: Context | None
+    ) -> t.Any | None:
+        if self.replication_method != "INCREMENTAL" or not self.replication_key:
+            return None
+
+        state = self.get_context_state(context)
+        state_replication_value = (
+            state.get("replication_key_value", state.get("starting_replication_value"))
+            if state
+            else None
+        )
+        cfg_value = self._cfg_starting_timestamp_value
+        start_date_config = self.config.get("start_date")
+
+        def _to_unix(value):
+            if value is None:
+                return None
+            dt = self.safe_parse_datetime(value)
+            if dt and self._unix_timestamp_unit:
+                return self.iso_to_unix_timestamp(
+                    dt.isoformat(), self._unix_timestamp_unit
+                )
+            if isinstance(value, (int, float, Decimal)):
+                return int(value)
+            return None
+
+        state_unix = _to_unix(state_replication_value)
+        cfg_unix = _to_unix(cfg_value)
+        start_date_unix = _to_unix(start_date_config)
+
+        candidates = [
+            v for v in (state_unix, cfg_unix, start_date_unix) if v is not None
+        ]
+        if candidates:
+            return max(candidates)
+        return None
+
+
+class BaseTradeStream(_NanosecondIncrementalMixin, BaseTickerPartitionStream):
+    """Retrieve comprehensive, tick-level trade data for a specified stock ticker within a defined time range.
     Each record includes price, size, exchange, trade conditions, and precise timestamp information.
     This granular data is foundational for constructing aggregated bars and performing in-depth analyses, as it captures
     every eligible trade that contributes to calculations of open, high, low, and close (OHLC) values.
@@ -499,7 +755,7 @@ class BaseTradeStream(BaseTickerPartitionStream):
     schema = th.PropertiesList(
         th.Property("id", th.StringType),
         th.Property("ticker", th.StringType),
-        th.Property("sip_timestamp", th.DateTimeType),
+        th.Property("sip_timestamp", th.IntegerType),
         th.Property("participant_timestamp", th.IntegerType),
         th.Property("price", th.NumberType),
         th.Property("size", th.NumberType),
@@ -512,18 +768,12 @@ class BaseTradeStream(BaseTickerPartitionStream):
         th.Property("exchange", th.IntegerType),
     ).to_dict()
 
-    def __init__(self, tap):
-        super().__init__(tap)
-        self.tap = tap
-
     def get_url(self, context: Context):
         ticker = context.get(self._ticker_param)
         return f"{self.url_base}/v3/trades/{ticker}"
 
     def post_process(self, row: Record, context: Context | None = None) -> dict | None:
-        row[self.replication_key] = self.safe_parse_datetime(
-            row[self.replication_key]
-        ).isoformat()
+        row[self.replication_key] = safe_int(row.get(self.replication_key))
         row["exchange"] = safe_int(row["exchange"])
         if "participant_timestamp" in row:
             row["participant_timestamp"] = safe_int(row["participant_timestamp"])
@@ -534,28 +784,72 @@ class BaseTradeStream(BaseTickerPartitionStream):
         return row
 
 
-class BaseLastTradeStream(BaseTickerPartitionStream):
-    primary_keys = ["t", "ticker", "q"]
-    replication_key = "t"
+class _LastQuoteTradeMappingMixin:
+    last_trade_map = {
+        "T": "ticker",
+        "c": "conditions",
+        "e": "correction",
+        "f": "trf_timestamp",
+        "i": "id",
+        "p": "price",
+        "q": "sequence_number",
+        "r": "trf_id",
+        "s": "size",
+        "t": "sip_timestamp",
+        "x": "exchange",
+        "y": "participant_timestamp",
+        "z": "tape",
+    }
+
+    last_quote_map = {
+        "T": "ticker",
+        "f": "trf_timestamp",
+        "q": "sequence_number",
+        "t": "sip_timestamp",
+        "y": "participant_timestamp",
+        "P": "ask_price",
+        "S": "ask_size",
+        "X": "ask_exchange",
+        "c": "conditions",
+        "i": "indicators",
+        "p": "bid_price",
+        "s": "bid_size",
+        "x": "bid_exchange",
+        "z": "tape",
+    }
+
+    @staticmethod
+    def _apply_key_map(row: Record, mapping: dict) -> dict:
+        mapped = {}
+        for key, value in row.items():
+            mapped[mapping.get(key, key)] = value
+        return mapped
+
+
+class BaseLastTradeStream(
+    _LastQuoteTradeMappingMixin, _NanosecondIncrementalMixin, BaseTickerPartitionStream
+):
+    primary_keys = ["ticker", "sip_timestamp", "sequence_number"]
+    replication_key = "sip_timestamp"
     replication_method = "INCREMENTAL"
     is_timestamp_replication_key = True
-
     _use_cached_tickers_default = True
+    _unix_timestamp_unit = "ns"
 
     schema = th.PropertiesList(
         th.Property("ticker", th.StringType),
-        th.Property("condition_codes", th.ArrayType(th.IntegerType())),
-        th.Property("trade_correction_indicator", th.IntegerType),
         th.Property("trf_timestamp", th.IntegerType),
-        th.Property("trade_id", th.StringType),
-        th.Property("price", th.NumberType),
         th.Property("sequence_number", th.IntegerType),
-        th.Property("trf_id", th.IntegerType),
-        th.Property("volume", th.NumberType),
         th.Property("sip_timestamp", th.IntegerType),
-        th.Property("exchange_id", th.IntegerType),
-        th.Property("exchange_participant_timestamp", th.IntegerType),
-        th.Property("tape_id", th.IntegerType),
+        th.Property("participant_timestamp", th.IntegerType),
+        th.Property("conditions", th.ArrayType(th.IntegerType)),
+        th.Property("correction", th.IntegerType),
+        th.Property("id", th.StringType),
+        th.Property("price", th.NumberType),
+        th.Property("trf_id", th.IntegerType),
+        th.Property("size", th.NumberType),
+        th.Property("exchange", th.IntegerType),
+        th.Property("tape", th.IntegerType),
     ).to_dict()
 
     def get_url(self, context: Context):
@@ -563,32 +857,13 @@ class BaseLastTradeStream(BaseTickerPartitionStream):
         return f"{self.url_base}/v2/last/trade/{ticker}"
 
     def post_process(self, row: Record, context: Context | None = None) -> dict | None:
-        key_map = {
-            "T": "ticker",
-            "c": "condition_codes",
-            "e": "trade_correction_indicator",
-            "f": "trf_timestamp",
-            "i": "trade_id",
-            "p": "price",
-            "q": "sequence_number",
-            "r": "trf_id",
-            "s": "volume",
-            "t": "sip_timestamp",
-            "x": "exchange_id",
-            "y": "exchange_participant_timestamp",
-            "z": "tape_id",
-        }
-
-        mapped_row = {key_map.get(k, k): v for k, v in row.items()}
-        row = mapped_row
-
-        row[self.replication_key] = self.safe_parse_datetime(
-            row[self.replication_key]
-        ).isoformat()
+        row = self._apply_key_map(row, self.last_trade_map)
+        if row.get("sip_timestamp") is not None:
+            row["sip_timestamp"] = safe_int(row["sip_timestamp"])
         return row
 
 
-class BaseQuoteStream(BaseTickerPartitionStream):
+class BaseQuoteStream(_NanosecondIncrementalMixin, BaseTickerPartitionStream):
     primary_keys = ["ticker", "sip_timestamp", "sequence_number"]
     replication_key = "sip_timestamp"
     replication_method = "INCREMENTAL"
@@ -610,9 +885,9 @@ class BaseQuoteStream(BaseTickerPartitionStream):
         th.Property("bid_size", th.NumberType),
         th.Property("conditions", th.ArrayType(th.IntegerType)),
         th.Property("indicators", th.ArrayType(th.IntegerType)),
-        th.Property("participant_timestamp", th.DateTimeType),
+        th.Property("participant_timestamp", th.IntegerType),
         th.Property("sequence_number", th.IntegerType),
-        th.Property("sip_timestamp", th.DateTimeType),
+        th.Property("sip_timestamp", th.IntegerType),
         th.Property("tape", th.IntegerType),
         th.Property("trf_timestamp", th.IntegerType),
     ).to_dict()
@@ -623,38 +898,36 @@ class BaseQuoteStream(BaseTickerPartitionStream):
 
     def post_process(self, row: Record, context: Context | None = None) -> dict | None:
         row["ticker"] = context.get(self._ticker_param)
-        row[self.replication_key] = self.safe_parse_datetime(
-            row[self.replication_key]
-        ).isoformat()
-        if "trf_timestamp" in row:
-            row["trf_timestamp"] = safe_int(row["trf_timestamp"])
+        row[self.replication_key] = safe_int(row.get(self.replication_key))
         return row
 
 
-class BaseLastQuoteStream(BaseTickerPartitionStream):
-    primary_keys = ["t", "ticker", "q"]
-    replication_key = "t"
+class BaseLastQuoteStream(
+    _LastQuoteTradeMappingMixin, _NanosecondIncrementalMixin, BaseTickerPartitionStream
+):
+    primary_keys = ["ticker", "sip_timestamp", "sequence_number"]
+    replication_key = "sip_timestamp"
     replication_method = "INCREMENTAL"
     is_timestamp_replication_key = True
 
     _use_cached_tickers_default = True
+    _unix_timestamp_unit = "ns"
 
     schema = th.PropertiesList(
         th.Property("ticker", th.StringType),
-        th.Property("P", th.NumberType),
-        th.Property("S", th.IntegerType),
-        th.Property("T", th.StringType),
-        th.Property("X", th.IntegerType),
-        th.Property("c", th.ArrayType(th.IntegerType)),
-        th.Property("f", th.IntegerType),  # TRF nanoseconds
-        th.Property("i", th.ArrayType(th.IntegerType)),
-        th.Property("p", th.NumberType),
-        th.Property("q", th.IntegerType),
-        th.Property("s", th.IntegerType),
-        th.Property("t", th.DateTimeType),  # SIP nanoseconds
-        th.Property("x", th.IntegerType),
-        th.Property("y", th.IntegerType),  # Participant ns
-        th.Property("z", th.IntegerType),
+        th.Property("trf_timestamp", th.IntegerType),
+        th.Property("sequence_number", th.IntegerType),
+        th.Property("sip_timestamp", th.IntegerType),
+        th.Property("participant_timestamp", th.IntegerType),
+        th.Property("ask_price", th.NumberType),
+        th.Property("ask_size", th.IntegerType),
+        th.Property("ask_exchange", th.IntegerType),
+        th.Property("conditions", th.ArrayType(th.IntegerType)),
+        th.Property("indicators", th.ArrayType(th.IntegerType)),
+        th.Property("bid_price", th.NumberType),
+        th.Property("bid_size", th.IntegerType),
+        th.Property("bid_exchange", th.IntegerType),
+        th.Property("tape", th.IntegerType),
     ).to_dict()
 
     def get_url(self, context: Context):
@@ -662,10 +935,10 @@ class BaseLastQuoteStream(BaseTickerPartitionStream):
         return f"{self.url_base}/v2/last/nbbo/{ticker}"
 
     def post_process(self, row: Record, context: Context | None = None) -> dict | None:
-        row["ticker"] = context.get(self._ticker_param)
-        row[self.replication_key] = self.safe_parse_datetime(
-            row[self.replication_key]
-        ).isoformat()
+        row = self._apply_key_map(row, self.last_quote_map)
+        row["ticker"] = row.get("ticker") or context.get(self._ticker_param)
+        if row.get("sip_timestamp") is not None:
+            row["sip_timestamp"] = safe_int(row["sip_timestamp"])
         return row
 
 
@@ -682,26 +955,34 @@ class BaseIndicatorStream(BaseTickerPartitionStream):
 
     indicator_type = None  # Must be set by subclass: "sma", "ema", "macd", "rsi"
 
-    schema = th.PropertiesList(
-        th.Property("timestamp", th.DateTimeType),  # Indicator value timestamp
-        th.Property("underlying_timestamp", th.DateTimeType),
-        th.Property("ticker", th.StringType),
-        th.Property("indicator", th.StringType),
-        th.Property("series_window_timespan", th.StringType),
-        th.Property("value", th.NumberType),
-        th.Property("underlying_ticker", th.StringType),
-        th.Property("underlying_open", th.NumberType),
-        th.Property("underlying_high", th.NumberType),
-        th.Property("underlying_low", th.NumberType),
-        th.Property("underlying_close", th.NumberType),
-        th.Property("underlying_volume", th.NumberType),
-        th.Property("underlying_vwap", th.NumberType),
-        th.Property("underlying_transactions", th.IntegerType),
-    ).to_dict()
+    @staticmethod
+    def _build_schema(include_macd_fields: bool = False) -> dict:
+        props = [
+            th.Property("timestamp", th.DateTimeType),  # Indicator value timestamp
+            th.Property("underlying_timestamp", th.DateTimeType),
+            th.Property("ticker", th.StringType),
+            th.Property("indicator", th.StringType),
+            th.Property("series_window_timespan", th.StringType),
+            th.Property("value", th.NumberType),
+            th.Property("underlying_ticker", th.StringType),
+            th.Property("underlying_open", th.NumberType),
+            th.Property("underlying_high", th.NumberType),
+            th.Property("underlying_low", th.NumberType),
+            th.Property("underlying_close", th.NumberType),
+            th.Property("underlying_volume", th.NumberType),
+            th.Property("underlying_vwap", th.NumberType),
+            th.Property("underlying_transactions", th.IntegerType),
+        ]
+        if include_macd_fields:
+            props.extend(
+                [
+                    th.Property("signal", th.NumberType),
+                    th.Property("histogram", th.NumberType),
+                ]
+            )
+        return th.PropertiesList(*props).to_dict()
 
-    def __init__(self, tap):
-        super().__init__(tap)
-        self.tap = tap
+    schema = _build_schema(False)
 
     @staticmethod
     def find_closest_agg(ts, agg_ts_map):
@@ -747,8 +1028,7 @@ class BaseIndicatorStream(BaseTickerPartitionStream):
                 ts = self.safe_parse_datetime(ts).isoformat()
 
             matching_agg = self.find_closest_agg(ts, agg_ts_map)
-
-            yield {
+            record = {
                 "ticker": record.get("ticker") or context.get(self._ticker_param),
                 "indicator": self.name,
                 "series_window_timespan": series_window_timespan,
@@ -768,3 +1048,7 @@ class BaseIndicatorStream(BaseTickerPartitionStream):
                     else None
                 ),
             }
+            if self.indicator_type == "macd":
+                record["signal"] = safe_decimal(value.get("signal"))
+                record["histogram"] = safe_decimal(value.get("histogram"))
+            yield record

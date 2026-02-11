@@ -10,6 +10,7 @@ from tap_massive.base_streams import (
     BaseQuoteStream,
     BaseTickerPartitionStream,
     BaseTradeStream,
+    _SnapshotNormalizationMixin,
 )
 from tap_massive.client import MassiveRestStream
 
@@ -49,10 +50,6 @@ class FuturesContractsStream(MassiveRestStream):
         th.Property("min_order_quantity", th.IntegerType),
         th.Property("max_order_quantity", th.IntegerType),
     ).to_dict()
-
-    def __init__(self, tap):
-        super().__init__(tap)
-        self.tap = tap
 
     def get_url(self, context: Context = None) -> str:
         return f"{self.url_base}/futures/vX/contracts"
@@ -100,10 +97,6 @@ class FuturesProductsStream(MassiveRestStream):
         th.Property("last_updated", th.StringType),
     ).to_dict()
 
-    def __init__(self, tap):
-        super().__init__(tap)
-        self.tap = tap
-
     def get_url(self, context: Context = None) -> str:
         return f"{self.url_base}/futures/vX/products"
 
@@ -128,18 +121,12 @@ class FuturesSchedulesStream(MassiveRestStream):
         th.Property("timestamp", th.StringType),
     ).to_dict()
 
-    def __init__(self, tap):
-        super().__init__(tap)
-        self.tap = tap
-
     def get_url(self, context: Context = None) -> str:
         return f"{self.url_base}/futures/vX/schedules"
 
 
 class FuturesCustomBarsStream(FuturesTickerPartitionStream, BaseCustomBarsStream):
     """Base class for futures bars streams."""
-
-    pass
 
 
 class FuturesBars1SecondStream(FuturesCustomBarsStream):
@@ -182,7 +169,7 @@ class FuturesQuoteStream(FuturesTickerPartitionStream, BaseQuoteStream):
     name = "futures_quotes"
 
 
-class FuturesContractsSnapshotStream(MassiveRestStream):
+class FuturesContractsSnapshotStream(_SnapshotNormalizationMixin, MassiveRestStream):
     """Stream for retrieving futures contracts snapshot data.
 
     Returns real-time snapshot data for futures contracts including

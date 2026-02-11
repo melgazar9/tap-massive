@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from singer_sdk import typing as th
 from singer_sdk.helpers.types import Context
-
 from tap_massive.client import MassiveRestStream
 
 
@@ -36,10 +35,6 @@ class TreasuryYieldStream(MassiveRestStream):
         th.Property("yield_30_year", th.NumberType),
     ).to_dict()
 
-    def __init__(self, tap):
-        super().__init__(tap)
-        self.tap = tap
-
     def get_url(self, context: Context = None):
         return f"{self.url_base}/fed/v1/treasury-yields"
 
@@ -70,10 +65,6 @@ class InflationStream(MassiveRestStream):
         th.Property("pce_core", th.NumberType),
         th.Property("pce_spending", th.NumberType),
     ).to_dict()
-
-    def __init__(self, tap):
-        super().__init__(tap)
-        self.tap = tap
 
     def get_url(self, context: Context = None):
         return f"{self.url_base}/fed/v1/inflation"
@@ -107,10 +98,6 @@ class InflationExpectationsStream(MassiveRestStream):
         th.Property("forward_years_5_to_10", th.NumberType),
     ).to_dict()
 
-    def __init__(self, tap):
-        super().__init__(tap)
-        self.tap = tap
-
     def get_url(self, context: Context = None):
         return f"{self.url_base}/fed/v1/inflation-expectations"
 
@@ -140,10 +127,6 @@ class LaborMarketStream(MassiveRestStream):
         th.Property("labor_force_participation_rate", th.NumberType),
         th.Property("avg_hourly_earnings", th.NumberType),
     ).to_dict()
-
-    def __init__(self, tap):
-        super().__init__(tap)
-        self.tap = tap
 
     def get_url(self, context: Context = None):
         return f"{self.url_base}/fed/v1/labor-market"

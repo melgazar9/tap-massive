@@ -1,9 +1,8 @@
-version: 1
 send_anonymous_usage_stats: true
+
 project_id: "tap-massive"
 
 default_environment: test
-
 environments:
 - name: test
 
@@ -33,10 +32,11 @@ plugins:
       description: Initial date to start extracting data from
 
     select:
+      # --- Stocks ---
       - stock_tickers.*
       - stock_ticker_details.*
       - stock_ticker_types.*
-      - related_companies.*
+      - stock_related_tickers.*
 #      - stock_bars_1_second.*
 #      - stock_bars_30_second.*
 #      - stock_bars_1_minute.*
@@ -50,8 +50,13 @@ plugins:
       - stock_daily_ticker_summary.*
       - stock_previous_day_bar.*
       - stock_top_market_movers.*
+      - stock_ticker_snapshot.*
+#      - stock_full_market_snapshot.*
+#      - stock_unified_snapshot.*
       - stock_trades.*
+      - stock_last_trade.*
       - stock_quotes.*
+      - stock_last_quote.*
       - stock_sma.*
       - stock_ema.*
       - stock_macd.*
@@ -60,23 +65,39 @@ plugins:
       - market_holidays.*
       - market_status.*
       - condition_codes.*
-      - ipos.*
-      - splits.*
-      - dividends.*
-      - ticker_events.*
-      - financials.*
-      - short_interest.*
-      - short_volume.*
-      - news.*
+      - stock_ipos.*
+#      - stock_splits_deprecated.*
+      - stock_splits.*
+#      - stock_dividends_deprecated.*
+      - stock_dividends.*
+      - stock_ticker_events.*
+
+      # --- Fundamentals ---
+#      - stock_financials_deprecated.*
+      - stock_balance_sheets.*
+      - stock_cash_flow_statements.*
+      - stock_income_statements.*
+      - stock_ratios.*
+      - stock_short_interest.*
+      - stock_short_volume.*
+      - stock_float.*
+      - stock_10k_sections.*
+      - stock_risk_factors.*
+      - stock_risk_categories.*
+      - stock_news.*
+
+      # --- Economy ---
       - treasury_yields.*
       - inflation.*
       - inflation_expectations.*
       - labor_market.*
+
+      # --- Options ---
       - options_contracts.*
-      - options_contract_overview.*
-      - options_bars_1_second.*
-      - options_bars_1_minute.*
-      - options_bars_5_minute.*
+#      - options_contract_overview.*  # skip in test; manual later for expired contracts
+#      - options_bars_1_second.*
+#      - options_bars_1_minute.*
+#      - options_bars_5_minute.*
       - options_bars_1_hour.*
       - options_daily_ticker_summary.*
       - options_previous_day_bar.*
@@ -85,11 +106,14 @@ plugins:
       - options_last_trade.*
       - options_contract_snapshot.*
       - options_chain_snapshot.*
-      - options_unified_snapshot.*
+#      - options_unified_snapshot.*  # large; skip for fast test runs
       - options_sma.*
       - options_ema.*
       - options_macd.*
       - options_rsi.*
+      - options_ticker_types.*
+      - options_exchanges.*
+      - options_condition_codes.*
 
     config:
       # set this for a global start date for all streams -- will be overridden by the streams incremental state if that's more recent.
@@ -98,38 +122,34 @@ plugins:
       # To set start_date earlier than this start date for a specific stream, either comment this start_date block out
       # or set it earlier than the streams start timestamp. The reason for this is because of incremental builds -- it
       # takes the max between this global config and the streams timestamp config param to get the starting timestamp.
-      start_date: '2025-01-20T00:00:00Z'
+      # --- Global ---
+      start_date: '2025-01-05T00:00:00Z'
 
       api_key: ${MASSIVE_API_KEY}
       base_url: https://api.massive.com
 
+      # --- Stocks ---
       # The tickers that are set here persist across all streams that require a single stock ticker as input.
       # To run different tickers across different streams you need to call the tap N times,
       # where N is the number of distinct groups of ticker.
       stock_tickers:
         query_params:
           sort: ticker
+          limit: 1000
         select_tickers:
           - "AAPL"
-
-      option_tickers:
-        query_params:
-          expired: true    # Include ALL contracts (active + expired)
-          sort: ticker
-        select_tickers:
-          - "AAPL"
-          - "META"
-
+      stock_ticker_details:
+        query_params: {}
       stock_bars_1_second:
         path_params:
           multiplier: 1
           timespan: "second"
-          from: "2025-01-06"
+          from: "2025-01-05"
           to: "2025-01-07"
         query_params:
           adjusted: true
           sort: "asc"
-          limit: 5000
+          limit: 50000
         other_params:
           use_cached_tickers: true
 
@@ -137,12 +157,12 @@ plugins:
         path_params:
           multiplier: 30
           timespan: "second"
-          from: "2025-01-06"
+          from: "2025-01-05"
           to: "2025-01-07"
         query_params:
           adjusted: true
           sort: "asc"
-          limit: 5000
+          limit: 50000
         other_params:
           use_cached_tickers: true
 
@@ -150,12 +170,12 @@ plugins:
         path_params:
           multiplier: 1
           timespan: "minute"
-          from: "2025-01-06"
+          from: "2025-01-05"
           to: "2025-01-07"
         query_params:
           adjusted: true
           sort: "asc"
-          limit: 5000
+          limit: 50000
         other_params:
           use_cached_tickers: true
 
@@ -163,12 +183,12 @@ plugins:
         path_params:
           multiplier: 5
           timespan: "minute"
-          from: "2025-01-06"
+          from: "2025-01-05"
           to: "2025-01-07"
         query_params:
           adjusted: true
           sort: "asc"
-          limit: 5000
+          limit: 50000
         other_params:
           use_cached_tickers: true
 
@@ -176,12 +196,12 @@ plugins:
         path_params:
           multiplier: 30
           timespan: "minute"
-          from: "2025-01-06"
+          from: "2025-01-05"
           to: "2025-01-07"
         query_params:
           adjusted: true
           sort: "asc"
-          limit: 5000
+          limit: 50000
         other_params:
           use_cached_tickers: true
 
@@ -189,12 +209,12 @@ plugins:
         path_params:
           multiplier: 1
           timespan: "hour"
-          from: "2025-01-06"
+          from: "2025-01-05"
           to: "2025-01-07"
         query_params:
           adjusted: true
           sort: "asc"
-          limit: 5000
+          limit: 50000
         other_params:
           use_cached_tickers: true
 
@@ -202,8 +222,8 @@ plugins:
         path_params:
           multiplier: 1
           timespan: "day"
-          from: "2025-01-20"
-          to: "2025-01-21"
+          from: "2025-01-05"
+          to: "2025-01-07"
         query_params:
           adjusted: true
           sort: "asc"
@@ -215,12 +235,12 @@ plugins:
         path_params:
           multiplier: 1
           timespan: "week"
-          from: "2025-01-06"
-          to: "2025-05-09"
+          from: "2025-01-05"
+          to: "2025-01-07"
         query_params:
           adjusted: true
           sort: "asc"
-          limit: 5000
+          limit: 50000
         other_params:
           use_cached_tickers: true
 
@@ -228,28 +248,28 @@ plugins:
         path_params:
           multiplier: 1
           timespan: "month"
-          from: "2023-01-06"
-          to: "2025-06-09"
+          from: "2025-01-05"
+          to: "2025-01-07"
         query_params:
           adjusted: true
           sort: "asc"
-          limit: 5000
+          limit: 50000
         other_params:
           use_cached_tickers: true
 
-      daily_market_summary:
+      stock_daily_market_summary:
         path_params:
-          date: "2025-01-20"
+          date: "2025-01-05"
         query_params:
           adjusted: true
-          include_otc: true
+          include_otc: false
           limit: 50000
         other_params:
           loop_over_dates_gte_date: false
 
-      daily_ticker_summary:
+      stock_daily_ticker_summary:
         path_params:
-          date: "2025-01-20"
+          date: "2025-01-05"
         query_params:
           adjusted: true
           limit: 50000
@@ -257,162 +277,279 @@ plugins:
           loop_over_dates_gte_date: false
           use_cached_tickers: true
 
-      top_market_movers:
+      stock_top_market_movers:
         query_params:
           direction: "gainers"  # set to "" or "both" to get both directions
           include_otc: false
           limit: 50000
 
+      stock_ticker_snapshot:
+        other_params:
+          use_cached_tickers: true
+
+      stock_full_market_snapshot:
+        query_params:
+          include_otc: false
+
+      stock_unified_snapshot:
+        query_params:
+          type: "stocks"
+          limit: 250
+
       stock_trades:
         query_params:
           sort: timestamp
           order: "asc"
-          timestamp__gte: "2025-01-20T22:59:00Z"
-          timestamp__lte: "2025-01-20T23:59:00Z"
+          timestamp__gte: "2025-01-05T00:00:00Z"
+          timestamp__lte: "2025-01-07T23:59:59Z"
           limit: 50000
+        other_params:
+          use_cached_tickers: true
+
+      stock_last_trade:
         other_params:
           use_cached_tickers: true
 
       stock_quotes:
         query_params:
-          timestamp__gte: "2025-01-20T23:59:00Z"
-          timestamp__lte: "2025-01-21T00:59:00Z"
+          timestamp__gte: "2025-01-05T00:00:00Z"
+          timestamp__lte: "2025-01-07T23:59:59Z"
           sort: timestamp
           order: asc
           limit: 50000
         other_params:
           use_cached_tickers: true
 
+      stock_last_quote:
+        other_params:
+          use_cached_tickers: true
+
       stock_sma:
         query_params:
-          timestamp__gte: "2025-01-01T00:00:00.999Z"
-          timestamp__lte: "2025-01-22T01:00:00.999Z"
+          timestamp__gte: "2025-01-05T00:00:00Z"
+          timestamp__lte: "2025-01-07T23:59:59Z"
           order: asc
           timespan: day
           window: 10
           series_type: close
-          expand_underlying: true
+          expand_underlying: false
           limit: 5000
         other_params:
           use_cached_tickers: true
 
       stock_ema:
         query_params:
-          timestamp__gte: "2025-01-01T00:00:00.999Z"
-          timestamp__lte: "2025-01-22T01:00:00.999Z"
+          timestamp__gte: "2025-01-05T00:00:00Z"
+          timestamp__lte: "2025-01-07T23:59:59Z"
           order: asc
           timespan: day
           window: 10
           series_type: close
-          expand_underlying: true
+          expand_underlying: false
           limit: 5000
         other_params:
           use_cached_tickers: true
 
       stock_macd:
         query_params:
-          timestamp__gte: "2025-01-01T00:00:00.999Z"
-          timestamp__lte: "2025-01-22T01:00:00.999Z"
+          timestamp__gte: "2025-01-05T00:00:00Z"
+          timestamp__lte: "2025-01-07T23:59:59Z"
           order: asc
           timespan: day
           short_window: 12
           long_window: 26
           signal_window: 9
           series_type: close
-          expand_underlying: true
+          expand_underlying: false
           limit: 5000
         other_params:
           use_cached_tickers: true
 
       stock_rsi:
         query_params:
-          timestamp__gte: "2025-01-01T00:00:00.999Z"
-          timestamp__lte: "2025-01-30T01:00:00.999Z"
+          timestamp__gte: "2025-01-05T00:00:00Z"
+          timestamp__lte: "2025-01-07T23:59:59Z"
           order: "asc"
           timespan: day
           window: 18
           series_type: close
-          expand_underlying: true
+          expand_underlying: false
           limit: 5000
 
-      ipos:
+      stock_ipos:
         query_params:
-          listing_date__gte: "2025-01-01"
-          listing_date__lte: "2025-05-30"
+          listing_date__gte: "2025-01-05"
+          listing_date__lte: "2025-01-07"
+          limit: 1000
 
-      splits:
+      stock_splits_deprecated:
         query_params:
-          execution_date__gte: "2025-01-21"
+          execution_date__gte: "2025-01-05"
+          execution_date__lte: "2025-01-07"
           limit: 1000
           order: asc
 
-      dividends:
+      stock_splits:
         query_params:
-          ex_dividend_date__gte: "2025-01-01"
-          ex_dividend_date__lte: "2025-01-30"
+          execution_date__gte: "2025-01-05"
+          execution_date__lte: "2025-01-07"
+          limit: 5000
+          order: asc
+
+      stock_dividends_deprecated:
+        query_params:
+          ex_dividend_date__gte: "2025-01-05"
+          ex_dividend_date__lte: "2025-01-07"
           order: asc
           limit: 1000
 
-      financials:
+      stock_dividends:
         query_params:
-          filing_date__gte: "2025-01-01"
-          filing_date__lte: "2025-02-01"
+          ex_dividend_date__gte: "2025-01-05"
+          ex_dividend_date__lte: "2025-01-07"
+          order: asc
+          limit: 5000
+
+      stock_ticker_events:
+        other_params:
+          use_cached_tickers: true
+
+      # --- Fundamentals ---
+      stock_financials_deprecated:
+        query_params:
+          filing_date__gte: "2025-01-05"
+          filing_date__lte: "2025-01-07"
           order: asc
           include_sources: true
           limit: 100
 
-      short_interest:
+      stock_balance_sheets:
         query_params:
-          settlement_date__gte: "2025-07-01"
-          limit: 10000
-        other_params:
-          use_cached_tickers: true
-
-      short_volume:
-        query_params:
-          date__gte: "2025-07-15"
-          date__lte: "2025-08-18"
+          filing_date__gte: "2025-01-05"
+          filing_date__lte: "2025-01-07"
+          timeframe: "quarterly"
           order: asc
-          limit: 10000
-        other_params:
-          use_cached_tickers: true
+          limit: 50000
 
-      news:
+      stock_cash_flow_statements:
         query_params:
-          published_utc__gte: "2025-05-21"
-          published_utc__lte: "2025-05-22"
+          filing_date__gte: "2025-01-05"
+          filing_date__lte: "2025-01-07"
+          timeframe: "quarterly"
           order: asc
+          limit: 50000
+
+      stock_income_statements:
+        query_params:
+          filing_date__gte: "2025-01-05"
+          filing_date__lte: "2025-01-07"
+          timeframe: "quarterly"
+          order: asc
+          limit: 50000
+
+      stock_ratios:
+        query_params:
+          order: asc
+          limit: 50000
+
+      stock_short_interest:
+        query_params:
+          settlement_date__gte: "2025-01-05"
+          settlement_date__lte: "2025-01-07"
+          limit: 50000
         other_params:
           use_cached_tickers: true
 
+      stock_short_volume:
+        query_params:
+          date__gte: "2025-01-05"
+          date__lte: "2025-01-07"
+          order: asc
+          limit: 50000
+        other_params:
+          use_cached_tickers: true
+
+      stock_float:
+        other_params:
+          use_cached_tickers: true
+
+      stock_10k_sections:
+        query_params:
+          filing_date__gte: "2025-01-05"
+          filing_date__lte: "2025-01-07"
+          limit: 9999
+        other_params:
+          use_cached_tickers: true
+
+      stock_risk_factors:
+        query_params:
+          filing_date__gte: "2025-01-05"
+          filing_date__lte: "2025-01-07"
+          limit: 49999
+        other_params:
+          use_cached_tickers: true
+
+      stock_risk_categories: {}
+
+      stock_news:
+        query_params:
+          published_utc__gte: "2025-01-05"
+          published_utc__lte: "2025-01-07"
+          order: asc
+          limit: 1000
+        other_params:
+          use_cached_tickers: true
+
+      # --- Economy ---
       # earliest start date is 1962-01-02 per documentation
       treasury_yields:
         query_params:
-          date__gte: "2025-05-01"
-          date__lte: "2025-05-30"
+          date__gte: "2025-01-05"
+          date__lte: "2025-01-07"
           limit: 50000
 
       # earliest start date is 1947-01-01 per documentation
       inflation:
         query_params:
-          date__gte: "1995-01-01"
-          date__lte: "2025-06-30"
+          date__gte: "2025-01-05"
+          date__lte: "2025-01-07"
           limit: 50000
 
       # earliest start date is 1982-01-01 per documentation
       inflation_expectations:
         query_params:
-          date__gte: "1982-01-01"
-          date__lte: "2025-06-30"
+          date__gte: "2025-01-05"
+          date__lte: "2025-01-07"
           limit: 50000
 
+      # earliest start date is 1948-01-01 per documentation
+      labor_market:
+        query_params:
+          date__gte: "2025-01-05"
+          date__lte: "2025-01-07"
+          limit: 50000
+
+      # --- Options ---
+      # The tickers that are set here persist across all streams that require a single options ticker as input.
+      # To run different tickers across different streams you need to call the tap N times,
+      # where N is the number of distinct groups of ticker.
+      option_tickers:
+        query_params:
+          expired: false   # Only active contracts
+          sort: ticker
+        select_tickers:
+          - "AAPL"
+
       options_contract_overview:
+        query_params: {}
         other_params:
           use_cached_tickers: true
 
       options_contracts:
         query_params:
-          expired: true   # include active + expired contracts
+          expiration_date__gte: "2026-02-13"
+          expiration_date__lte: "2026-02-13"
+          expired: false   # active contracts only for test run
           sort: ticker
           order: asc
           limit: 1000
@@ -421,7 +558,7 @@ plugins:
         path_params:
           multiplier: 1
           timespan: "second"
-          from: "2025-01-06"
+          from: "2025-01-05"
           to: "2025-01-07"
         query_params:
           adjusted: true
@@ -432,7 +569,7 @@ plugins:
         path_params:
           multiplier: 30
           timespan: "second"
-          from: "2025-01-06"
+          from: "2025-01-05"
           to: "2025-01-07"
         query_params:
           adjusted: true
@@ -443,7 +580,7 @@ plugins:
         path_params:
           multiplier: 1
           timespan: "minute"
-          from: "2025-01-06"
+          from: "2025-01-05"
           to: "2025-01-07"
         query_params:
           adjusted: true
@@ -454,7 +591,7 @@ plugins:
         path_params:
           multiplier: 5
           timespan: "minute"
-          from: "2025-01-06"
+          from: "2025-01-05"
           to: "2025-01-07"
         query_params:
           adjusted: true
@@ -465,7 +602,7 @@ plugins:
         path_params:
           multiplier: 30
           timespan: "minute"
-          from: "2025-01-06"
+          from: "2025-01-05"
           to: "2025-01-07"
         query_params:
           adjusted: true
@@ -476,7 +613,7 @@ plugins:
         path_params:
           multiplier: 1
           timespan: "hour"
-          from: "2025-01-06"
+          from: "2025-01-05"
           to: "2025-01-07"
         query_params:
           adjusted: true
@@ -487,8 +624,8 @@ plugins:
         path_params:
           multiplier: 1
           timespan: "day"
-          from: "2025-01-06"
-          to: "2025-01-08"
+          from: "2025-01-05"
+          to: "2025-01-07"
         query_params:
           adjusted: true
           sort: "asc"
@@ -498,8 +635,8 @@ plugins:
         path_params:
           multiplier: 1
           timespan: "week"
-          from: "2025-01-06"
-          to: "2025-05-09"
+          from: "2025-01-05"
+          to: "2025-01-07"
         query_params:
           adjusted: true
           sort: "asc"
@@ -509,8 +646,8 @@ plugins:
         path_params:
           multiplier: 1
           timespan: "month"
-          from: "2023-01-06"
-          to: "2025-06-09"
+          from: "2025-01-05"
+          to: "2025-01-07"
         query_params:
           adjusted: true
           sort: "asc"
@@ -518,11 +655,11 @@ plugins:
 
       options_daily_ticker_summary:
         path_params:
-          date: "2025-08-18"
+          date: "2026-02-09"
         query_params:
           adjusted: true
         other_params:
-          loop_over_dates_gte_date: true
+          loop_over_dates_gte_date: false
           use_cached_tickers: true
 
       options_previous_day_bar:
@@ -535,14 +672,14 @@ plugins:
         query_params:
           sort: timestamp
           order: "asc"
-          timestamp__gte: "2025-08-17T22:59:00Z"
-          timestamp__lte: "2025-08-18T23:59:00Z"
+          timestamp__gte: "2026-02-09T00:00:00Z"
+          timestamp__lte: "2026-02-10T23:59:59Z"
           limit: 50000
 
       options_quotes:
         query_params:
-          timestamp__gte: "2025-05-18T23:59:00Z"
-          timestamp__lte: "2025-08-19T00:59:00Z"
+          timestamp__gte: "2026-02-09T00:00:00Z"
+          timestamp__lte: "2026-02-10T23:59:59Z"
           sort: timestamp
           order: asc
           limit: 50000
@@ -559,65 +696,60 @@ plugins:
         path_params:
           underlyingAsset: "AAPL"
         query_params:
+          expiration_date__gte: "2026-02-13"
+          expiration_date__lte: "2026-02-13"
           limit: 250
 
       options_sma:
         query_params:
-          timestamp__gte: "2025-01-20T00:00:00.999Z"
-          timestamp__lte: "2025-01-22T01:00:00.999Z"
+          timestamp__gte: "2026-02-09T00:00:00Z"
+          timestamp__lte: "2026-02-10T23:59:59Z"
           order: asc
           timespan: day
           window: 10
           series_type: close
-          expand_underlying: true
+          expand_underlying: false
           limit: 5000
 
       options_ema:
         query_params:
-          timestamp__gte: "2025-01-20T00:00:00.999Z"
-          timestamp__lte: "2025-01-22T01:00:00.999Z"
+          timestamp__gte: "2026-02-09T00:00:00Z"
+          timestamp__lte: "2026-02-10T23:59:59Z"
           order: asc
           timespan: day
           window: 10
           series_type: close
-          expand_underlying: true
+          expand_underlying: false
           limit: 5000
 
       options_macd:
         query_params:
-          timestamp__gte: "2025-01-20T00:00:00.999Z"
-          timestamp__lte: "2025-01-22T01:00:00.999Z"
+          timestamp__gte: "2026-02-09T00:00:00Z"
+          timestamp__lte: "2026-02-10T23:59:59Z"
           order: asc
           timespan: day
           short_window: 12
           long_window: 26
           signal_window: 9
           series_type: close
-          expand_underlying: true
+          expand_underlying: false
           limit: 5000
 
       options_rsi:
         query_params:
-          timestamp__gte: "2025-01-20T00:00:00.999Z"
-          timestamp__lte: "2025-01-22T01:00:00.999Z"
+          timestamp__gte: "2026-02-09T00:00:00Z"
+          timestamp__lte: "2026-02-10T23:59:59Z"
           order: "asc"
           timespan: day
           window: 18
           series_type: close
-          expand_underlying: true
+          expand_underlying: false
           limit: 5000
 
       options_unified_snapshot:
         query_params:
           type: options
           limit: 250
-
-      # earliest start date is 1948-01-01 per documentation
-      labor_market:
-        query_params:
-          date__gte: "2025-01-01"
-          date__lte: "2026-02-28"
-          limit: 50000
 
   loaders:
   - name: target-jsonl

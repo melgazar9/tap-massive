@@ -8,6 +8,11 @@ import typing as t
 from singer_sdk import Tap
 from singer_sdk import typing as th
 
+from tap_massive.base_streams import (
+    AllConditionCodesStream,
+    AllExchangesStream,
+    AllTickerTypesStream,
+)
 from tap_massive.crypto_streams import (
     CryptoBars1DayStream,
     CryptoBars1HourStream,
@@ -60,6 +65,20 @@ from tap_massive.forex_streams import (
     ForexTickerStream,
     ForexTopMarketMoversStream,
 )
+from tap_massive.fundamental_streams import (
+    Stock10KSectionsStream,
+    StockBalanceSheetsStream,
+    StockCashFlowStatementsStream,
+    StockFinancialsDeprecatedStream,
+    StockFloatStream,
+    StockIncomeStatementsStream,
+    StockNewsStream,
+    StockRatiosStream,
+    StockRiskCategoriesStream,
+    StockRiskFactorsStream,
+    StockShortInterestStream,
+    StockShortVolumeStream,
+)
 from tap_massive.futures_streams import (
     FuturesBars1DayStream,
     FuturesBars1HourStream,
@@ -104,38 +123,31 @@ from tap_massive.option_streams import (
     OptionsBars30MinuteStream,
     OptionsBars30SecondStream,
     OptionsChainSnapshotStream,
+    OptionsConditionCodesStream,
     OptionsContractOverviewStream,
     OptionsContractSnapshotStream,
     OptionsContractsStream,
     OptionsDailyTickerSummaryStream,
     OptionsEmaStream,
+    OptionsExchangesStream,
     OptionsLastTradeStream,
     OptionsMACDStream,
     OptionsPreviousDayBarStream,
     OptionsQuoteStream,
     OptionsRSIStream,
     OptionsSmaStream,
+    OptionsTickerTypesStream,
     OptionsTradeStream,
     OptionsUnifiedSnapshotStream,
 )
 from tap_massive.stock_streams import (
-    ConditionCodesStream,
-    DividendsStream,
     EmaStream,
-    ExchangesStream,
-    FinancialsStream,
-    IPOsStream,
     MACDStream,
     MarketHolidaysStream,
     MarketStatusStream,
     MassiveRestStream,
-    NewsStream,
-    RelatedCompaniesStream,
     RSIStream,
-    ShortInterestStream,
-    ShortVolumeStream,
     SmaStream,
-    SplitsStream,
     StockBars1DayStream,
     StockBars1HourStream,
     StockBars1MinuteStream,
@@ -145,16 +157,29 @@ from tap_massive.stock_streams import (
     StockBars5MinuteStream,
     StockBars30MinuteStream,
     StockBars30SecondStream,
+    StockConditionCodesStream,
     StockDailyMarketSummaryStream,
     StockDailyTickerSummaryStream,
+    StockDividendsDeprecatedStream,
+    StockDividendsStream,
+    StockExchangesStream,
+    StockFullMarketSnapshotStream,
+    StockIPOsStream,
+    StockLastQuoteStream,
+    StockLastTradeStream,
     StockPreviousDayBarSummaryStream,
+    StockQuoteStream,
+    StockRelatedTickersStream,
+    StockSplitsDeprecatedStream,
+    StockSplitsStream,
     StockTickerDetailsStream,
+    StockTickerEventsStream,
     StockTickerSnapshotStream,
     StockTickerStream,
+    StockTickerTypesStream,
     StockTopMarketMoversStream,
     StockTradeStream,
-    TickerEventsStream,
-    TickerTypesStream,
+    StockUnifiedSnapshotStream,
 )
 
 
@@ -177,27 +202,27 @@ class TapMassive(Tap):
 
     # Option ticker caching
     _cached_option_tickers: t.List[dict] | None = None
-    _option_tickers_stream_instance: "OptionsContractsStream" | None = None
+    _option_tickers_stream_instance: OptionsContractsStream | None = None
     _option_tickers_lock = threading.Lock()
 
     # Forex ticker caching
     _cached_forex_tickers: t.List[dict] | None = None
-    _forex_tickers_stream_instance: "ForexTickerStream" | None = None
+    _forex_tickers_stream_instance: ForexTickerStream | None = None
     _forex_tickers_lock = threading.Lock()
 
     # Crypto ticker caching
     _cached_crypto_tickers: t.List[dict] | None = None
-    _crypto_tickers_stream_instance: "CryptoTickerStream" | None = None
+    _crypto_tickers_stream_instance: CryptoTickerStream | None = None
     _crypto_tickers_lock = threading.Lock()
 
     # Indices ticker caching
     _cached_indices_tickers: t.List[dict] | None = None
-    _indices_tickers_stream_instance: "IndicesTickerStream" | None = None
+    _indices_tickers_stream_instance: IndicesTickerStream | None = None
     _indices_tickers_lock = threading.Lock()
 
     # Futures ticker caching
     _cached_futures_tickers: t.List[dict] | None = None
-    _futures_tickers_stream_instance: "FuturesContractsStream" | None = None
+    _futures_tickers_stream_instance: FuturesContractsStream | None = None
     _futures_tickers_lock = threading.Lock()
 
     # Stock methods
@@ -222,7 +247,7 @@ class TapMassive(Tap):
         return self._cached_stock_tickers
 
     # Option methods
-    def get_option_tickers_stream(self) -> "OptionsContractsStream":
+    def get_option_tickers_stream(self) -> OptionsContractsStream:
         if self._option_tickers_stream_instance is None:
             self.logger.info("Creating OptionsContractsStream instance...")
             self._option_tickers_stream_instance = OptionsContractsStream(self)
@@ -243,7 +268,7 @@ class TapMassive(Tap):
         return self._cached_option_tickers
 
     # Forex methods
-    def get_forex_tickers_stream(self) -> "ForexTickerStream":
+    def get_forex_tickers_stream(self) -> ForexTickerStream:
         if self._forex_tickers_stream_instance is None:
             self.logger.info("Creating ForexTickerStream instance...")
             self._forex_tickers_stream_instance = ForexTickerStream(self)
@@ -264,7 +289,7 @@ class TapMassive(Tap):
         return self._cached_forex_tickers
 
     # Crypto methods
-    def get_crypto_tickers_stream(self) -> "CryptoTickerStream":
+    def get_crypto_tickers_stream(self) -> CryptoTickerStream:
         if self._crypto_tickers_stream_instance is None:
             self.logger.info("Creating CryptoTickerStream instance...")
             self._crypto_tickers_stream_instance = CryptoTickerStream(self)
@@ -285,7 +310,7 @@ class TapMassive(Tap):
         return self._cached_crypto_tickers
 
     # Indices methods
-    def get_indices_tickers_stream(self) -> "IndicesTickerStream":
+    def get_indices_tickers_stream(self) -> IndicesTickerStream:
         if self._indices_tickers_stream_instance is None:
             self.logger.info("Creating IndicesTickerStream instance...")
             self._indices_tickers_stream_instance = IndicesTickerStream(self)
@@ -306,7 +331,7 @@ class TapMassive(Tap):
         return self._cached_indices_tickers
 
     # Futures methods
-    def get_futures_tickers_stream(self) -> "FuturesContractsStream":
+    def get_futures_tickers_stream(self) -> FuturesContractsStream:
         if self._futures_tickers_stream_instance is None:
             self.logger.info("Creating FuturesContractsStream instance...")
             self._futures_tickers_stream_instance = FuturesContractsStream(self)
@@ -333,30 +358,49 @@ class TapMassive(Tap):
             # Stock streams
             stock_tickers_stream,
             StockTickerDetailsStream(self),
-            TickerTypesStream(self),
-            RelatedCompaniesStream(self),
+            StockTickerTypesStream(self),
+            StockRelatedTickersStream(self),
             StockDailyMarketSummaryStream(self),
             StockDailyTickerSummaryStream(self),
             StockPreviousDayBarSummaryStream(self),
             StockTopMarketMoversStream(self),
             StockTickerSnapshotStream(self),
+            StockFullMarketSnapshotStream(self),
+            StockUnifiedSnapshotStream(self),
             StockTradeStream(self),
+            StockLastTradeStream(self),
+            StockQuoteStream(self),
+            StockLastQuoteStream(self),
             SmaStream(self),
             EmaStream(self),
             MACDStream(self),
             RSIStream(self),
-            ExchangesStream(self),
+            # Cross-asset reference streams (All + Stock-specific)
+            AllTickerTypesStream(self),
+            AllExchangesStream(self),
+            AllConditionCodesStream(self),
+            StockExchangesStream(self),
+            StockConditionCodesStream(self),
             MarketHolidaysStream(self),
             MarketStatusStream(self),
-            ConditionCodesStream(self),
-            IPOsStream(self),
-            SplitsStream(self),
-            DividendsStream(self),
-            TickerEventsStream(self),
-            FinancialsStream(self),
-            ShortInterestStream(self),
-            ShortVolumeStream(self),
-            NewsStream(self),
+            StockIPOsStream(self),
+            StockSplitsDeprecatedStream(self),
+            StockSplitsStream(self),
+            StockDividendsDeprecatedStream(self),
+            StockDividendsStream(self),
+            StockTickerEventsStream(self),
+            StockFinancialsDeprecatedStream(self),
+            StockBalanceSheetsStream(self),
+            StockCashFlowStatementsStream(self),
+            StockIncomeStatementsStream(self),
+            StockRatiosStream(self),
+            StockShortInterestStream(self),
+            StockShortVolumeStream(self),
+            StockFloatStream(self),
+            Stock10KSectionsStream(self),
+            StockRiskFactorsStream(self),
+            StockRiskCategoriesStream(self),
+            StockNewsStream(self),
             StockBars1SecondStream(self),
             StockBars30SecondStream(self),
             StockBars1MinuteStream(self),
@@ -369,6 +413,9 @@ class TapMassive(Tap):
             # Options streams
             OptionsContractsStream(self),
             OptionsContractOverviewStream(self),
+            OptionsTickerTypesStream(self),
+            OptionsExchangesStream(self),
+            OptionsConditionCodesStream(self),
             OptionsBars1SecondStream(self),
             OptionsBars30SecondStream(self),
             OptionsBars1MinuteStream(self),

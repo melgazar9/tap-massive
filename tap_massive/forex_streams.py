@@ -15,7 +15,10 @@ from tap_massive.base_streams import (
     BaseTickerDetailsStream,
     BaseTickerPartitionStream,
     BaseTickerStream,
+    BaseTickerTypesStream,
     BaseTopMarketMoversStream,
+    _SnapshotNormalizationMixin,
+    _TodaysChangePercentMixin,
 )
 from tap_massive.client import MassiveRestStream
 
@@ -60,8 +63,6 @@ class ForexTickerDetailsStream(ForexTickerPartitionStream, BaseTickerDetailsStre
 
 class ForexCustomBarsStream(ForexTickerPartitionStream, BaseCustomBarsStream):
     """Base class for forex bars streams."""
-
-    pass
 
 
 class ForexBars1SecondStream(ForexCustomBarsStream):
@@ -122,6 +123,13 @@ class ForexLastQuoteStream(ForexTickerPartitionStream, BaseLastQuoteStream):
     name = "forex_last_quote"
 
 
+class ForexTickerTypesStream(BaseTickerTypesStream):
+    """Forex ticker types."""
+
+    name = "forex_ticker_types"
+    _asset_class = "fx"
+
+
 class ForexTopMarketMoversStream(BaseTopMarketMoversStream):
     """Stream for retrieving forex top market movers."""
 
@@ -132,7 +140,9 @@ class ForexTopMarketMoversStream(BaseTopMarketMoversStream):
         return f"{self.url_base}/v2/snapshot/locale/global/markets/forex/{direction}"
 
 
-class ForexTickerSnapshotStream(ForexTickerPartitionStream):
+class ForexTickerSnapshotStream(
+    _SnapshotNormalizationMixin, _TodaysChangePercentMixin, ForexTickerPartitionStream
+):
     """Stream for retrieving forex single ticker snapshot data."""
 
     name = "forex_ticker_snapshot"
@@ -141,52 +151,61 @@ class ForexTickerSnapshotStream(ForexTickerPartitionStream):
     schema = th.PropertiesList(
         th.Property("ticker", th.StringType),
         th.Property("todays_change", th.NumberType),
-        th.Property("todays_change_perc", th.NumberType),
+        th.Property("todays_change_percent", th.NumberType),
         th.Property("updated", th.IntegerType),
         th.Property("fmv", th.NumberType),
         th.Property(
             "day",
             th.ObjectType(
-                th.Property("o", th.NumberType),
-                th.Property("h", th.NumberType),
-                th.Property("l", th.NumberType),
-                th.Property("c", th.NumberType),
-                th.Property("v", th.NumberType),
-                th.Property("vw", th.NumberType),
+                th.Property("open", th.NumberType),
+                th.Property("high", th.NumberType),
+                th.Property("low", th.NumberType),
+                th.Property("close", th.NumberType),
+                th.Property("volume", th.NumberType),
+                th.Property("vwap", th.NumberType),
             ),
         ),
         th.Property(
             "min",
             th.ObjectType(
-                th.Property("o", th.NumberType),
-                th.Property("h", th.NumberType),
-                th.Property("l", th.NumberType),
-                th.Property("c", th.NumberType),
-                th.Property("v", th.NumberType),
-                th.Property("vw", th.NumberType),
-                th.Property("av", th.NumberType),
-                th.Property("t", th.IntegerType),
-                th.Property("n", th.IntegerType),
+                th.Property("open", th.NumberType),
+                th.Property("high", th.NumberType),
+                th.Property("low", th.NumberType),
+                th.Property("close", th.NumberType),
+                th.Property("volume", th.NumberType),
+                th.Property("vwap", th.NumberType),
+                th.Property("accumulated_volume", th.NumberType),
+                th.Property("timestamp", th.IntegerType),
+                th.Property("transactions", th.IntegerType),
             ),
         ),
         th.Property(
             "prev_day",
             th.ObjectType(
-                th.Property("o", th.NumberType),
-                th.Property("h", th.NumberType),
-                th.Property("l", th.NumberType),
-                th.Property("c", th.NumberType),
-                th.Property("v", th.NumberType),
-                th.Property("vw", th.NumberType),
+                th.Property("open", th.NumberType),
+                th.Property("high", th.NumberType),
+                th.Property("low", th.NumberType),
+                th.Property("close", th.NumberType),
+                th.Property("volume", th.NumberType),
+                th.Property("vwap", th.NumberType),
             ),
         ),
         th.Property(
             "last_quote",
             th.ObjectType(
-                th.Property("a", th.NumberType),
-                th.Property("b", th.NumberType),
-                th.Property("t", th.IntegerType),
-                th.Property("x", th.IntegerType),
+                th.Property("ask_price", th.NumberType),
+                th.Property("bid_price", th.NumberType),
+                th.Property("timestamp", th.IntegerType),
+                th.Property("exchange", th.IntegerType),
+                th.Property("ask_exchange", th.IntegerType),
+                th.Property("bid_exchange", th.IntegerType),
+                th.Property("indicators", th.ArrayType(th.IntegerType)),
+                th.Property("conditions", th.ArrayType(th.IntegerType)),
+                th.Property("sequence_number", th.IntegerType),
+                th.Property("participant_timestamp", th.IntegerType),
+                th.Property("trf_timestamp", th.IntegerType),
+                th.Property("tape", th.IntegerType),
+                th.Property("ticker", th.StringType),
             ),
         ),
     ).to_dict()
@@ -197,8 +216,9 @@ class ForexTickerSnapshotStream(ForexTickerPartitionStream):
             f"{self.url_base}/v2/snapshot/locale/global/markets/forex/tickers/{ticker}"
         )
 
-
-class ForexFullMarketSnapshotStream(MassiveRestStream):
+class ForexFullMarketSnapshotStream(
+    _SnapshotNormalizationMixin, _TodaysChangePercentMixin, MassiveRestStream
+):
     """Stream for retrieving forex full market snapshot data."""
 
     name = "forex_full_market_snapshot"
@@ -208,7 +228,7 @@ class ForexFullMarketSnapshotStream(MassiveRestStream):
     schema = th.PropertiesList(
         th.Property("ticker", th.StringType),
         th.Property("todays_change", th.NumberType),
-        th.Property("todays_change_perc", th.NumberType),
+        th.Property("todays_change_percent", th.NumberType),
         th.Property("updated", th.IntegerType),
         th.Property("day", th.ObjectType()),
         th.Property("min", th.ObjectType()),
@@ -218,7 +238,6 @@ class ForexFullMarketSnapshotStream(MassiveRestStream):
 
     def get_url(self, context: Context = None) -> str:
         return f"{self.url_base}/v2/snapshot/locale/global/markets/forex/tickers"
-
 
 class ForexSmaStream(ForexTickerPartitionStream, BaseIndicatorStream):
     """Stream for retrieving forex SMA indicator data."""
@@ -239,6 +258,7 @@ class ForexMACDStream(ForexTickerPartitionStream, BaseIndicatorStream):
 
     name = "forex_macd"
     indicator_type = "macd"
+    schema = BaseIndicatorStream._build_schema(True)
 
 
 class ForexRSIStream(ForexTickerPartitionStream, BaseIndicatorStream):

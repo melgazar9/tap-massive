@@ -15,8 +15,11 @@ from tap_massive.base_streams import (
     BaseTickerDetailsStream,
     BaseTickerPartitionStream,
     BaseTickerStream,
+    BaseTickerTypesStream,
     BaseTopMarketMoversStream,
     BaseTradeStream,
+    _SnapshotNormalizationMixin,
+    _TodaysChangePercentMixin,
 )
 from tap_massive.client import MassiveRestStream
 
@@ -61,8 +64,6 @@ class CryptoTickerDetailsStream(CryptoTickerPartitionStream, BaseTickerDetailsSt
 
 class CryptoCustomBarsStream(CryptoTickerPartitionStream, BaseCustomBarsStream):
     """Base class for crypto bars streams."""
-
-    pass
 
 
 class CryptoBars1SecondStream(CryptoCustomBarsStream):
@@ -131,6 +132,13 @@ class CryptoLastTradeStream(CryptoTickerPartitionStream, BaseLastTradeStream):
     name = "crypto_last_trade"
 
 
+class CryptoTickerTypesStream(BaseTickerTypesStream):
+    """Crypto ticker types."""
+
+    name = "crypto_ticker_types"
+    _asset_class = "crypto"
+
+
 class CryptoTopMarketMoversStream(BaseTopMarketMoversStream):
     """Stream for retrieving crypto top market movers."""
 
@@ -141,7 +149,9 @@ class CryptoTopMarketMoversStream(BaseTopMarketMoversStream):
         return f"{self.url_base}/v2/snapshot/locale/global/markets/crypto/{direction}"
 
 
-class CryptoTickerSnapshotStream(CryptoTickerPartitionStream):
+class CryptoTickerSnapshotStream(
+    _SnapshotNormalizationMixin, _TodaysChangePercentMixin, CryptoTickerPartitionStream
+):
     """Stream for retrieving crypto single ticker snapshot data."""
 
     name = "crypto_ticker_snapshot"
@@ -150,54 +160,61 @@ class CryptoTickerSnapshotStream(CryptoTickerPartitionStream):
     schema = th.PropertiesList(
         th.Property("ticker", th.StringType),
         th.Property("todays_change", th.NumberType),
-        th.Property("todays_change_perc", th.NumberType),
+        th.Property("todays_change_percent", th.NumberType),
         th.Property("updated", th.IntegerType),
         th.Property("fmv", th.NumberType),
         th.Property(
             "day",
             th.ObjectType(
-                th.Property("o", th.NumberType),
-                th.Property("h", th.NumberType),
-                th.Property("l", th.NumberType),
-                th.Property("c", th.NumberType),
-                th.Property("v", th.NumberType),
-                th.Property("vw", th.NumberType),
+                th.Property("open", th.NumberType),
+                th.Property("high", th.NumberType),
+                th.Property("low", th.NumberType),
+                th.Property("close", th.NumberType),
+                th.Property("volume", th.NumberType),
+                th.Property("vwap", th.NumberType),
             ),
         ),
         th.Property(
             "min",
             th.ObjectType(
-                th.Property("o", th.NumberType),
-                th.Property("h", th.NumberType),
-                th.Property("l", th.NumberType),
-                th.Property("c", th.NumberType),
-                th.Property("v", th.NumberType),
-                th.Property("vw", th.NumberType),
-                th.Property("av", th.NumberType),
-                th.Property("t", th.IntegerType),
-                th.Property("n", th.IntegerType),
+                th.Property("open", th.NumberType),
+                th.Property("high", th.NumberType),
+                th.Property("low", th.NumberType),
+                th.Property("close", th.NumberType),
+                th.Property("volume", th.NumberType),
+                th.Property("vwap", th.NumberType),
+                th.Property("accumulated_volume", th.NumberType),
+                th.Property("timestamp", th.IntegerType),
+                th.Property("transactions", th.IntegerType),
             ),
         ),
         th.Property(
             "prev_day",
             th.ObjectType(
-                th.Property("o", th.NumberType),
-                th.Property("h", th.NumberType),
-                th.Property("l", th.NumberType),
-                th.Property("c", th.NumberType),
-                th.Property("v", th.NumberType),
-                th.Property("vw", th.NumberType),
+                th.Property("open", th.NumberType),
+                th.Property("high", th.NumberType),
+                th.Property("low", th.NumberType),
+                th.Property("close", th.NumberType),
+                th.Property("volume", th.NumberType),
+                th.Property("vwap", th.NumberType),
             ),
         ),
         th.Property(
             "last_trade",
             th.ObjectType(
-                th.Property("p", th.NumberType),
-                th.Property("s", th.NumberType),
-                th.Property("t", th.IntegerType),
-                th.Property("x", th.IntegerType),
-                th.Property("c", th.ArrayType(th.IntegerType)),
-                th.Property("i", th.StringType),
+                th.Property("price", th.NumberType),
+                th.Property("size", th.NumberType),
+                th.Property("timestamp", th.IntegerType),
+                th.Property("exchange", th.IntegerType),
+                th.Property("conditions", th.ArrayType(th.IntegerType)),
+                th.Property("id", th.StringType),
+                th.Property("correction", th.IntegerType),
+                th.Property("trf_timestamp", th.IntegerType),
+                th.Property("sequence_number", th.IntegerType),
+                th.Property("trf_id", th.IntegerType),
+                th.Property("participant_timestamp", th.IntegerType),
+                th.Property("tape", th.IntegerType),
+                th.Property("ticker", th.StringType),
             ),
         ),
     ).to_dict()
@@ -208,8 +225,9 @@ class CryptoTickerSnapshotStream(CryptoTickerPartitionStream):
             f"{self.url_base}/v2/snapshot/locale/global/markets/crypto/tickers/{ticker}"
         )
 
-
-class CryptoFullMarketSnapshotStream(MassiveRestStream):
+class CryptoFullMarketSnapshotStream(
+    _SnapshotNormalizationMixin, _TodaysChangePercentMixin, MassiveRestStream
+):
     """Stream for retrieving crypto full market snapshot data."""
 
     name = "crypto_full_market_snapshot"
@@ -219,7 +237,7 @@ class CryptoFullMarketSnapshotStream(MassiveRestStream):
     schema = th.PropertiesList(
         th.Property("ticker", th.StringType),
         th.Property("todays_change", th.NumberType),
-        th.Property("todays_change_perc", th.NumberType),
+        th.Property("todays_change_percent", th.NumberType),
         th.Property("updated", th.IntegerType),
         th.Property("day", th.ObjectType()),
         th.Property("min", th.ObjectType()),
@@ -229,7 +247,6 @@ class CryptoFullMarketSnapshotStream(MassiveRestStream):
 
     def get_url(self, context: Context = None) -> str:
         return f"{self.url_base}/v2/snapshot/locale/global/markets/crypto/tickers"
-
 
 class CryptoSmaStream(CryptoTickerPartitionStream, BaseIndicatorStream):
     """Stream for retrieving crypto SMA indicator data."""
@@ -250,6 +267,7 @@ class CryptoMACDStream(CryptoTickerPartitionStream, BaseIndicatorStream):
 
     name = "crypto_macd"
     indicator_type = "macd"
+    schema = BaseIndicatorStream._build_schema(True)
 
 
 class CryptoRSIStream(CryptoTickerPartitionStream, BaseIndicatorStream):

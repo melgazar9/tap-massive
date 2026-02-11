@@ -118,10 +118,12 @@ class MassiveRestStream(RESTStream):
                 f"'{self._cfg_starting_timestamp_key}' is configured but has no value."
             )
 
+        if getattr(self, "_asset_class", None) is not None:
+            self.query_params["asset_class"] = self._asset_class
+
     @staticmethod
     def iso_to_unix_timestamp(dt_str: str, unit: str) -> int:
-        """
-        Convert ISO8601 string to Unix timestamp.
+        """Convert ISO8601 string to Unix timestamp.
         unit: "s" (seconds), "ms" (milliseconds), "ns" (nanoseconds)
         """
         dt = datetime.fromisoformat(dt_str.replace("Z", "+00:00"))
@@ -134,8 +136,7 @@ class MassiveRestStream(RESTStream):
             return int(ts * 1000)
         elif unit == "ns":
             return int(ts * 1_000_000_000)
-        else:
-            raise ValueError(f"Unknown unit: {unit}")
+        raise ValueError(f"Unknown unit: {unit}")
 
     def _get_config_child_params(
         self, child_key: str, parent_key: str = "other_params"
@@ -151,17 +152,17 @@ class MassiveRestStream(RESTStream):
     def use_cached_tickers(self) -> bool:
         config_val = self._get_config_child_params("use_cached_tickers")
         if config_val is not None:
-            assert isinstance(
-                config_val, bool
-            ), f"Config for use_cached_tickers must be bool, got {type(config_val)}"
+            assert isinstance(config_val, bool), (
+                f"Config for use_cached_tickers must be bool, got {type(config_val)}"
+            )
             return config_val
         if hasattr(type(self), "_use_cached_tickers_default"):
-            return getattr(type(self), "_use_cached_tickers_default")
+            return type(self)._use_cached_tickers_default
         raise AttributeError("use_cached_tickers is not defined in config or class")
 
     def _set_timestamp_config_keys(self) -> None:
         if self._cfg_starting_timestamp_key and self._cfg_ending_timestamp_key:
-            return None
+            return
 
         self.query_params = self._normalize_cfg_param_keys(self.query_params)
         self.path_params = self._normalize_cfg_param_keys(self.path_params)
@@ -202,7 +203,7 @@ class MassiveRestStream(RESTStream):
             self._cfg_ending_timestamp_value = datetime.now(timezone.utc).strftime(
                 "%Y-%m-%d"
             )
-        return None
+        return
 
     @property
     def url_base(self) -> str:
@@ -231,7 +232,7 @@ class MassiveRestStream(RESTStream):
         return None
 
     @staticmethod
-    def _timestamp_to_epoch(ts: int | float | Decimal | str | None) -> float | None:
+    def _timestamp_to_epoch(ts: float | Decimal | str | None) -> float | None:
         if ts is None:
             return None
         if isinstance(ts, (int, float)):
@@ -263,6 +264,7 @@ class MassiveRestStream(RESTStream):
 
         state_dt = self.safe_parse_datetime(state_replication_value)
         cfg_dt = self.safe_parse_datetime(self._cfg_starting_timestamp_value)
+        start_date_config = self.safe_parse_datetime(self.config.get("start_date"))
 
         if (
             state is not None
@@ -281,12 +283,11 @@ class MassiveRestStream(RESTStream):
             self.is_timestamp_replication_key
             and self.replication_method == "INCREMENTAL"
         ):
-            if state_dt and cfg_dt:
-                return max(state_dt, cfg_dt).isoformat()
-            if state_dt:
-                return state_dt.isoformat()
-            if cfg_dt:
-                return cfg_dt.isoformat()
+            candidates = [
+                dt for dt in (state_dt, cfg_dt, start_date_config) if dt
+            ]
+            if candidates:
+                return max(candidates).isoformat()
         else:
             return self.get_starting_timestamp(context)
 
@@ -313,7 +314,6 @@ class MassiveRestStream(RESTStream):
         path_params: dict,
         pop_timestamp: bool = False,
     ) -> tuple[dict, dict]:
-
         if pop_timestamp:
             query_params = {
                 k: v
@@ -325,47 +325,25 @@ class MassiveRestStream(RESTStream):
                 for k, v in path_params.items()
                 if k not in self.timestamp_field_combos
             }
-        else:
-            if self.is_timestamp_replication_key and self._cfg_starting_timestamp_key:
-                starting_replication_key_value = (
-                    self.get_starting_replication_key_value(context)
-                )
-                if starting_replication_key_value:
-                    if self._cfg_starting_timestamp_key in query_params:
-                        query_params[self._cfg_starting_timestamp_key] = (
-                            starting_replication_key_value
-                        )
-
-                        if self._api_expects_unix_timestamp and not isinstance(
-                            query_params[self._cfg_starting_timestamp_key], int
-                        ):
-                            query_params[self._cfg_starting_timestamp_key] = (
-                                self.iso_to_unix_timestamp(
-                                    query_params[self._cfg_starting_timestamp_key],
-                                    unit=self._unix_timestamp_unit,
-                                )
-                            )
-                    if self._cfg_starting_timestamp_key in path_params:
-                        path_params[self._cfg_starting_timestamp_key] = (
-                            starting_replication_key_value
-                        )
-
-                        if self._api_expects_unix_timestamp and not isinstance(
-                            path_params[self._cfg_starting_timestamp_key], int
-                        ):
-                            path_params[self._cfg_starting_timestamp_key] = (
-                                self.iso_to_unix_timestamp(
-                                    path_params[self._cfg_starting_timestamp_key],
-                                    unit=self._unix_timestamp_unit,
-                                )
-                            )
+        elif self.is_timestamp_replication_key and self._cfg_starting_timestamp_key:
+            starting_replication_key_value = self.get_starting_replication_key_value(
+                context
+            )
+            if starting_replication_key_value:
+                if self._cfg_starting_timestamp_key in query_params:
+                    query_params[self._cfg_starting_timestamp_key] = (
+                        starting_replication_key_value
+                    )
+                if self._cfg_starting_timestamp_key in path_params:
+                    path_params[self._cfg_starting_timestamp_key] = (
+                        starting_replication_key_value
+                    )
         return query_params, path_params
 
     def _prepare_context_and_params(
         self, context: Context | None
     ) -> tuple[Context, dict, dict]:
-        """
-        Helper method to prepare the context, query_params, and path_params
+        """Helper method to prepare the context, query_params, and path_params
         common to both get_records and get_records_optional.
         """
         context = context if context is not None else {}
@@ -424,9 +402,11 @@ class MassiveRestStream(RESTStream):
             log_url = self.redact_api_key(url)
             log_exception = self.redact_api_key(str(ce))
             if isinstance(ce.__cause__, socket.gaierror):
-                logging.error(f"DNS resolution failed for {log_url}: {log_exception}")
+                logging.exception(
+                    f"DNS resolution failed for {log_url}: {log_exception}"
+                )
             else:
-                logging.error(f"Connection error for {log_url}: {log_exception}")
+                logging.exception(f"Connection error for {log_url}: {log_exception}")
             raise
         except requests.HTTPError as e:
             log_exception = self.redact_api_key(str(e))
@@ -436,7 +416,7 @@ class MassiveRestStream(RESTStream):
                     f"No data for {log_url} (status {e.response.status_code}): {log_exception}"
                 )
                 return None
-            logging.error(f"HTTP Error: {log_exception}")
+            logging.exception(f"HTTP Error: {log_exception}")
             redacted_url = self.redact_api_key(e.request.url if e.request else url)
             error_message = (
                 f"{e.response.status_code} Client Error: {e.response.reason} for url: {redacted_url}"
@@ -502,13 +482,13 @@ class MassiveRestStream(RESTStream):
                         f"*** Access denied (403) for {self.name} at {request_url}: {safe_exception} - skipping this ticker ***"
                     )
                     break  # Break the pagination loop for this ticker, but don't crash
-                logging.error(
+                logging.exception(
                     f"*** Request failed for {self.name} at {request_url}: {safe_exception} ***"
                 )
                 break
             except ValueError as e:
                 safe_exception = self.redact_api_key(str(e))
-                logging.error(
+                logging.exception(
                     f"Failed to decode JSON for {self.name} at {request_url}: {safe_exception}"
                 )
                 break
@@ -545,7 +525,7 @@ class MassiveRestStream(RESTStream):
                         try:
                             record = self.post_process(record, context)
                         except Exception as e:
-                            logging.error(
+                            logging.exception(
                                 f"Failed to post-process record for {self.name} at {request_url}: {e}. RECORD: {record}"
                             )
                             continue
@@ -554,13 +534,13 @@ class MassiveRestStream(RESTStream):
                         try:
                             self._check_missing_fields(self.schema, record)
                         except TypeError as e:
-                            logging.error(
+                            logging.exception(
                                 f"Failed to parse record for {self.name} at {request_url}: {e}. RECORD: {record}"
                             )
                         latest_record = record
                         yield record
                 except Exception as e:
-                    logging.error(
+                    logging.exception(
                         f"Failed to parse raw record for {self.name} at {request_url}: {e}. RECORD: {raw_record}"
                     )
                     raise
@@ -640,9 +620,8 @@ class MassiveRestStream(RESTStream):
         self.query_params["apiKey"] = self.config.get("api_key")
 
     def normalize_date_params(self, params: dict, force_date: bool = False) -> None:
-        """
-        Normalize date/datetime params inplace, for (query and path)
-          params prior to sending a request or building the url endpoint.
+        """Normalize date/datetime params inplace, for (query and path)
+        params prior to sending a request or building the url endpoint.
         """
         if self.is_timestamp_replication_key:
             for timestamp_col in (
@@ -685,20 +664,16 @@ class MassiveRestStream(RESTStream):
         """Helper to calculate the end timestamp value based on configuration."""
         if self._incremental_timestamp_is_date:
             return datetime.today().date().isoformat()
-        else:
-            if self._api_expects_unix_timestamp:
-                return self.iso_to_unix_timestamp(
-                    datetime.today().isoformat(), unit=self._unix_timestamp_unit
-                )
-            else:
-                return datetime.today().isoformat()
+        if self._api_expects_unix_timestamp:
+            return self.iso_to_unix_timestamp(
+                datetime.today().isoformat(), unit=self._unix_timestamp_unit
+            )
+        return datetime.today().isoformat()
 
     def get_records(self, context: Context | None) -> t.Iterable[dict[str, t.Any]]:
-        """
-        Only handle one partition per get_records call.
+        """Only handle one partition per get_records call.
         Let the tap framework handle looping over partitions (i.e., per ticker).
         """
-
         context, query_params, path_params = self._prepare_context_and_params(context)
 
         loop_over_dates = self.other_params.get("loop_over_dates_gte_date", False)
@@ -739,13 +714,13 @@ class MassiveRestStream(RESTStream):
                 context["query_params"] = query_params.copy()
                 context["path_params"] = path_params.copy()
                 if self._cfg_starting_timestamp_key in context.get("query_params"):
-                    context["query_params"][
-                        self._cfg_starting_timestamp_key
-                    ] = current_timestamp.isoformat()
+                    context["query_params"][self._cfg_starting_timestamp_key] = (
+                        current_timestamp.isoformat()
+                    )
                 if self._cfg_starting_timestamp_key in context.get("path_params"):
-                    context["path_params"][
-                        self._cfg_starting_timestamp_key
-                    ] = current_timestamp.isoformat()
+                    context["path_params"][self._cfg_starting_timestamp_key] = (
+                        current_timestamp.isoformat()
+                    )
                 yield from self.paginate_records(context)
                 current_timestamp += timedelta(days=1)
 
@@ -824,10 +799,7 @@ class OptionalTickerPartitionStream(MassiveRestStream):
     _ticker_in_query_params = None
 
     def get_records(self, context: Context | None) -> t.Iterable[dict[str, t.Any]]:
-        """
-        Loops over tickers manually instead of calling built-in partitions for flexibility in meltano.yml other_params.
-        """
-
+        """Loops over tickers manually instead of calling built-in partitions for flexibility in meltano.yml other_params."""
         if self.use_cached_tickers:
             assert (
                 self._ticker_in_path_params is not None

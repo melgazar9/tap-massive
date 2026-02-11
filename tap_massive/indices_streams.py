@@ -13,6 +13,8 @@ from tap_massive.base_streams import (
     BaseTickerDetailsStream,
     BaseTickerPartitionStream,
     BaseTickerStream,
+    BaseTickerTypesStream,
+    _SnapshotNormalizationMixin,
 )
 from tap_massive.client import MassiveRestStream
 
@@ -56,8 +58,6 @@ class IndicesTickerDetailsStream(IndicesTickerPartitionStream, BaseTickerDetails
 
 class IndicesCustomBarsStream(IndicesTickerPartitionStream, BaseCustomBarsStream):
     """Base class for indices bars streams."""
-
-    pass
 
 
 class IndicesBars1SecondStream(IndicesCustomBarsStream):
@@ -104,7 +104,14 @@ class IndicesPreviousDayBarStream(
     name = "indices_previous_day_bar"
 
 
-class IndicesSnapshotStream(MassiveRestStream):
+class IndicesTickerTypesStream(BaseTickerTypesStream):
+    """Indices ticker types."""
+
+    name = "indices_ticker_types"
+    _asset_class = "indices"
+
+
+class IndicesSnapshotStream(_SnapshotNormalizationMixin, MassiveRestStream):
     """Stream for retrieving indices snapshot data.
 
     Returns snapshot data for multiple indices at once.
@@ -159,6 +166,7 @@ class IndicesMACDStream(IndicesTickerPartitionStream, BaseIndicatorStream):
 
     name = "indices_macd"
     indicator_type = "macd"
+    schema = BaseIndicatorStream._build_schema(True)
 
 
 class IndicesRSIStream(IndicesTickerPartitionStream, BaseIndicatorStream):
