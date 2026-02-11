@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from singer_sdk import typing as th
 from singer_sdk.helpers.types import Context
+
 from tap_massive.client import MassiveRestStream
 
 

@@ -263,6 +263,7 @@ class StockFullMarketSnapshotStream(
     def get_url(self, context: Context = None) -> str:
         return f"{self.url_base}/v2/snapshot/locale/us/markets/stocks/tickers"
 
+
 class StockUnifiedSnapshotStream(_SnapshotNormalizationMixin, MassiveRestStream):
     """Stream for retrieving stock unified snapshot data."""
 

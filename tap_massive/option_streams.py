@@ -400,7 +400,9 @@ class OptionsLastTradeStream(OptionsTickerPartitionStream, BaseLastTradeStream):
     name = "options_last_trade"
 
 
-class OptionsChainSnapshotStream(_SnapshotNormalizationMixin, OptionalTickerPartitionStream):
+class OptionsChainSnapshotStream(
+    _SnapshotNormalizationMixin, OptionalTickerPartitionStream
+):
     """Stream for retrieving options chain snapshot data."""
 
     name = "options_chain_snapshot"

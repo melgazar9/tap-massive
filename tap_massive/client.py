@@ -152,9 +152,9 @@ class MassiveRestStream(RESTStream):
     def use_cached_tickers(self) -> bool:
         config_val = self._get_config_child_params("use_cached_tickers")
         if config_val is not None:
-            assert isinstance(config_val, bool), (
-                f"Config for use_cached_tickers must be bool, got {type(config_val)}"
-            )
+            assert isinstance(
+                config_val, bool
+            ), f"Config for use_cached_tickers must be bool, got {type(config_val)}"
             return config_val
         if hasattr(type(self), "_use_cached_tickers_default"):
             return type(self)._use_cached_tickers_default
@@ -283,9 +283,7 @@ class MassiveRestStream(RESTStream):
             self.is_timestamp_replication_key
             and self.replication_method == "INCREMENTAL"
         ):
-            candidates = [
-                dt for dt in (state_dt, cfg_dt, start_date_config) if dt
-            ]
+            candidates = [dt for dt in (state_dt, cfg_dt, start_date_config) if dt]
             if candidates:
                 return max(candidates).isoformat()
         else:
@@ -714,13 +712,13 @@ class MassiveRestStream(RESTStream):
                 context["query_params"] = query_params.copy()
                 context["path_params"] = path_params.copy()
                 if self._cfg_starting_timestamp_key in context.get("query_params"):
-                    context["query_params"][self._cfg_starting_timestamp_key] = (
-                        current_timestamp.isoformat()
-                    )
+                    context["query_params"][
+                        self._cfg_starting_timestamp_key
+                    ] = current_timestamp.isoformat()
                 if self._cfg_starting_timestamp_key in context.get("path_params"):
-                    context["path_params"][self._cfg_starting_timestamp_key] = (
-                        current_timestamp.isoformat()
-                    )
+                    context["path_params"][
+                        self._cfg_starting_timestamp_key
+                    ] = current_timestamp.isoformat()
                 yield from self.paginate_records(context)
                 current_timestamp += timedelta(days=1)
 

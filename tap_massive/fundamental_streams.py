@@ -7,7 +7,6 @@ from singer_sdk.helpers.types import Context
 
 from tap_massive.client import MassiveRestStream, OptionalTickerPartitionStream
 
-
 # --- Financial Statement Streams ---
 
 
@@ -673,7 +672,12 @@ class StockRiskCategoriesStream(MassiveRestStream):
 
     name = "stock_risk_categories"
 
-    primary_keys = ["taxonomy", "primary_category", "secondary_category", "tertiary_category"]
+    primary_keys = [
+        "taxonomy",
+        "primary_category",
+        "secondary_category",
+        "tertiary_category",
+    ]
     _use_cached_tickers_default = False
 
     schema = th.PropertiesList(

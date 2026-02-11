@@ -275,6 +275,7 @@ class BaseDailyMarketSummaryStream(_OhlcMappingMixin, MassiveRestStream):
         th.Property("otc", th.BooleanType),
     ).to_dict()
 
+
 class BaseDailyTickerSummaryStream(BaseTickerPartitionStream):
     primary_keys = ["from", "ticker"]
     replication_key = "from"
@@ -313,7 +314,7 @@ class BaseDailyTickerSummaryStream(BaseTickerPartitionStream):
 
 class BasePreviousDayBarSummaryStream(_OhlcMappingMixin, BaseTickerPartitionStream):
     """Retrieve the previous trading day's OHLCV data for a specified ticker.
-       Not really useful given we have the other streams.
+    Not really useful given we have the other streams.
     """
 
     primary_keys = ["timestamp", "ticker"]
@@ -678,6 +679,7 @@ class BaseTopMarketMoversStream(
         row = super().post_process(row, context)
         row["updated"] = self.safe_parse_datetime(row["updated"])
         return row
+
 
 class _NanosecondIncrementalMixin:
     """Use integer nanoseconds for incremental replication keys."""

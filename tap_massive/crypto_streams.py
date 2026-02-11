@@ -225,6 +225,7 @@ class CryptoTickerSnapshotStream(
             f"{self.url_base}/v2/snapshot/locale/global/markets/crypto/tickers/{ticker}"
         )
 
+
 class CryptoFullMarketSnapshotStream(
     _SnapshotNormalizationMixin, _TodaysChangePercentMixin, MassiveRestStream
 ):
@@ -247,6 +248,7 @@ class CryptoFullMarketSnapshotStream(
 
     def get_url(self, context: Context = None) -> str:
         return f"{self.url_base}/v2/snapshot/locale/global/markets/crypto/tickers"
+
 
 class CryptoSmaStream(CryptoTickerPartitionStream, BaseIndicatorStream):
     """Stream for retrieving crypto SMA indicator data."""
