@@ -409,6 +409,19 @@ class BaseConditionCodesStream(MassiveRestStream):
     name = "condition_codes"
 
     primary_keys = ["id", "asset_class", "type"]
+    _type_enum_values = [
+        "financial_status_indicator",
+        "market_condition",
+        "quote_condition",
+        "sale_condition",
+        "settlement_condition",
+        "short_sale_restriction_indicator",
+        "sip_generated_flag",
+        "trade_thru_exempt",
+        # Massive can return additional values that are not listed in docs.
+        "condition",
+        "regular",
+    ]
 
     _use_cached_tickers_default = False
 
@@ -434,16 +447,7 @@ class BaseConditionCodesStream(MassiveRestStream):
         th.Property(
             "type",
             th.StringType,
-            enum=[
-                "sale_condition",
-                "quote_condition",
-                "sip_generated_flag",
-                "financial_status_indicator",
-                "short_sale_restriction_indicator",
-                "settlement_condition",
-                "market_condition",
-                "trade_thru_exempt",
-            ],
+            enum=_type_enum_values,
         ),
         th.Property(
             "update_rules",
@@ -470,6 +474,30 @@ class BaseConditionCodesStream(MassiveRestStream):
 
     def get_url(self, context: Context = None):
         return f"{self.url_base}/v3/reference/conditions"
+
+    def post_process(self, row: Record, context: Context | None = None) -> dict | None:
+        row = super().post_process(row, context)
+        if row is None:
+            return None
+
+        sip_mapping = row.get("sip_mapping")
+        if isinstance(sip_mapping, dict):
+            sip_key_map = {
+                "cta": "CTA",
+                "c_t_a": "CTA",
+                "opra": "OPRA",
+                "o_p_r_a": "OPRA",
+                "utp": "UTP",
+                "u_t_p": "UTP",
+            }
+            normalized_sip_mapping = {}
+            for key, value in sip_mapping.items():
+                mapped_key = sip_key_map.get(key)
+                if mapped_key and value is not None:
+                    normalized_sip_mapping[mapped_key] = value
+            row["sip_mapping"] = normalized_sip_mapping
+
+        return row
 
 
 class AllConditionCodesStream(BaseConditionCodesStream):
