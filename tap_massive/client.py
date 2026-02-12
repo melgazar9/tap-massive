@@ -132,9 +132,9 @@ class MassiveRestStream(RESTStream):
         ts = dt.timestamp()
         if unit == "s":
             return int(ts)
-        elif unit == "ms":
+        if unit == "ms":
             return int(ts * 1000)
-        elif unit == "ns":
+        if unit == "ns":
             return int(ts * 1_000_000_000)
         raise ValueError(f"Unknown unit: {unit}")
 

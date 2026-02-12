@@ -111,6 +111,7 @@ from tap_massive.indices_streams import (
     IndicesSnapshotStream,
     IndicesTickerDetailsStream,
     IndicesTickerStream,
+    IndicesTickerTypesStream,
 )
 from tap_massive.option_streams import (
     OptionsBars1DayStream,
@@ -494,6 +495,7 @@ class TapMassive(Tap):
             IndicesDailyTickerSummaryStream(self),
             IndicesPreviousDayBarStream(self),
             IndicesSnapshotStream(self),
+            IndicesTickerTypesStream(self),
             IndicesSmaStream(self),
             IndicesEmaStream(self),
             IndicesMACDStream(self),

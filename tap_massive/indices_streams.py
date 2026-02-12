@@ -127,6 +127,8 @@ class IndicesSnapshotStream(_SnapshotNormalizationMixin, MassiveRestStream):
         th.Property("type", th.StringType),
         th.Property("market_status", th.StringType),
         th.Property("value", th.NumberType),
+        th.Property("last_updated", th.IntegerType),
+        th.Property("timeframe", th.StringType),
         th.Property(
             "session",
             th.ObjectType(

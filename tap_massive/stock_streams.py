@@ -485,6 +485,7 @@ class MarketHolidaysStream(MassiveRestStream):
         th.Property("exchange", th.StringType),
         th.Property("name", th.StringType),
         th.Property("open", th.StringType),
+        th.Property("status", th.StringType),
     ).to_dict()
 
     def get_url(self, context: Context = None):
