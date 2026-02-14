@@ -887,6 +887,11 @@ s3 = [
     { name = "fs-s3fs" },
 ]
 
+[package.dev-dependencies]
+dev = [
+    { name = "pytest" },
+]
+
 [package.metadata]
 requires-dist = [
     { name = "fs-s3fs", marker = "extra == 's3'", specifier = "~=1.1.1" },
@@ -897,6 +902,9 @@ requires-dist = [
     { name = "singer-sdk", extras = ["testing"], marker = "extra == 'dev'", specifier = "~=0.46.3" },
 ]
 provides-extras = ["s3", "dev"]
+
+[package.metadata.requires-dev]
+dev = [{ name = "pytest", specifier = ">=8.4.1" }]
 
 [[package]]
 name = "tomli"

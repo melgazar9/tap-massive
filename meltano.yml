@@ -537,6 +537,10 @@ plugins:
         query_params:
           expired: false   # Only active contracts
           sort: ticker
+        other_params:
+          moneyness_min: 0.30      # strike/spot >= 0.30 --> 70% loss
+          moneyness_max: 2         # strike/spot <= 2 --> 200% gain
+          max_dte: 120             # max days to expiration
         select_tickers:
           - "AAPL"
 

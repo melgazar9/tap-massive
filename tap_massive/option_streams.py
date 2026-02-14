@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import logging
+import typing as t
+
 from singer_sdk import typing as th
 from singer_sdk.helpers.types import Context
 
@@ -60,9 +63,57 @@ class OptionsContractsStream(BaseTickerStream):
 
 
 class OptionsTickerPartitionStream(BaseTickerPartitionStream):
+    """Partitions by underlying stock ticker, fetching filtered contracts per underlying.
+
+    Instead of caching all option contracts globally (which OOMs with expired contracts),
+    this partitions by underlying stock ticker (~7000) and fetches filtered contracts
+    per underlying inside get_records(). Moneyness and DTE filters are applied via
+    option_tickers.other_params config.
+    """
+
+    state_partitioning_keys = ["underlying"]
+
     @property
-    def partitions(self):
-        return [{"ticker": t["ticker"]} for t in self._tap.get_cached_option_tickers()]
+    def partitions(self) -> list[dict[str, t.Any]]:
+        option_cfg = self.config.get("option_tickers", {})
+        select_tickers = option_cfg.get("select_tickers")
+        stock_tickers = self._tap.get_cached_stock_tickers()
+
+        if select_tickers and select_tickers not in ("*", ["*"]):
+            if isinstance(select_tickers, str):
+                select_tickers = select_tickers.split(",")
+            select_set = set(select_tickers)
+            stock_tickers = [t for t in stock_tickers if t["ticker"] in select_set]
+
+        return [{"underlying": t["ticker"]} for t in stock_tickers]
+
+    def get_records(
+        self, context: dict[str, t.Any] | None
+    ) -> t.Iterable[dict[str, t.Any]]:
+        underlying = (context or {}).get("underlying")
+        if not underlying:
+            return
+
+        contracts = self._tap.get_option_contracts_for_underlying(underlying)
+        if not contracts:
+            logging.info(
+                f"No filtered contracts for {underlying} in {self.name}, skipping."
+            )
+            return
+
+        # Prepare base query/path params from stream config once per underlying
+        _, base_query_params, base_path_params = self._prepare_context_and_params(
+            dict(context)
+        )
+
+        for contract in contracts:
+            contract_ctx: dict[str, t.Any] = {
+                self._ticker_param: contract["ticker"],
+                "underlying": underlying,
+                "query_params": base_query_params.copy(),
+                "path_params": base_path_params.copy(),
+            }
+            yield from self.paginate_records(contract_ctx)
 
 
 class OptionsCustomBarsStream(OptionsTickerPartitionStream, BaseCustomBarsStream):
@@ -204,21 +255,38 @@ class OptionsContractSnapshotStream(
         ),
     ).to_dict()
 
-    @property
-    def partitions(self):
-        return [
-            {
-                "underlyingAsset": t.get("underlying_ticker"),
-                "optionContract": t.get("ticker"),
-            }
-            for t in self._tap.get_cached_option_tickers()
-            if t.get("underlying_ticker") and t.get("ticker")
-        ]
-
     def get_url(self, context: Context):
-        underlying = context.get("underlyingAsset")
-        option_contract = context.get("optionContract")
+        path_params = context.get("path_params", {})
+        underlying = path_params.get("underlying")
+        option_contract = context.get(self._ticker_param)
         return f"{self.url_base}/v3/snapshot/options/{underlying}/{option_contract}"
+
+    def get_records(
+        self, context: dict[str, t.Any] | None
+    ) -> t.Iterable[dict[str, t.Any]]:
+        """Override to pass underlying through path_params for URL construction."""
+        underlying = (context or {}).get("underlying")
+        if not underlying:
+            return
+
+        contracts = self._tap.get_option_contracts_for_underlying(underlying)
+        if not contracts:
+            return
+
+        _, base_query_params, base_path_params = self._prepare_context_and_params(
+            dict(context)
+        )
+
+        for contract in contracts:
+            contract_path_params = base_path_params.copy()
+            contract_path_params["underlying"] = underlying
+            contract_ctx: dict[str, t.Any] = {
+                self._ticker_param: contract["ticker"],
+                "underlying": underlying,
+                "query_params": base_query_params.copy(),
+                "path_params": contract_path_params,
+            }
+            yield from self.paginate_records(contract_ctx)
 
     def post_process(self, row, context: Context | None = None):
         row = super().post_process(row, context)

@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
+import logging
 import threading
 import typing as t
+from datetime import datetime, timedelta, timezone
 
+import requests
 from singer_sdk import Tap
 from singer_sdk import typing as th
 
@@ -205,6 +208,7 @@ class TapMassive(Tap):
     _cached_option_tickers: t.List[dict] | None = None
     _option_tickers_stream_instance: OptionsContractsStream | None = None
     _option_tickers_lock = threading.Lock()
+    _spot_price_cache: dict[str, float | None] = {}
 
     # Forex ticker caching
     _cached_forex_tickers: t.List[dict] | None = None
@@ -267,6 +271,99 @@ class TapMassive(Tap):
                         f"Cached {len(self._cached_option_tickers)} option tickers."
                     )
         return self._cached_option_tickers
+
+    # Option per-underlying methods
+    def get_spot_price(self, ticker: str) -> float | None:
+        """Get previous close price for an underlying ticker. Cached per ticker."""
+        if ticker in self._spot_price_cache:
+            return self._spot_price_cache[ticker]
+
+        base_url = self.config.get("base_url", "https://api.massive.com")
+        url = f"{base_url}/v2/aggs/ticker/{ticker}/prev"
+        try:
+            resp = requests.get(
+                url,
+                params={"apiKey": self.config["api_key"]},
+                timeout=30,
+            )
+            resp.raise_for_status()
+            data = resp.json()
+            results = data.get("results", [])
+            if results:
+                price = results[0].get("c")
+                self._spot_price_cache[ticker] = price
+                return price
+        except (requests.RequestException, ValueError, KeyError) as e:
+            logging.warning(f"Could not fetch spot price for {ticker}: {e}")
+
+        self._spot_price_cache[ticker] = None
+        return None
+
+    def get_option_contracts_for_underlying(self, underlying: str) -> list[dict]:
+        """Fetch filtered option contracts for a single underlying ticker.
+
+        Applies moneyness and DTE filters from option_tickers.other_params config.
+        """
+        option_cfg = self.config.get("option_tickers", {})
+        query_params = option_cfg.get("query_params", {}).copy()
+        other_params = option_cfg.get("other_params", {})
+
+        moneyness_min = other_params.get("moneyness_min")
+        moneyness_max = other_params.get("moneyness_max")
+        max_dte = other_params.get("max_dte")
+
+        if moneyness_min is not None or moneyness_max is not None:
+            spot_price = self.get_spot_price(underlying)
+            if spot_price:
+                if moneyness_min is not None:
+                    query_params["strike_price.gte"] = spot_price * moneyness_min
+                if moneyness_max is not None:
+                    query_params["strike_price.lte"] = spot_price * moneyness_max
+            else:
+                logging.warning(
+                    f"No spot price for {underlying}, skipping moneyness filter."
+                )
+
+        if max_dte is not None:
+            max_exp = (
+                datetime.now(tz=timezone.utc) + timedelta(days=int(max_dte))
+            ).strftime("%Y-%m-%d")
+            query_params.setdefault("expiration_date.lte", max_exp)
+
+        query_params["underlying_ticker"] = underlying
+        query_params["apiKey"] = self.config["api_key"]
+        query_params.setdefault("limit", 1000)
+        query_params.setdefault("sort", "ticker")
+
+        # Normalize __ separators to . for API
+        query_params = {k.replace("__", "."): v for k, v in query_params.items()}
+
+        base_url = self.config.get("base_url", "https://api.massive.com")
+        url: str | None = f"{base_url}/v3/reference/options/contracts"
+
+        contracts: list[dict] = []
+        while url:
+            try:
+                resp = requests.get(url, params=query_params, timeout=60)
+                resp.raise_for_status()
+                data = resp.json()
+            except (requests.RequestException, ValueError) as e:
+                logging.warning(
+                    f"Failed to fetch option contracts for {underlying}: {e}"
+                )
+                break
+
+            results = data.get("results", [])
+            contracts.extend(results)
+            url = data.get("next_url")
+            # next_url already has query params baked in, only need apiKey
+            if url:
+                query_params = {"apiKey": self.config["api_key"]}
+
+        logging.info(
+            f"Fetched {len(contracts)} filtered option contracts for {underlying}."
+        )
+        return contracts
 
     # Forex methods
     def get_forex_tickers_stream(self) -> ForexTickerStream:
