@@ -670,6 +670,12 @@ class BaseTopMarketMoversStream(
         th.Property("fmv", th.NumberType),
     ).to_dict()
 
+    def _get_direction(self, context: Context | None) -> str:
+        """Get direction from context (when looping) or path_params (when configured)."""
+        return (
+            context.get("direction") if context else self.path_params.get("direction")
+        )
+
     def get_records(self, context: Context | None) -> t.Iterable[dict[str, t.Any]]:
         if (
             self.path_params.get("direction") is None

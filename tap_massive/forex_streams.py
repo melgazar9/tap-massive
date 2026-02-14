@@ -135,8 +135,8 @@ class ForexTopMarketMoversStream(BaseTopMarketMoversStream):
 
     name = "forex_top_market_movers"
 
-    def get_url(self, context: Context):
-        direction = context.get("direction")
+    def get_url(self, context: Context | None = None):
+        direction = self._get_direction(context)
         return f"{self.url_base}/v2/snapshot/locale/global/markets/forex/{direction}"
 
 
