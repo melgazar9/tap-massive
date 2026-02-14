@@ -31,8 +31,9 @@ class OptionsContractsStream(BaseTickerStream):
 
     name = "options_contracts"
     primary_keys = ["ticker"]
-    market = "option"
+    market = "options"
     _ticker_param = "underlying_ticker"
+    _set_market_query_param = False  # This endpoint doesn't accept market param
     _ticker_in_path_params = True
 
     schema = th.PropertiesList(
@@ -58,6 +59,15 @@ class OptionsContractsStream(BaseTickerStream):
         ),
     ).to_dict()
 
+    def get_ticker_list(self) -> list[str] | None:
+        """Return None to fetch ALL contracts regardless of option_tickers.select_tickers.
+
+        OptionsContractsStream needs ALL contracts (including expired) for complete
+        historical coverage. The select_tickers filter in option_tickers config should
+        only apply to bars/snapshot streams, not to the contracts table itself.
+        """
+        return None
+
     def get_url(self, context: Context = None) -> str:
         return f"{self.url_base}/v3/reference/options/contracts"
 
@@ -76,15 +86,10 @@ class OptionsTickerPartitionStream(BaseTickerPartitionStream):
     @property
     def partitions(self) -> list[dict[str, t.Any]]:
         option_cfg = self.config.get("option_tickers", {})
-        select_tickers = option_cfg.get("select_tickers")
-        stock_tickers = self._tap.get_cached_stock_tickers()
-
-        if select_tickers and select_tickers not in ("*", ["*"]):
-            if isinstance(select_tickers, str):
-                select_tickers = select_tickers.split(",")
-            select_set = set(select_tickers)
-            stock_tickers = [t for t in stock_tickers if t["ticker"] in select_set]
-
+        stock_tickers = self._apply_select_tickers_filter(
+            self._tap.get_cached_stock_tickers(),
+            option_cfg.get("select_tickers"),
+        )
         return [{"underlying": t["ticker"]} for t in stock_tickers]
 
     def get_records(

@@ -38,10 +38,6 @@ class StockTickerStream(BaseTickerStream):
     name = "stock_tickers"
     market = "stock"
 
-    def __init__(self, tap):
-        super().__init__(tap)
-        self.query_params.setdefault("market", "stocks")
-
     primary_keys = ["ticker"]
 
     schema = th.PropertiesList(

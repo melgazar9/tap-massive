@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 from unittest.mock import MagicMock, PropertyMock, patch
+
 import pytest
 import requests
+
 from tap_massive.tap import TapMassive
 
 

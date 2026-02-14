@@ -34,13 +34,22 @@ def safe_int(x):
 class BaseTickerStream(MassiveRestStream):
     market = None
     _ticker_param = "ticker"
+    _set_market_query_param = (
+        True  # Set to False if endpoint doesn't accept market param
+    )
+
+    def __init__(self, tap, **kwargs):
+        super().__init__(tap, **kwargs)
+        if self.market and self._set_market_query_param:
+            # Special case: stock -> stocks (API expects plural)
+            api_market = "stocks" if self.market == "stock" else self.market
+            self.query_params.setdefault("market", api_market)
 
     def _break_loop_check(self, next_url, replication_key_value=None) -> bool:
         return not next_url
 
     def get_ticker_list(self) -> list[str] | None:
-        assert self.market is not None
-        tickers_cfg = self.config.get(f"{self.market}_tickers", {})
+        tickers_cfg = self.config.get(self.name, {})
         tickers = tickers_cfg.get("select_tickers") if tickers_cfg else None
 
         if not tickers or tickers in ("*", ["*"]):
@@ -80,6 +89,20 @@ class BaseTickerStream(MassiveRestStream):
 
 
 class BaseTickerPartitionStream(MassiveRestStream):
+    @staticmethod
+    def _apply_select_tickers_filter(
+        tickers: list[dict],
+        select_tickers: list[str] | str | None,
+        key: str = "ticker",
+    ) -> list[dict]:
+        """Filter ticker dicts by a select_tickers list."""
+        if not select_tickers or select_tickers in ("*", ["*"]):
+            return tickers
+        if isinstance(select_tickers, str):
+            select_tickers = select_tickers.split(",")
+        select_set = set(select_tickers)
+        return [t for t in tickers if t[key] in select_set]
+
     @property
     def partitions(self):
         raise ValueError("Method partitions must be overridden by subclass.")

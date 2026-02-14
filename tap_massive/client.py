@@ -380,8 +380,8 @@ class MassiveRestStream(RESTStream):
     @backoff.on_exception(
         backoff.expo,
         (requests.exceptions.RequestException,),
-        max_tries=20,
-        max_time=5000,
+        max_tries=10,
+        max_time=600,
         jitter=backoff.full_jitter,
         giveup=lambda e: isinstance(e, requests.exceptions.HTTPError)
         and e.response is not None
@@ -393,7 +393,7 @@ class MassiveRestStream(RESTStream):
     )
     def get_response(self, url, query_params):
         try:
-            response = self.requests_session.get(url, params=query_params)
+            response = self.requests_session.get(url, params=query_params, timeout=60)
             response.raise_for_status()
             return response
         except requests.exceptions.ConnectionError as ce:

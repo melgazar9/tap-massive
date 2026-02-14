@@ -303,6 +303,7 @@ class TapMassive(Tap):
         """Fetch filtered option contracts for a single underlying ticker.
 
         Applies moneyness and DTE filters from option_tickers.other_params config.
+        Can optionally cap total contracts per underlying with max_contracts_per_underlying.
         """
         option_cfg = self.config.get("option_tickers", {})
         query_params = option_cfg.get("query_params", {}).copy()
@@ -311,6 +312,7 @@ class TapMassive(Tap):
         moneyness_min = other_params.get("moneyness_min")
         moneyness_max = other_params.get("moneyness_max")
         max_dte = other_params.get("max_dte")
+        max_contracts = other_params.get("max_contracts_per_underlying")
 
         if moneyness_min is not None or moneyness_max is not None:
             spot_price = self.get_spot_price(underlying)
@@ -355,6 +357,15 @@ class TapMassive(Tap):
 
             results = data.get("results", [])
             contracts.extend(results)
+
+            # Cap total contracts per underlying if max_contracts_per_underlying is set
+            if max_contracts and len(contracts) >= max_contracts:
+                logging.warning(
+                    f"Reached max_contracts_per_underlying ({max_contracts}) for {underlying}, "
+                    f"stopping pagination. Total fetched: {len(contracts)}"
+                )
+                break
+
             url = data.get("next_url")
             # next_url already has query params baked in, only need apiKey
             if url:
