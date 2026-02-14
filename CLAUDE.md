@@ -129,3 +129,20 @@ The meltano.yml `select:` and `config:` keys must match the stream's `name` attr
 - API key is always redacted from log messages via `redact_api_key()`
 - The `massive` Python package (`RESTClient`) is used for market status but most streams use raw `requests` with custom pagination
 - All imports at top of file, no inline imports
+
+## Automated Changelog Monitoring
+
+**Setup**: GitHub Actions workflows in `.github/workflows/` automatically monitor Massive API changes
+
+**How it works**:
+1. Weekly automated check of Massive changelog RSS feed (https://massive.com/changelog/rss.xml)
+2. Creates GitHub issues when changes detected
+3. Email notifications via GitHub
+4. Claude AI analyzes changes and creates PRs on-demand
+
+**Configuration**: See `.github/CHANGELOG_AUTOMATION.md` for setup instructions
+
+**Required Secrets**:
+- `ANTHROPIC_API_KEY`: Your Anthropic API key (for AI analysis)
+
+**Usage**: Comment `/analyze-changes` on any changelog issue to trigger AI analysis and PR creation

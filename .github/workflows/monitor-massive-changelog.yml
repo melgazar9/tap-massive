@@ -1,0 +1,153 @@
+name: Monitor Massive API Changelog
+
+on:
+  schedule:
+    # Run every Monday at 9 AM UTC
+    - cron: '0 9 * * 1'
+  workflow_dispatch: # Allow manual triggering
+
+permissions:
+  issues: write
+
+jobs:
+  check-changelog:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Fetch and parse RSS feed
+        id: check
+        run: |
+          # Fetch the RSS feed
+          curl -s "https://massive.com/changelog/rss.xml" > changelog-rss.xml
+
+          # Parse RSS with xmllint and extract entries from last 21 days
+          SINCE=$(date -d '21 days ago' +%s 2>/dev/null || date -v-21d +%s)
+
+          # Convert RSS to simplified JSON for processing
+          # Extract title, pubDate, link, and description from each item
+          python3 << 'PYTHON_SCRIPT'
+          import xml.etree.ElementTree as ET
+          import json
+          from datetime import datetime, timezone
+          import os
+
+          tree = ET.parse('changelog-rss.xml')
+          root = tree.getroot()
+
+          since_timestamp = int(os.environ['SINCE'])
+          entries = []
+
+          for item in root.findall('.//item'):
+              title = item.find('title').text if item.find('title') is not None else ''
+              pub_date = item.find('pubDate').text if item.find('pubDate') is not None else ''
+              link = item.find('link').text if item.find('link') is not None else ''
+              description = item.find('description').text if item.find('description') is not None else ''
+
+              # Parse RFC 2822 date format from RSS
+              if pub_date:
+                  try:
+                      dt = datetime.strptime(pub_date, '%a, %d %b %Y %H:%M:%S %Z')
+                      timestamp = int(dt.replace(tzinfo=timezone.utc).timestamp())
+
+                      if timestamp > since_timestamp:
+                          entries.append({
+                              'title': title,
+                              'date': pub_date,
+                              'link': link,
+                              'description': description
+                          })
+                  except:
+                      pass
+
+          # Save to JSON
+          with open('new-entries.json', 'w') as f:
+              json.dump(entries, f, indent=2)
+
+          # Output count
+          print(f"Found {len(entries)} new entries")
+          with open(os.environ['GITHUB_OUTPUT'], 'a') as f:
+              f.write(f"new_count={len(entries)}\n")
+              f.write(f"has_new={'true' if len(entries) > 0 else 'false'}\n")
+          PYTHON_SCRIPT
+        env:
+          SINCE: ${{ env.SINCE }}
+
+      - name: Format entries for issue
+        if: steps.check.outputs.has_new == 'true'
+        run: |
+          python3 << 'PYTHON_SCRIPT'
+          import json
+
+          with open('new-entries.json', 'r') as f:
+              entries = json.load(f)
+
+          md_lines = []
+          for entry in entries:
+              md_lines.append(f"### {entry['title']}")
+              md_lines.append(f"**Published:** {entry['date']}")
+              md_lines.append(entry['description'])
+              if entry['link']:
+                  md_lines.append(f"[Read more]({entry['link']})")
+              md_lines.append("---")
+              md_lines.append("")
+
+          with open('formatted-entries.md', 'w') as f:
+              f.write('\n'.join(md_lines))
+          PYTHON_SCRIPT
+
+      - name: Check for existing open issue
+        if: steps.check.outputs.has_new == 'true'
+        id: existing
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const { data: issues } = await github.rest.issues.listForRepo({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              labels: 'massive-api-update',
+              state: 'open',
+              per_page: 1
+            });
+            core.setOutput('exists', issues.length > 0 ? 'true' : 'false');
+
+      - name: Create GitHub issue
+        if: steps.check.outputs.has_new == 'true' && steps.existing.outputs.exists == 'false'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const entries = fs.readFileSync('formatted-entries.md', 'utf8');
+            const count = '${{ steps.check.outputs.new_count }}';
+
+            const body = [
+              `## Massive API Changelog Updates`,
+              ``,
+              `**${count} new change(s)** detected:`,
+              ``,
+              entries,
+              ``,
+              `## Next Steps`,
+              ``,
+              `1. Review the changes above`,
+              `2. Comment \`/analyze-changes\` to have Claude analyze the impact and open a PR with fixes`,
+              `3. Or manually update streams in \`tap_massive/streams/\``,
+              ``,
+              `**Changelog**: https://massive.com/changelog`,
+              `**RSS Feed**: https://massive.com/changelog/rss.xml`,
+            ].join('\n');
+
+            await github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: `[Massive API] ${count} changelog update(s) — ${new Date().toISOString().split('T')[0]}`,
+              body: body,
+              labels: ['massive-api-update']
+            });
+
+      - name: Workflow summary
+        run: |
+          if [ "${{ steps.check.outputs.has_new }}" = "true" ]; then
+            echo "### Massive Changelog: ${{ steps.check.outputs.new_count }} new change(s)" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "### Massive Changelog: No new changes in the last 21 days" >> "$GITHUB_STEP_SUMMARY"
+          fi
