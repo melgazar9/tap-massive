@@ -1,11 +1,10 @@
-"""Tests for per-underlying options partitioning and moneyness filtering."""
+"""Tests for per-underlying options partitioning and contract fetching."""
 
 from __future__ import annotations
 
 from unittest.mock import MagicMock, PropertyMock, patch
 
 import pytest
-import requests
 
 from tap_massive.tap import TapMassive
 
@@ -19,11 +18,6 @@ def tap_config():
                 "expired": True,
                 "sort": "ticker",
             },
-            "other_params": {
-                "moneyness_min": 0.5,
-                "moneyness_max": 1.5,
-                "max_dte": 120,
-            },
             "select_tickers": ["AAPL"],
         },
     }
@@ -34,76 +28,15 @@ def mock_tap(tap_config):
     """Create a TapMassive instance with mocked config."""
     tap = MagicMock(spec=TapMassive)
     tap.config = tap_config
-    tap._spot_price_cache = {}
     tap.logger = MagicMock()
-    # Bind actual methods to the mock so they use real logic
-    tap.get_spot_price = TapMassive.get_spot_price.__get__(tap)
     tap.get_option_contracts_for_underlying = (
         TapMassive.get_option_contracts_for_underlying.__get__(tap)
     )
     return tap
 
 
-class TestGetSpotPrice:
-    def test_returns_close_price(self, mock_tap):
-        mock_response = MagicMock()
-        mock_response.ok = True
-        mock_response.json.return_value = {
-            "results": [{"c": 230.50}],
-        }
-        mock_response.raise_for_status = MagicMock()
-
-        with patch(
-            "tap_massive.tap.requests.get", return_value=mock_response
-        ) as mock_get:
-            price = mock_tap.get_spot_price("AAPL")
-
-        assert price == 230.50
-        mock_get.assert_called_once()
-        call_args = mock_get.call_args
-        assert "AAPL" in call_args[0][0]
-        assert call_args[1]["params"]["apiKey"] == "test_key"
-
-    def test_caches_result(self, mock_tap):
-        mock_response = MagicMock()
-        mock_response.json.return_value = {"results": [{"c": 100.0}]}
-        mock_response.raise_for_status = MagicMock()
-
-        with patch(
-            "tap_massive.tap.requests.get", return_value=mock_response
-        ) as mock_get:
-            price1 = mock_tap.get_spot_price("AAPL")
-            price2 = mock_tap.get_spot_price("AAPL")
-
-        assert price1 == 100.0
-        assert price2 == 100.0
-        assert mock_get.call_count == 1  # Only one API call due to caching
-
-    def test_returns_none_on_error(self, mock_tap):
-        with patch(
-            "tap_massive.tap.requests.get",
-            side_effect=requests.RequestException("API error"),
-        ):
-            price = mock_tap.get_spot_price("INVALID")
-
-        assert price is None
-        assert mock_tap._spot_price_cache["INVALID"] is None
-
-    def test_returns_none_for_empty_results(self, mock_tap):
-        mock_response = MagicMock()
-        mock_response.json.return_value = {"results": []}
-        mock_response.raise_for_status = MagicMock()
-
-        with patch("tap_massive.tap.requests.get", return_value=mock_response):
-            price = mock_tap.get_spot_price("AAPL")
-
-        assert price is None
-
-
 class TestGetOptionContractsForUnderlying:
-    def test_applies_moneyness_filter(self, mock_tap):
-        mock_tap._spot_price_cache = {"AAPL": 200.0}
-
+    def test_fetches_contracts_with_query_params(self, mock_tap):
         mock_response = MagicMock()
         mock_response.json.return_value = {
             "results": [
@@ -122,30 +55,11 @@ class TestGetOptionContractsForUnderlying:
         assert len(contracts) == 2
         call_args = mock_get.call_args
         params = call_args[1]["params"]
-        # moneyness_min=0.5 * 200 = 100, moneyness_max=1.5 * 200 = 300
-        assert params["strike_price.gte"] == 100.0
-        assert params["strike_price.lte"] == 300.0
         assert params["underlying_ticker"] == "AAPL"
-
-    def test_applies_max_dte_filter_when_not_expired(self, mock_tap):
-        mock_tap._spot_price_cache = {"AAPL": 200.0}
-        mock_tap.config["option_tickers"]["query_params"]["expired"] = False
-
-        mock_response = MagicMock()
-        mock_response.json.return_value = {"results": [], "next_url": None}
-        mock_response.raise_for_status = MagicMock()
-
-        with patch(
-            "tap_massive.tap.requests.get", return_value=mock_response
-        ) as mock_get:
-            mock_tap.get_option_contracts_for_underlying("AAPL")
-
-        params = mock_get.call_args[1]["params"]
-        assert "expiration_date.lte" in params
+        assert "strike_price.gte" not in params
+        assert "strike_price.lte" not in params
 
     def test_pages_through_results(self, mock_tap):
-        mock_tap._spot_price_cache = {"AAPL": 200.0}
-
         page1_response = MagicMock()
         page1_response.json.return_value = {
             "results": [{"ticker": "O:AAPL1"}],
@@ -170,44 +84,10 @@ class TestGetOptionContractsForUnderlying:
         assert contracts[0]["ticker"] == "O:AAPL1"
         assert contracts[1]["ticker"] == "O:AAPL2"
 
-    def test_no_moneyness_filter_without_config(self, mock_tap):
-        mock_tap.config["option_tickers"]["other_params"] = {}
-        mock_tap._spot_price_cache = {}
-
-        mock_response = MagicMock()
-        mock_response.json.return_value = {"results": [], "next_url": None}
-        mock_response.raise_for_status = MagicMock()
-
-        with patch(
-            "tap_massive.tap.requests.get", return_value=mock_response
-        ) as mock_get:
-            mock_tap.get_option_contracts_for_underlying("AAPL")
-
-        params = mock_get.call_args[1]["params"]
-        assert "strike_price.gte" not in params
-        assert "strike_price.lte" not in params
-
-    def test_skips_moneyness_without_spot_price(self, mock_tap):
-        mock_tap._spot_price_cache = {"AAPL": None}
-
-        mock_response = MagicMock()
-        mock_response.json.return_value = {"results": [], "next_url": None}
-        mock_response.raise_for_status = MagicMock()
-
-        with patch(
-            "tap_massive.tap.requests.get", return_value=mock_response
-        ) as mock_get:
-            mock_tap.get_option_contracts_for_underlying("AAPL")
-
-        params = mock_get.call_args[1]["params"]
-        assert "strike_price.gte" not in params
-        assert "strike_price.lte" not in params
-
     def test_normalizes_double_underscore_params(self, mock_tap):
         mock_tap.config["option_tickers"]["query_params"][
             "expiration_date__gte"
         ] = "2025-01-01"
-        mock_tap._spot_price_cache = {"AAPL": 200.0}
 
         mock_response = MagicMock()
         mock_response.json.return_value = {"results": [], "next_url": None}
@@ -221,46 +101,6 @@ class TestGetOptionContractsForUnderlying:
         params = mock_get.call_args[1]["params"]
         assert "expiration_date.gte" in params
         assert "expiration_date__gte" not in params
-
-
-class TestDteFilterGuard:
-    """Verify DTE filter is skipped when expired=true."""
-
-    def test_dte_skipped_when_expired_true(self, mock_tap):
-        """When expired=true, max_dte should NOT set expiration_date.lte."""
-        mock_tap.config["option_tickers"]["query_params"]["expired"] = True
-        mock_tap.config["option_tickers"]["other_params"] = {"max_dte": 120}
-        mock_tap._spot_price_cache = {}
-
-        mock_response = MagicMock()
-        mock_response.json.return_value = {"results": [], "next_url": None}
-        mock_response.raise_for_status = MagicMock()
-
-        with patch(
-            "tap_massive.tap.requests.get", return_value=mock_response
-        ) as mock_get:
-            mock_tap.get_option_contracts_for_underlying("AAPL")
-
-        params = mock_get.call_args[1]["params"]
-        assert "expiration_date.lte" not in params
-
-    def test_dte_applied_when_expired_false(self, mock_tap):
-        """When expired=false, max_dte should set expiration_date.lte."""
-        mock_tap.config["option_tickers"]["query_params"]["expired"] = False
-        mock_tap.config["option_tickers"]["other_params"] = {"max_dte": 120}
-        mock_tap._spot_price_cache = {}
-
-        mock_response = MagicMock()
-        mock_response.json.return_value = {"results": [], "next_url": None}
-        mock_response.raise_for_status = MagicMock()
-
-        with patch(
-            "tap_massive.tap.requests.get", return_value=mock_response
-        ) as mock_get:
-            mock_tap.get_option_contracts_for_underlying("AAPL")
-
-        params = mock_get.call_args[1]["params"]
-        assert "expiration_date.lte" in params
 
 
 class TestStateResetBetweenContracts:

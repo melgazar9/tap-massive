@@ -37,11 +37,11 @@ plugins:
       - stock_ticker_details.*
       - stock_ticker_types.*
       - stock_related_tickers.*
-      - stock_bars_1_second.*
-      - stock_bars_30_second.*
-      - stock_bars_1_minute.*
-      - stock_bars_5_minute.*
-      - stock_bars_30_minute.*
+#      - stock_bars_1_second.*
+#      - stock_bars_30_second.*
+#      - stock_bars_1_minute.*
+#      - stock_bars_5_minute.*
+#      - stock_bars_30_minute.*
       - stock_bars_1_hour.*
       - stock_bars_1_day.*
       - stock_bars_1_week.*
@@ -53,10 +53,10 @@ plugins:
       - stock_ticker_snapshot.*
       - stock_full_market_snapshot.*
       - stock_unified_snapshot.*
-      - stock_trades.*
+#      - stock_trades.*
       - stock_last_trade.*
-      - stock_quotes.*
-      - stock_last_quote.*
+#      - stock_quotes.*
+#      - stock_last_quote.*
       - stock_sma.*
       - stock_ema.*
       - stock_macd.*
@@ -102,69 +102,69 @@ plugins:
       # --- Options ---
       - options_contracts.*
       - options_contract_overview.*
-      - options_bars_1_second.*
-      - options_bars_30_second.*
-      - options_bars_1_minute.*
-      - options_bars_5_minute.*
-      - options_bars_30_minute.*
-      - options_bars_1_hour.*
+#      - options_bars_1_second.*
+#      - options_bars_30_second.*
+#      - options_bars_1_minute.*
+#      - options_bars_5_minute.*
+#      - options_bars_30_minute.*
+#      - options_bars_1_hour.*
       - options_bars_1_day.*
       - options_bars_1_week.*
       - options_bars_1_month.*
       - options_daily_ticker_summary.*
       - options_previous_day_bar.*
-      - options_trades.*
-      - options_quotes.*
-      - options_last_trade.*
+#      - options_trades.*
+#      - options_quotes.*
+#      - options_last_trade.*
       - options_contract_snapshot.*
       - options_chain_snapshot.*
       - options_unified_snapshot.*
-      - options_sma.*
-      - options_ema.*
-      - options_macd.*
-      - options_rsi.*
+#      - options_sma.*
+#      - options_ema.*
+#      - options_macd.*
+#      - options_rsi.*
       - options_exchanges.*
       - options_condition_codes.*
 
       # --- Forex ---
       - forex_tickers.*
       - forex_ticker_details.*
-      - forex_bars_1_second.*
-      - forex_bars_1_minute.*
-      - forex_bars_5_minute.*
-      - forex_bars_1_hour.*
+#      - forex_bars_1_second.*
+#      - forex_bars_1_minute.*
+#      - forex_bars_5_minute.*
+#      - forex_bars_1_hour.*
       - forex_bars_1_day.*
       - forex_bars_1_week.*
       - forex_bars_1_month.*
       - forex_daily_market_summary.*
       - forex_previous_day_bar.*
-      - forex_quotes.*
-      - forex_last_quote.*
-      - forex_ticker_types.*
+#      - forex_quotes.*
+#      - forex_last_quote.*
+#      - forex_ticker_types.*
       - forex_top_market_movers.*
       - forex_ticker_snapshot.*
       - forex_full_market_snapshot.*
-      - forex_sma.*
+#      - forex_sma.*
       - forex_ema.*
-      - forex_macd.*
-      - forex_rsi.*
+#      - forex_macd.*
+#      - forex_rsi.*
       - forex_currency_conversion.*
 
       # --- Crypto ---
       - crypto_tickers.*
       - crypto_ticker_details.*
-      - crypto_bars_1_second.*
-      - crypto_bars_1_minute.*
-      - crypto_bars_5_minute.*
-      - crypto_bars_1_hour.*
+#      - crypto_bars_1_second.*
+#      - crypto_bars_1_minute.*
+#      - crypto_bars_5_minute.*
+#      - crypto_bars_1_hour.*
       - crypto_bars_1_day.*
       - crypto_bars_1_week.*
       - crypto_bars_1_month.*
       - crypto_daily_market_summary.*
       - crypto_daily_ticker_summary.*
       - crypto_previous_day_bar.*
-      - crypto_trades.*
-      - crypto_last_trade.*
+#      - crypto_trades.*
+#      - crypto_last_trade.*
       - crypto_ticker_types.*
       - crypto_top_market_movers.*
       - crypto_ticker_snapshot.*
@@ -177,9 +177,9 @@ plugins:
       # --- Indices ---
       - indices_tickers.*
       - indices_ticker_details.*
-      - indices_bars_1_second.*
-      - indices_bars_1_minute.*
-      - indices_bars_5_minute.*
+#      - indices_bars_1_second.*
+#      - indices_bars_1_minute.*
+#      - indices_bars_5_minute.*
       - indices_bars_1_hour.*
       - indices_bars_1_day.*
       - indices_bars_1_week.*
@@ -204,8 +204,8 @@ plugins:
       - futures_bars_1_day.*
       - futures_bars_1_week.*
       - futures_bars_1_month.*
-      - futures_trades.*
-      - futures_quotes.*
+#      - futures_trades.*
+#      - futures_quotes.*
       - futures_contracts_snapshot.*
 
     config:
@@ -231,6 +231,7 @@ plugins:
           limit: 1000
         select_tickers:
           - "AAPL"
+          - "META"
 
       stock_ticker_details:
         query_params: {}
@@ -640,11 +641,12 @@ plugins:
       # For incremental updates after backfill, switch to expired: false.
       option_tickers:
         query_params:
-          expired: true    # Both active AND expired for historical coverage
+          expired: false    # Both active AND expired for historical coverage
           sort: ticker
         other_params: {}
         select_tickers:
           - "AAPL"
+          - "META"
 
       options_contract_overview:
         query_params: {}

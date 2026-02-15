@@ -5,9 +5,6 @@ from __future__ import annotations
 import logging
 import threading
 import typing as t
-from datetime import datetime, timedelta, timezone
-from decimal import Decimal
-
 import requests
 from singer_sdk import Tap
 from singer_sdk import typing as th
@@ -209,7 +206,6 @@ class TapMassive(Tap):
     _cached_option_tickers: t.List[dict] | None = None
     _option_tickers_stream_instance: OptionsContractsStream | None = None
     _option_tickers_lock = threading.Lock()
-    _spot_price_cache: dict[str, Decimal | None] = {}
 
     # Forex ticker caching
     _cached_forex_tickers: t.List[dict] | None = None
@@ -273,66 +269,10 @@ class TapMassive(Tap):
                     )
         return self._cached_option_tickers
 
-    # Option per-underlying methods
-    def get_spot_price(self, ticker: str) -> Decimal | None:
-        """Get previous close price for an underlying ticker. Cached per ticker."""
-        if ticker in self._spot_price_cache:
-            return self._spot_price_cache[ticker]
-
-        base_url = self.config.get("base_url", "https://api.massive.com")
-        url = f"{base_url}/v2/aggs/ticker/{ticker}/prev"
-        try:
-            resp = requests.get(
-                url,
-                params={"apiKey": self.config["api_key"]},
-                timeout=30,
-            )
-            resp.raise_for_status()
-            data = resp.json()
-            results = data.get("results", [])
-            if results:
-                price = results[0].get("c")
-                price_decimal = Decimal(str(price)) if price is not None else None
-                self._spot_price_cache[ticker] = price_decimal
-                return price_decimal
-        except (requests.RequestException, ValueError, KeyError) as e:
-            logging.warning(f"Could not fetch spot price for {ticker}: {e}")
-
-        self._spot_price_cache[ticker] = None
-        return None
-
     def get_option_contracts_for_underlying(self, underlying: str) -> list[dict]:
-        """Fetch filtered option contracts for a single underlying ticker.
-
-        Applies moneyness and DTE filters from option_tickers.other_params config.
-        Can optionally cap total contracts per underlying with max_contracts_per_underlying.
-        """
+        """Fetch all option contracts for a single underlying ticker."""
         option_cfg = self.config.get("option_tickers", {})
         query_params = option_cfg.get("query_params", {}).copy()
-        other_params = option_cfg.get("other_params", {})
-
-        moneyness_min = other_params.get("moneyness_min")
-        moneyness_max = other_params.get("moneyness_max")
-        max_dte = other_params.get("max_dte")
-        max_contracts = other_params.get("max_contracts_per_underlying")
-
-        if moneyness_min is not None or moneyness_max is not None:
-            spot_price = self.get_spot_price(underlying)
-            if spot_price:
-                if moneyness_min is not None:
-                    query_params["strike_price.gte"] = spot_price * moneyness_min
-                if moneyness_max is not None:
-                    query_params["strike_price.lte"] = spot_price * moneyness_max
-            else:
-                logging.warning(
-                    f"No spot price for {underlying}, skipping moneyness filter."
-                )
-
-        if max_dte is not None and not query_params.get("expired", False):
-            max_exp = (
-                datetime.now(tz=timezone.utc) + timedelta(days=int(max_dte))
-            ).strftime("%Y-%m-%d")
-            query_params.setdefault("expiration_date.lte", max_exp)
 
         query_params["underlying_ticker"] = underlying
         query_params["apiKey"] = self.config["api_key"]
@@ -360,21 +300,13 @@ class TapMassive(Tap):
             results = data.get("results", [])
             contracts.extend(results)
 
-            # Cap total contracts per underlying if max_contracts_per_underlying is set
-            if max_contracts and len(contracts) >= max_contracts:
-                logging.warning(
-                    f"Reached max_contracts_per_underlying ({max_contracts}) for {underlying}, "
-                    f"stopping pagination. Total fetched: {len(contracts)}"
-                )
-                break
-
             url = data.get("next_url")
             # next_url already has query params baked in, only need apiKey
             if url:
                 query_params = {"apiKey": self.config["api_key"]}
 
         logging.info(
-            f"Fetched {len(contracts)} filtered option contracts for {underlying}."
+            f"Fetched {len(contracts)} option contracts for {underlying}."
         )
         return contracts
 
