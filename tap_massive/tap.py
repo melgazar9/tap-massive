@@ -326,7 +326,7 @@ class TapMassive(Tap):
                     f"No spot price for {underlying}, skipping moneyness filter."
                 )
 
-        if max_dte is not None:
+        if max_dte is not None and not query_params.get("expired", False):
             max_exp = (
                 datetime.now(tz=timezone.utc) + timedelta(days=int(max_dte))
             ).strftime("%Y-%m-%d")

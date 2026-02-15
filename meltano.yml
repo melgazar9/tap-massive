@@ -33,87 +33,181 @@ plugins:
 
     select:
       # --- Stocks ---
-      - stock_tickers.*
-      - stock_ticker_details.*
-      - stock_ticker_types.*
-      - stock_related_tickers.*
+#      - stock_tickers.*
+#      - stock_ticker_details.*
+#      - stock_ticker_types.*
+#      - stock_related_tickers.*
 #      - stock_bars_1_second.*
 #      - stock_bars_30_second.*
 #      - stock_bars_1_minute.*
 #      - stock_bars_5_minute.*
 #      - stock_bars_30_minute.*
 #      - stock_bars_1_hour.*
-      - stock_bars_1_day.*
+#      - stock_bars_1_day.*
 #      - stock_bars_1_week.*
 #      - stock_bars_1_month.*
-      - stock_daily_market_summary.*
-      - stock_daily_ticker_summary.*
-      - stock_previous_day_bar.*
-      - stock_top_market_movers.*
-      - stock_ticker_snapshot.*
+#      - stock_daily_market_summary.*
+#      - stock_daily_ticker_summary.*
+#      - stock_previous_day_bar.*
+#      - stock_top_market_movers.*
+#      - stock_ticker_snapshot.*
 #      - stock_full_market_snapshot.*
 #      - stock_unified_snapshot.*
-      - stock_trades.*
-      - stock_last_trade.*
-      - stock_quotes.*
-      - stock_last_quote.*
-      - stock_sma.*
-      - stock_ema.*
-      - stock_macd.*
-      - stock_rsi.*
-      - exchanges.*
-      - market_holidays.*
-      - market_status.*
-      - condition_codes.*
-      - stock_ipos.*
+#      - stock_trades.*
+#      - stock_last_trade.*
+#      - stock_quotes.*
+#      - stock_last_quote.*
+#      - stock_sma.*
+#      - stock_ema.*
+#      - stock_macd.*
+#      - stock_rsi.*
+#      - stock_exchanges.*
+#      - stock_condition_codes.*
+#      - stock_ipos.*
 #      - stock_splits_deprecated.*
-      - stock_splits.*
+#      - stock_splits.*
 #      - stock_dividends_deprecated.*
-      - stock_dividends.*
-      - stock_ticker_events.*
+#      - stock_dividends.*
+#      - stock_ticker_events.*
 
       # --- Fundamentals ---
 #      - stock_financials_deprecated.*
-      - stock_balance_sheets.*
-      - stock_cash_flow_statements.*
-      - stock_income_statements.*
-      - stock_ratios.*
-      - stock_short_interest.*
-      - stock_short_volume.*
-      - stock_float.*
-      - stock_10k_sections.*
-      - stock_risk_factors.*
-      - stock_risk_categories.*
-      - stock_news.*
+#      - stock_balance_sheets.*
+#      - stock_cash_flow_statements.*
+#      - stock_income_statements.*
+#      - stock_ratios.*
+#      - stock_short_interest.*
+#      - stock_short_volume.*
+#      - stock_float.*
+#      - stock_10k_sections.*
+#      - stock_risk_factors.*
+#      - stock_risk_categories.*
+#      - stock_news.*
+
+      # --- Cross-Asset Reference Streams ---
+#      - ticker_types.*
+#      - exchanges.*
+#      - condition_codes.*
+
+      # --- Market Data ---
+#      - market_holidays.*
+#      - market_status.*
 
       # --- Economy ---
-      - treasury_yields.*
-      - inflation.*
-      - inflation_expectations.*
-      - labor_market.*
+#      - treasury_yields.*
+#      - inflation.*
+#      - inflation_expectations.*
+#      - labor_market.*
 
       # --- Options ---
-      - options_contracts.*
-#      - options_contract_overview.*  # skip in test; manual later for expired contracts
+#      - options_contracts.*
+#      - options_contract_overview.*
 #      - options_bars_1_second.*
+#      - options_bars_30_second.*
 #      - options_bars_1_minute.*
 #      - options_bars_5_minute.*
-      - options_bars_1_hour.*
-      - options_daily_ticker_summary.*
-      - options_previous_day_bar.*
-      - options_trades.*
-      - options_quotes.*
-      - options_last_trade.*
-      - options_contract_snapshot.*
-      - options_chain_snapshot.*
-#      - options_unified_snapshot.*  # large; skip for fast test runs
-      - options_sma.*
-      - options_ema.*
-      - options_macd.*
-      - options_rsi.*
-      - options_ticker_types.*
-      - options_exchanges.*
-      - options_condition_codes.*
+#      - options_bars_30_minute.*
+#      - options_bars_1_hour.*
+#      - options_bars_1_day.*
+#      - options_bars_1_week.*
+#      - options_bars_1_month.*
+#      - options_daily_ticker_summary.*
+#      - options_previous_day_bar.*
+#      - options_trades.*
+#      - options_quotes.*
+#      - options_last_trade.*
+#      - options_contract_snapshot.*
+#      - options_chain_snapshot.*
+#      - options_unified_snapshot.*
+#      - options_sma.*
+#      - options_ema.*
+#      - options_macd.*
+#      - options_rsi.*
+#      - options_ticker_types.*
+#      - options_exchanges.*
+#      - options_condition_codes.*
+
+      # --- Forex ---
+#      - forex_tickers.*
+#      - forex_ticker_details.*
+#      - forex_bars_1_second.*
+#      - forex_bars_1_minute.*
+#      - forex_bars_5_minute.*
+#      - forex_bars_1_hour.*
+#      - forex_bars_1_day.*
+#      - forex_bars_1_week.*
+#      - forex_bars_1_month.*
+#      - forex_daily_market_summary.*
+#      - forex_previous_day_bar.*
+#      - forex_quotes.*
+#      - forex_last_quote.*
+#      - forex_ticker_types.*
+#      - forex_top_market_movers.*
+#      - forex_ticker_snapshot.*
+#      - forex_full_market_snapshot.*
+#      - forex_sma.*
+#      - forex_ema.*
+#      - forex_macd.*
+#      - forex_rsi.*
+#      - forex_currency_conversion.*
+
+      # --- Crypto ---
+#      - crypto_tickers.*
+#      - crypto_ticker_details.*
+#      - crypto_bars_1_second.*
+#      - crypto_bars_1_minute.*
+#      - crypto_bars_5_minute.*
+#      - crypto_bars_1_hour.*
+#      - crypto_bars_1_day.*
+#      - crypto_bars_1_week.*
+#      - crypto_bars_1_month.*
+#      - crypto_daily_market_summary.*
+#      - crypto_daily_ticker_summary.*
+#      - crypto_previous_day_bar.*
+#      - crypto_trades.*
+#      - crypto_last_trade.*
+#      - crypto_ticker_types.*
+#      - crypto_top_market_movers.*
+#      - crypto_ticker_snapshot.*
+#      - crypto_full_market_snapshot.*
+#      - crypto_sma.*
+#      - crypto_ema.*
+#      - crypto_macd.*
+#      - crypto_rsi.*
+
+      # --- Indices ---
+      - indices_tickers.*
+      - indices_ticker_details.*
+      - indices_bars_1_second.*
+      - indices_bars_1_minute.*
+      - indices_bars_5_minute.*
+      - indices_bars_1_hour.*
+      - indices_bars_1_day.*
+      - indices_bars_1_week.*
+      - indices_bars_1_month.*
+      - indices_daily_ticker_summary.*
+      - indices_previous_day_bar.*
+      - indices_snapshot.*
+      - indices_ticker_types.*
+      - indices_sma.*
+      - indices_ema.*
+      - indices_macd.*
+      - indices_rsi.*
+
+      # --- Futures ---
+#      - futures_contracts.*
+#      - futures_products.*
+#      - futures_schedules.*
+#      - futures_bars_1_second.*
+#      - futures_bars_1_minute.*
+#      - futures_bars_5_minute.*
+#      - futures_bars_1_hour.*
+#      - futures_bars_1_day.*
+#      - futures_bars_1_week.*
+#      - futures_bars_1_month.*
+#      - futures_trades.*
+#      - futures_quotes.*
+#      - futures_contracts_snapshot.*
 
     config:
       # set this for a global start date for all streams -- will be overridden by the streams incremental state if that's more recent.
@@ -138,14 +232,16 @@ plugins:
           limit: 1000
         select_tickers:
           - "AAPL"
+
       stock_ticker_details:
         query_params: {}
+      # Second bars - 1-2 days (very high volume)
       stock_bars_1_second:
         path_params:
           multiplier: 1
           timespan: "second"
-          from: "2025-01-05"
-          to: "2025-01-07"
+          from: "2025-01-20"
+          to: "2025-01-21"
         query_params:
           adjusted: true
           sort: "asc"
@@ -157,8 +253,8 @@ plugins:
         path_params:
           multiplier: 30
           timespan: "second"
-          from: "2025-01-05"
-          to: "2025-01-07"
+          from: "2025-01-20"
+          to: "2025-01-21"
         query_params:
           adjusted: true
           sort: "asc"
@@ -166,12 +262,13 @@ plugins:
         other_params:
           use_cached_tickers: true
 
+      # Minute bars - 2-3 days (high volume)
       stock_bars_1_minute:
         path_params:
           multiplier: 1
           timespan: "minute"
-          from: "2025-01-05"
-          to: "2025-01-07"
+          from: "2025-01-20"
+          to: "2025-01-22"
         query_params:
           adjusted: true
           sort: "asc"
@@ -183,8 +280,8 @@ plugins:
         path_params:
           multiplier: 5
           timespan: "minute"
-          from: "2025-01-05"
-          to: "2025-01-07"
+          from: "2025-01-20"
+          to: "2025-01-22"
         query_params:
           adjusted: true
           sort: "asc"
@@ -196,8 +293,8 @@ plugins:
         path_params:
           multiplier: 30
           timespan: "minute"
-          from: "2025-01-05"
-          to: "2025-01-07"
+          from: "2025-01-20"
+          to: "2025-01-22"
         query_params:
           adjusted: true
           sort: "asc"
@@ -205,12 +302,13 @@ plugins:
         other_params:
           use_cached_tickers: true
 
+      # Hourly/5-min bars - 1 week (moderate volume)
       stock_bars_1_hour:
         path_params:
           multiplier: 1
           timespan: "hour"
-          from: "2025-01-05"
-          to: "2025-01-07"
+          from: "2025-01-20"
+          to: "2025-01-24"
         query_params:
           adjusted: true
           sort: "asc"
@@ -218,12 +316,13 @@ plugins:
         other_params:
           use_cached_tickers: true
 
+      # Daily/Weekly/Monthly bars - 1 month (for meaningful patterns)
       stock_bars_1_day:
         path_params:
           multiplier: 1
           timespan: "day"
-          from: "2025-01-05"
-          to: "2025-01-07"
+          from: "2025-01-01"
+          to: "2025-01-31"
         query_params:
           adjusted: true
           sort: "asc"
@@ -235,8 +334,8 @@ plugins:
         path_params:
           multiplier: 1
           timespan: "week"
-          from: "2025-01-05"
-          to: "2025-01-07"
+          from: "2025-01-01"
+          to: "2025-01-31"
         query_params:
           adjusted: true
           sort: "asc"
@@ -248,8 +347,8 @@ plugins:
         path_params:
           multiplier: 1
           timespan: "month"
-          from: "2025-01-05"
-          to: "2025-01-07"
+          from: "2025-01-01"
+          to: "2025-01-31"
         query_params:
           adjusted: true
           sort: "asc"
@@ -259,7 +358,7 @@ plugins:
 
       stock_daily_market_summary:
         path_params:
-          date: "2025-01-05"
+          date: "2025-01-01"
         query_params:
           adjusted: true
           include_otc: false
@@ -269,7 +368,7 @@ plugins:
 
       stock_daily_ticker_summary:
         path_params:
-          date: "2025-01-05"
+          date: "2025-01-01"
         query_params:
           adjusted: true
           limit: 50000
@@ -278,8 +377,9 @@ plugins:
           use_cached_tickers: true
 
       stock_top_market_movers:
-        query_params:
+        path_params:
           direction: "gainers"  # set to "" or "both" to get both directions
+        query_params:
           include_otc: false
           limit: 50000
 
@@ -296,12 +396,13 @@ plugins:
           type: "stocks"
           limit: 250
 
+      # Tick-level data - 2-3 days for manageable volume
       stock_trades:
         query_params:
           sort: timestamp
           order: "asc"
-          timestamp__gte: "2025-01-05T00:00:00Z"
-          timestamp__lte: "2025-01-07T23:59:59Z"
+          timestamp__gte: "2025-01-20T00:00:00Z"
+          timestamp__lte: "2025-01-22T23:59:59Z"
           limit: 50000
         other_params:
           use_cached_tickers: true
@@ -312,8 +413,8 @@ plugins:
 
       stock_quotes:
         query_params:
-          timestamp__gte: "2025-01-05T00:00:00Z"
-          timestamp__lte: "2025-01-07T23:59:59Z"
+          timestamp__gte: "2025-01-20T00:00:00Z"
+          timestamp__lte: "2025-01-22T23:59:59Z"
           sort: timestamp
           order: asc
           limit: 50000
@@ -324,10 +425,11 @@ plugins:
         other_params:
           use_cached_tickers: true
 
+      # Technical indicators - 1 month for meaningful window calculations (20-day SMA, etc.)
       stock_sma:
         query_params:
-          timestamp__gte: "2025-01-05T00:00:00Z"
-          timestamp__lte: "2025-01-07T23:59:59Z"
+          timestamp__gte: "2025-01-01T00:00:00Z"
+          timestamp__lte: "2025-01-31T23:59:59Z"
           order: asc
           timespan: day
           window: 10
@@ -339,8 +441,8 @@ plugins:
 
       stock_ema:
         query_params:
-          timestamp__gte: "2025-01-05T00:00:00Z"
-          timestamp__lte: "2025-01-07T23:59:59Z"
+          timestamp__gte: "2025-01-01T00:00:00Z"
+          timestamp__lte: "2025-01-31T23:59:59Z"
           order: asc
           timespan: day
           window: 10
@@ -352,8 +454,8 @@ plugins:
 
       stock_macd:
         query_params:
-          timestamp__gte: "2025-01-05T00:00:00Z"
-          timestamp__lte: "2025-01-07T23:59:59Z"
+          timestamp__gte: "2025-01-01T00:00:00Z"
+          timestamp__lte: "2025-01-31T23:59:59Z"
           order: asc
           timespan: day
           short_window: 12
@@ -367,8 +469,8 @@ plugins:
 
       stock_rsi:
         query_params:
-          timestamp__gte: "2025-01-05T00:00:00Z"
-          timestamp__lte: "2025-01-07T23:59:59Z"
+          timestamp__gte: "2025-01-01T00:00:00Z"
+          timestamp__lte: "2025-01-31T23:59:59Z"
           order: "asc"
           timespan: day
           window: 18
@@ -376,37 +478,38 @@ plugins:
           expand_underlying: false
           limit: 5000
 
+      # Event streams - wider date range for sparse events (1 year to find some data)
       stock_ipos:
         query_params:
-          listing_date__gte: "2025-01-05"
-          listing_date__lte: "2025-01-07"
+          listing_date__gte: "2024-01-01"
+          listing_date__lte: "2025-02-01"
           limit: 1000
 
       stock_splits_deprecated:
         query_params:
-          execution_date__gte: "2025-01-05"
-          execution_date__lte: "2025-01-07"
+          execution_date__gte: "2024-01-01"
+          execution_date__lte: "2025-02-01"
           limit: 1000
           order: asc
 
       stock_splits:
         query_params:
-          execution_date__gte: "2025-01-05"
-          execution_date__lte: "2025-01-07"
+          execution_date__gte: "2024-01-01"
+          execution_date__lte: "2025-02-01"
           limit: 5000
           order: asc
 
       stock_dividends_deprecated:
         query_params:
-          ex_dividend_date__gte: "2025-01-05"
-          ex_dividend_date__lte: "2025-01-07"
+          ex_dividend_date__gte: "2024-01-01"
+          ex_dividend_date__lte: "2025-02-01"
           order: asc
           limit: 1000
 
       stock_dividends:
         query_params:
-          ex_dividend_date__gte: "2025-01-05"
-          ex_dividend_date__lte: "2025-01-07"
+          ex_dividend_date__gte: "2024-01-01"
+          ex_dividend_date__lte: "2025-02-01"
           order: asc
           limit: 5000
 
@@ -489,8 +592,6 @@ plugins:
         other_params:
           use_cached_tickers: true
 
-      stock_risk_categories: {}
-
       stock_news:
         query_params:
           published_utc__gte: "2025-01-05"
@@ -501,46 +602,48 @@ plugins:
           use_cached_tickers: true
 
       # --- Economy ---
+      # Sparse monthly/quarterly data - use 1 month window
       # earliest start date is 1962-01-02 per documentation
       treasury_yields:
         query_params:
-          date__gte: "2025-01-05"
-          date__lte: "2025-01-07"
+          date__gte: "2025-01-01"
+          date__lte: "2025-01-31"
           limit: 50000
 
       # earliest start date is 1947-01-01 per documentation
       inflation:
         query_params:
-          date__gte: "2025-01-05"
-          date__lte: "2025-01-07"
+          date__gte: "2025-01-01"
+          date__lte: "2025-01-31"
           limit: 50000
 
       # earliest start date is 1982-01-01 per documentation
       inflation_expectations:
         query_params:
-          date__gte: "2025-01-05"
-          date__lte: "2025-01-07"
+          date__gte: "2025-01-01"
+          date__lte: "2025-01-31"
           limit: 50000
 
       # earliest start date is 1948-01-01 per documentation
       labor_market:
         query_params:
-          date__gte: "2025-01-05"
-          date__lte: "2025-01-07"
+          date__gte: "2025-01-01"
+          date__lte: "2025-01-31"
           limit: 50000
 
       # --- Options ---
       # The tickers that are set here persist across all streams that require a single options ticker as input.
       # To run different tickers across different streams you need to call the tap N times,
       # where N is the number of distinct groups of ticker.
+      # Used by bars/snapshot/trades streams for per-underlying contract fetching.
+      # Full historical backfill: expired=true pulls both active AND expired contracts.
+      # No moneyness/DTE/max_contracts filters — pulling everything for backtesting.
+      # For incremental updates after backfill, switch to expired: false.
       option_tickers:
         query_params:
-          expired: false   # Only active contracts
+          expired: true    # Both active AND expired for historical coverage
           sort: ticker
-        other_params:
-          moneyness_min: 0.30      # strike/spot >= 0.30 --> 70% loss
-          moneyness_max: 2         # strike/spot <= 2 --> 200% gain
-          max_dte: 120             # max days to expiration
+        other_params: {}
         select_tickers:
           - "AAPL"
 
@@ -549,21 +652,23 @@ plugins:
         other_params:
           use_cached_tickers: true
 
+      # Phase 1A: Load ALL contracts including expired for complete backtest history
+      # No date filters, no moneyness filters - just complete contract universe
       options_contracts:
         query_params:
-          expiration_date__gte: "2026-02-13"
-          expiration_date__lte: "2026-02-13"
-          expired: false   # active contracts only for test run
+          expired: true    # Include expired contracts for complete historical coverage
           sort: ticker
           order: asc
           limit: 1000
 
+      # Options bars - same date convention as stock bars
+      # Second bars - 1-2 days (very high volume)
       options_bars_1_second:
         path_params:
           multiplier: 1
           timespan: "second"
-          from: "2025-01-05"
-          to: "2025-01-07"
+          from: "2025-01-20"
+          to: "2025-01-21"
         query_params:
           adjusted: true
           sort: "asc"
@@ -573,19 +678,20 @@ plugins:
         path_params:
           multiplier: 30
           timespan: "second"
-          from: "2025-01-05"
-          to: "2025-01-07"
+          from: "2025-01-20"
+          to: "2025-01-21"
         query_params:
           adjusted: true
           sort: "asc"
           limit: 50000
 
+      # Minute bars - 2-3 days
       options_bars_1_minute:
         path_params:
           multiplier: 1
           timespan: "minute"
-          from: "2025-01-05"
-          to: "2025-01-07"
+          from: "2025-01-20"
+          to: "2025-01-22"
         query_params:
           adjusted: true
           sort: "asc"
@@ -595,8 +701,8 @@ plugins:
         path_params:
           multiplier: 5
           timespan: "minute"
-          from: "2025-01-05"
-          to: "2025-01-07"
+          from: "2025-01-20"
+          to: "2025-01-22"
         query_params:
           adjusted: true
           sort: "asc"
@@ -606,30 +712,32 @@ plugins:
         path_params:
           multiplier: 30
           timespan: "minute"
-          from: "2025-01-05"
-          to: "2025-01-07"
+          from: "2025-01-20"
+          to: "2025-01-22"
         query_params:
           adjusted: true
           sort: "asc"
           limit: 50000
 
+      # Hourly bars - 1 week
       options_bars_1_hour:
         path_params:
           multiplier: 1
           timespan: "hour"
-          from: "2025-01-05"
-          to: "2025-01-07"
+          from: "2025-01-20"
+          to: "2025-01-24"
         query_params:
           adjusted: true
           sort: "asc"
           limit: 50000
 
+      # Daily/weekly/monthly bars - 1 month
       options_bars_1_day:
         path_params:
           multiplier: 1
           timespan: "day"
-          from: "2025-01-05"
-          to: "2025-01-07"
+          from: "2025-01-01"
+          to: "2025-01-31"
         query_params:
           adjusted: true
           sort: "asc"
@@ -639,8 +747,8 @@ plugins:
         path_params:
           multiplier: 1
           timespan: "week"
-          from: "2025-01-05"
-          to: "2025-01-07"
+          from: "2025-01-01"
+          to: "2025-01-31"
         query_params:
           adjusted: true
           sort: "asc"
@@ -650,8 +758,8 @@ plugins:
         path_params:
           multiplier: 1
           timespan: "month"
-          from: "2025-01-05"
-          to: "2025-01-07"
+          from: "2025-01-01"
+          to: "2025-01-31"
         query_params:
           adjusted: true
           sort: "asc"
@@ -659,7 +767,7 @@ plugins:
 
       options_daily_ticker_summary:
         path_params:
-          date: "2026-02-09"
+          date: "2025-01-20"
         query_params:
           adjusted: true
         other_params:
@@ -672,18 +780,19 @@ plugins:
         other_params:
           use_cached_tickers: true
 
+      # Tick-level options data - 2-3 days
       options_trades:
         query_params:
           sort: timestamp
           order: "asc"
-          timestamp__gte: "2026-02-09T00:00:00Z"
-          timestamp__lte: "2026-02-10T23:59:59Z"
+          timestamp__gte: "2025-01-20T00:00:00Z"
+          timestamp__lte: "2025-01-22T23:59:59Z"
           limit: 50000
 
       options_quotes:
         query_params:
-          timestamp__gte: "2026-02-09T00:00:00Z"
-          timestamp__lte: "2026-02-10T23:59:59Z"
+          timestamp__gte: "2025-01-20T00:00:00Z"
+          timestamp__lte: "2025-01-22T23:59:59Z"
           sort: timestamp
           order: asc
           limit: 50000
@@ -700,14 +809,13 @@ plugins:
         path_params:
           underlyingAsset: "AAPL"
         query_params:
-          expiration_date__gte: "2026-02-13"
-          expiration_date__lte: "2026-02-13"
           limit: 250
 
+      # Options technical indicators - 1 month for meaningful windows
       options_sma:
         query_params:
-          timestamp__gte: "2026-02-09T00:00:00Z"
-          timestamp__lte: "2026-02-10T23:59:59Z"
+          timestamp__gte: "2025-01-01T00:00:00Z"
+          timestamp__lte: "2025-01-31T23:59:59Z"
           order: asc
           timespan: day
           window: 10
@@ -717,8 +825,8 @@ plugins:
 
       options_ema:
         query_params:
-          timestamp__gte: "2026-02-09T00:00:00Z"
-          timestamp__lte: "2026-02-10T23:59:59Z"
+          timestamp__gte: "2025-01-01T00:00:00Z"
+          timestamp__lte: "2025-01-31T23:59:59Z"
           order: asc
           timespan: day
           window: 10
@@ -728,8 +836,8 @@ plugins:
 
       options_macd:
         query_params:
-          timestamp__gte: "2026-02-09T00:00:00Z"
-          timestamp__lte: "2026-02-10T23:59:59Z"
+          timestamp__gte: "2025-01-01T00:00:00Z"
+          timestamp__lte: "2025-01-31T23:59:59Z"
           order: asc
           timespan: day
           short_window: 12
@@ -741,8 +849,8 @@ plugins:
 
       options_rsi:
         query_params:
-          timestamp__gte: "2026-02-09T00:00:00Z"
-          timestamp__lte: "2026-02-10T23:59:59Z"
+          timestamp__gte: "2025-01-01T00:00:00Z"
+          timestamp__lte: "2025-01-31T23:59:59Z"
           order: "asc"
           timespan: day
           window: 18
@@ -754,6 +862,696 @@ plugins:
         query_params:
           type: options
           limit: 250
+
+      # --- Forex ---
+      forex_tickers:
+        query_params:
+          sort: ticker
+          limit: 1000
+
+      forex_ticker_details:
+        query_params: {}
+
+      forex_bars_1_second:
+        path_params:
+          multiplier: 1
+          timespan: "second"
+          from: "2025-01-20"
+          to: "2025-01-21"
+        query_params:
+          adjusted: true
+          sort: "asc"
+          limit: 50000
+        other_params:
+          use_cached_tickers: true
+
+      forex_bars_1_minute:
+        path_params:
+          multiplier: 1
+          timespan: "minute"
+          from: "2025-01-20"
+          to: "2025-01-22"
+        query_params:
+          adjusted: true
+          sort: "asc"
+          limit: 50000
+        other_params:
+          use_cached_tickers: true
+
+      forex_bars_5_minute:
+        path_params:
+          multiplier: 5
+          timespan: "minute"
+          from: "2025-01-20"
+          to: "2025-01-22"
+        query_params:
+          adjusted: true
+          sort: "asc"
+          limit: 50000
+        other_params:
+          use_cached_tickers: true
+
+      forex_bars_1_hour:
+        path_params:
+          multiplier: 1
+          timespan: "hour"
+          from: "2025-01-20"
+          to: "2025-01-24"
+        query_params:
+          adjusted: true
+          sort: "asc"
+          limit: 50000
+        other_params:
+          use_cached_tickers: true
+
+      forex_bars_1_day:
+        path_params:
+          multiplier: 1
+          timespan: "day"
+          from: "2025-01-01"
+          to: "2025-01-31"
+        query_params:
+          adjusted: true
+          sort: "asc"
+          limit: 50000
+        other_params:
+          use_cached_tickers: true
+
+      forex_bars_1_week:
+        path_params:
+          multiplier: 1
+          timespan: "week"
+          from: "2025-01-01"
+          to: "2025-01-31"
+        query_params:
+          adjusted: true
+          sort: "asc"
+          limit: 50000
+        other_params:
+          use_cached_tickers: true
+
+      forex_bars_1_month:
+        path_params:
+          multiplier: 1
+          timespan: "month"
+          from: "2025-01-01"
+          to: "2025-01-31"
+        query_params:
+          adjusted: true
+          sort: "asc"
+          limit: 50000
+        other_params:
+          use_cached_tickers: true
+
+      forex_daily_market_summary:
+        path_params:
+          date: "2025-01-01"
+        query_params:
+          adjusted: true
+        other_params:
+          loop_over_dates_gte_date: false
+
+      forex_previous_day_bar:
+        query_params:
+          adjusted: true
+        other_params:
+          use_cached_tickers: true
+
+      forex_quotes:
+        query_params:
+          timestamp__gte: "2025-01-20T00:00:00Z"
+          timestamp__lte: "2025-01-22T23:59:59Z"
+          sort: timestamp
+          order: asc
+          limit: 50000
+        other_params:
+          use_cached_tickers: true
+
+      forex_last_quote:
+        other_params:
+          use_cached_tickers: true
+
+      forex_top_market_movers:
+        path_params:
+          direction: "both"
+        query_params:
+          limit: 50000
+
+      forex_ticker_snapshot:
+        other_params:
+          use_cached_tickers: true
+
+      forex_sma:
+        query_params:
+          timestamp__gte: "2025-01-01T00:00:00Z"
+          timestamp__lte: "2025-01-31T23:59:59Z"
+          order: asc
+          timespan: day
+          window: 10
+          series_type: close
+          expand_underlying: false
+          limit: 5000
+        other_params:
+          use_cached_tickers: true
+
+      forex_ema:
+        query_params:
+          timestamp__gte: "2025-01-01T00:00:00Z"
+          timestamp__lte: "2025-01-31T23:59:59Z"
+          order: asc
+          timespan: day
+          window: 10
+          series_type: close
+          expand_underlying: false
+          limit: 5000
+        other_params:
+          use_cached_tickers: true
+
+      forex_macd:
+        query_params:
+          timestamp__gte: "2025-01-01T00:00:00Z"
+          timestamp__lte: "2025-01-31T23:59:59Z"
+          order: asc
+          timespan: day
+          short_window: 12
+          long_window: 26
+          signal_window: 9
+          series_type: close
+          expand_underlying: false
+          limit: 5000
+        other_params:
+          use_cached_tickers: true
+
+      forex_rsi:
+        query_params:
+          timestamp__gte: "2025-01-01T00:00:00Z"
+          timestamp__lte: "2025-01-31T23:59:59Z"
+          order: "asc"
+          timespan: day
+          window: 18
+          series_type: close
+          expand_underlying: false
+          limit: 5000
+        other_params:
+          use_cached_tickers: true
+
+      forex_currency_conversion:
+        path_params:
+          from_currency: "USD"
+          to_currency: "EUR"
+        query_params:
+          amount: 100
+          precision: 2
+
+      # --- Crypto ---
+      crypto_tickers:
+        query_params:
+          sort: ticker
+          limit: 1000
+
+      crypto_ticker_details:
+        query_params: {}
+
+      crypto_bars_1_second:
+        path_params:
+          multiplier: 1
+          timespan: "second"
+          from: "2025-01-20"
+          to: "2025-01-21"
+        query_params:
+          adjusted: true
+          sort: "asc"
+          limit: 50000
+        other_params:
+          use_cached_tickers: true
+
+      crypto_bars_1_minute:
+        path_params:
+          multiplier: 1
+          timespan: "minute"
+          from: "2025-01-20"
+          to: "2025-01-22"
+        query_params:
+          adjusted: true
+          sort: "asc"
+          limit: 50000
+        other_params:
+          use_cached_tickers: true
+
+      crypto_bars_5_minute:
+        path_params:
+          multiplier: 5
+          timespan: "minute"
+          from: "2025-01-20"
+          to: "2025-01-22"
+        query_params:
+          adjusted: true
+          sort: "asc"
+          limit: 50000
+        other_params:
+          use_cached_tickers: true
+
+      crypto_bars_1_hour:
+        path_params:
+          multiplier: 1
+          timespan: "hour"
+          from: "2025-01-20"
+          to: "2025-01-24"
+        query_params:
+          adjusted: true
+          sort: "asc"
+          limit: 50000
+        other_params:
+          use_cached_tickers: true
+
+      crypto_bars_1_day:
+        path_params:
+          multiplier: 1
+          timespan: "day"
+          from: "2025-01-01"
+          to: "2025-01-31"
+        query_params:
+          adjusted: true
+          sort: "asc"
+          limit: 50000
+        other_params:
+          use_cached_tickers: true
+
+      crypto_bars_1_week:
+        path_params:
+          multiplier: 1
+          timespan: "week"
+          from: "2025-01-01"
+          to: "2025-01-31"
+        query_params:
+          adjusted: true
+          sort: "asc"
+          limit: 50000
+        other_params:
+          use_cached_tickers: true
+
+      crypto_bars_1_month:
+        path_params:
+          multiplier: 1
+          timespan: "month"
+          from: "2025-01-01"
+          to: "2025-01-31"
+        query_params:
+          adjusted: true
+          sort: "asc"
+          limit: 50000
+        other_params:
+          use_cached_tickers: true
+
+      crypto_daily_market_summary:
+        path_params:
+          date: "2025-01-01"
+        query_params:
+          adjusted: true
+          limit: 50000
+        other_params:
+          loop_over_dates_gte_date: false
+
+      crypto_daily_ticker_summary:
+        path_params:
+          date: "2025-01-01"
+        query_params:
+          adjusted: true
+          limit: 50000
+        other_params:
+          loop_over_dates_gte_date: false
+          use_cached_tickers: true
+
+      crypto_previous_day_bar:
+        query_params:
+          adjusted: true
+        other_params:
+          use_cached_tickers: true
+
+      crypto_trades:
+        query_params:
+          sort: timestamp
+          order: "asc"
+          timestamp__gte: "2025-01-20T00:00:00Z"
+          timestamp__lte: "2025-01-22T23:59:59Z"
+          limit: 50000
+        other_params:
+          use_cached_tickers: true
+
+      crypto_last_trade:
+        other_params:
+          use_cached_tickers: true
+
+      crypto_top_market_movers:
+        path_params:
+          direction: "both"
+        query_params:
+          limit: 50000
+
+      crypto_ticker_snapshot:
+        other_params:
+          use_cached_tickers: true
+
+      crypto_sma:
+        query_params:
+          timestamp__gte: "2025-01-01T00:00:00Z"
+          timestamp__lte: "2025-01-31T23:59:59Z"
+          order: asc
+          timespan: day
+          window: 10
+          series_type: close
+          expand_underlying: false
+          limit: 5000
+        other_params:
+          use_cached_tickers: true
+
+      crypto_ema:
+        query_params:
+          timestamp__gte: "2025-01-01T00:00:00Z"
+          timestamp__lte: "2025-01-31T23:59:59Z"
+          order: asc
+          timespan: day
+          window: 10
+          series_type: close
+          expand_underlying: false
+          limit: 5000
+        other_params:
+          use_cached_tickers: true
+
+      crypto_macd:
+        query_params:
+          timestamp__gte: "2025-01-01T00:00:00Z"
+          timestamp__lte: "2025-01-31T23:59:59Z"
+          order: asc
+          timespan: day
+          short_window: 12
+          long_window: 26
+          signal_window: 9
+          series_type: close
+          expand_underlying: false
+          limit: 5000
+        other_params:
+          use_cached_tickers: true
+
+      crypto_rsi:
+        query_params:
+          timestamp__gte: "2025-01-01T00:00:00Z"
+          timestamp__lte: "2025-01-31T23:59:59Z"
+          order: "asc"
+          timespan: day
+          window: 18
+          series_type: close
+          expand_underlying: false
+          limit: 5000
+        other_params:
+          use_cached_tickers: true
+
+      # --- Indices ---
+      indices_tickers:
+        query_params:
+          sort: ticker
+          limit: 1000
+
+      indices_ticker_details:
+        query_params: {}
+
+      indices_bars_1_second:
+        path_params:
+          multiplier: 1
+          timespan: "second"
+          from: "2025-01-20"
+          to: "2025-01-21"
+        query_params:
+          adjusted: true
+          sort: "asc"
+          limit: 50000
+        other_params:
+          use_cached_tickers: true
+
+      indices_bars_1_minute:
+        path_params:
+          multiplier: 1
+          timespan: "minute"
+          from: "2025-01-20"
+          to: "2025-01-22"
+        query_params:
+          adjusted: true
+          sort: "asc"
+          limit: 50000
+        other_params:
+          use_cached_tickers: true
+
+      indices_bars_5_minute:
+        path_params:
+          multiplier: 5
+          timespan: "minute"
+          from: "2025-01-20"
+          to: "2025-01-22"
+        query_params:
+          adjusted: true
+          sort: "asc"
+          limit: 50000
+        other_params:
+          use_cached_tickers: true
+
+      indices_bars_1_hour:
+        path_params:
+          multiplier: 1
+          timespan: "hour"
+          from: "2025-01-20"
+          to: "2025-01-24"
+        query_params:
+          adjusted: true
+          sort: "asc"
+          limit: 50000
+        other_params:
+          use_cached_tickers: true
+
+      indices_bars_1_day:
+        path_params:
+          multiplier: 1
+          timespan: "day"
+          from: "2025-01-01"
+          to: "2025-01-31"
+        query_params:
+          adjusted: true
+          sort: "asc"
+          limit: 50000
+        other_params:
+          use_cached_tickers: true
+
+      indices_bars_1_week:
+        path_params:
+          multiplier: 1
+          timespan: "week"
+          from: "2025-01-01"
+          to: "2025-01-31"
+        query_params:
+          adjusted: true
+          sort: "asc"
+          limit: 50000
+        other_params:
+          use_cached_tickers: true
+
+      indices_bars_1_month:
+        path_params:
+          multiplier: 1
+          timespan: "month"
+          from: "2025-01-01"
+          to: "2025-01-31"
+        query_params:
+          adjusted: true
+          sort: "asc"
+          limit: 50000
+        other_params:
+          use_cached_tickers: true
+
+      indices_daily_ticker_summary:
+        path_params:
+          date: "2025-01-01"
+        query_params:
+          adjusted: true
+          limit: 50000
+        other_params:
+          loop_over_dates_gte_date: false
+          use_cached_tickers: true
+
+      indices_previous_day_bar:
+        query_params:
+          adjusted: true
+        other_params:
+          use_cached_tickers: true
+
+      indices_sma:
+        query_params:
+          timestamp__gte: "2025-01-01T00:00:00Z"
+          timestamp__lte: "2025-01-31T23:59:59Z"
+          order: asc
+          timespan: day
+          window: 10
+          series_type: close
+          expand_underlying: false
+          limit: 5000
+        other_params:
+          use_cached_tickers: true
+
+      indices_ema:
+        query_params:
+          timestamp__gte: "2025-01-01T00:00:00Z"
+          timestamp__lte: "2025-01-31T23:59:59Z"
+          order: asc
+          timespan: day
+          window: 10
+          series_type: close
+          expand_underlying: false
+          limit: 5000
+        other_params:
+          use_cached_tickers: true
+
+      indices_macd:
+        query_params:
+          timestamp__gte: "2025-01-01T00:00:00Z"
+          timestamp__lte: "2025-01-31T23:59:59Z"
+          order: asc
+          timespan: day
+          short_window: 12
+          long_window: 26
+          signal_window: 9
+          series_type: close
+          expand_underlying: false
+          limit: 5000
+        other_params:
+          use_cached_tickers: true
+
+      indices_rsi:
+        query_params:
+          timestamp__gte: "2025-01-01T00:00:00Z"
+          timestamp__lte: "2025-01-31T23:59:59Z"
+          order: "asc"
+          timespan: day
+          window: 18
+          series_type: close
+          expand_underlying: false
+          limit: 5000
+        other_params:
+          use_cached_tickers: true
+
+      # --- Futures ---
+      futures_contracts:
+        query_params:
+          sort: ticker
+          limit: 1000
+
+      futures_bars_1_second:
+        path_params:
+          multiplier: 1
+          timespan: "second"
+          from: "2025-01-20"
+          to: "2025-01-21"
+        query_params:
+          adjusted: true
+          sort: "asc"
+          limit: 50000
+        other_params:
+          use_cached_tickers: true
+
+      futures_bars_1_minute:
+        path_params:
+          multiplier: 1
+          timespan: "minute"
+          from: "2025-01-20"
+          to: "2025-01-22"
+        query_params:
+          adjusted: true
+          sort: "asc"
+          limit: 50000
+        other_params:
+          use_cached_tickers: true
+
+      futures_bars_5_minute:
+        path_params:
+          multiplier: 5
+          timespan: "minute"
+          from: "2025-01-20"
+          to: "2025-01-22"
+        query_params:
+          adjusted: true
+          sort: "asc"
+          limit: 50000
+        other_params:
+          use_cached_tickers: true
+
+      futures_bars_1_hour:
+        path_params:
+          multiplier: 1
+          timespan: "hour"
+          from: "2025-01-20"
+          to: "2025-01-24"
+        query_params:
+          adjusted: true
+          sort: "asc"
+          limit: 50000
+        other_params:
+          use_cached_tickers: true
+
+      futures_bars_1_day:
+        path_params:
+          multiplier: 1
+          timespan: "day"
+          from: "2025-01-01"
+          to: "2025-01-31"
+        query_params:
+          adjusted: true
+          sort: "asc"
+          limit: 50000
+        other_params:
+          use_cached_tickers: true
+
+      futures_bars_1_week:
+        path_params:
+          multiplier: 1
+          timespan: "week"
+          from: "2025-01-01"
+          to: "2025-01-31"
+        query_params:
+          adjusted: true
+          sort: "asc"
+          limit: 50000
+        other_params:
+          use_cached_tickers: true
+
+      futures_bars_1_month:
+        path_params:
+          multiplier: 1
+          timespan: "month"
+          from: "2025-01-01"
+          to: "2025-01-31"
+        query_params:
+          adjusted: true
+          sort: "asc"
+          limit: 50000
+        other_params:
+          use_cached_tickers: true
+
+      futures_trades:
+        query_params:
+          sort: timestamp
+          order: "asc"
+          timestamp__gte: "2025-01-20T00:00:00Z"
+          timestamp__lte: "2025-01-22T23:59:59Z"
+          limit: 50000
+        other_params:
+          use_cached_tickers: true
+
+      futures_quotes:
+        query_params:
+          timestamp__gte: "2025-01-20T00:00:00Z"
+          timestamp__lte: "2025-01-22T23:59:59Z"
+          sort: timestamp
+          order: asc
+          limit: 50000
+        other_params:
+          use_cached_tickers: true
 
   loaders:
   - name: target-jsonl

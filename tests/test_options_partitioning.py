@@ -127,8 +127,9 @@ class TestGetOptionContractsForUnderlying:
         assert params["strike_price.lte"] == 300.0
         assert params["underlying_ticker"] == "AAPL"
 
-    def test_applies_max_dte_filter(self, mock_tap):
+    def test_applies_max_dte_filter_when_not_expired(self, mock_tap):
         mock_tap._spot_price_cache = {"AAPL": 200.0}
+        mock_tap.config["option_tickers"]["query_params"]["expired"] = False
 
         mock_response = MagicMock()
         mock_response.json.return_value = {"results": [], "next_url": None}
@@ -220,6 +221,87 @@ class TestGetOptionContractsForUnderlying:
         params = mock_get.call_args[1]["params"]
         assert "expiration_date.gte" in params
         assert "expiration_date__gte" not in params
+
+
+class TestDteFilterGuard:
+    """Verify DTE filter is skipped when expired=true."""
+
+    def test_dte_skipped_when_expired_true(self, mock_tap):
+        """When expired=true, max_dte should NOT set expiration_date.lte."""
+        mock_tap.config["option_tickers"]["query_params"]["expired"] = True
+        mock_tap.config["option_tickers"]["other_params"] = {"max_dte": 120}
+        mock_tap._spot_price_cache = {}
+
+        mock_response = MagicMock()
+        mock_response.json.return_value = {"results": [], "next_url": None}
+        mock_response.raise_for_status = MagicMock()
+
+        with patch(
+            "tap_massive.tap.requests.get", return_value=mock_response
+        ) as mock_get:
+            mock_tap.get_option_contracts_for_underlying("AAPL")
+
+        params = mock_get.call_args[1]["params"]
+        assert "expiration_date.lte" not in params
+
+    def test_dte_applied_when_expired_false(self, mock_tap):
+        """When expired=false, max_dte should set expiration_date.lte."""
+        mock_tap.config["option_tickers"]["query_params"]["expired"] = False
+        mock_tap.config["option_tickers"]["other_params"] = {"max_dte": 120}
+        mock_tap._spot_price_cache = {}
+
+        mock_response = MagicMock()
+        mock_response.json.return_value = {"results": [], "next_url": None}
+        mock_response.raise_for_status = MagicMock()
+
+        with patch(
+            "tap_massive.tap.requests.get", return_value=mock_response
+        ) as mock_get:
+            mock_tap.get_option_contracts_for_underlying("AAPL")
+
+        params = mock_get.call_args[1]["params"]
+        assert "expiration_date.lte" in params
+
+
+class TestStateResetBetweenContracts:
+    """Verify state is reset before each contract to prevent cross-contamination."""
+
+    def test_state_reset_prevents_bookmark_leakage(self, tap_config):
+        """Each contract should start with initial state, not previous contract's bookmark."""
+        from tap_massive.option_streams import OptionsTickerPartitionStream
+
+        stream = OptionsTickerPartitionStream.__new__(OptionsTickerPartitionStream)
+        stream._tap = MagicMock()
+        stream._tap.get_option_contracts_for_underlying.return_value = [
+            {"ticker": "O:AAPL250117C00100000"},
+            {"ticker": "O:AAPL250117C00200000"},
+        ]
+        stream.name = "test_stream"
+        stream._ticker_param = "ticker"
+        type(stream).config = PropertyMock(return_value=tap_config)
+
+        # Track state values seen during paginate_records calls
+        state_dict = {}
+        stream.get_context_state = MagicMock(return_value=state_dict)
+        stream._prepare_context_and_params = MagicMock(return_value=({}, {}, {}))
+
+        states_seen = []
+
+        def mock_paginate(ctx):
+            # Record state before processing
+            states_seen.append(dict(state_dict))
+            # Simulate what paginate_records does: update state
+            state_dict["replication_key_value"] = "2025-12-31T00:00:00Z"
+            return iter([])
+
+        stream.paginate_records = mock_paginate
+
+        list(stream.get_records({"underlying": "AAPL"}))
+
+        # Both contracts should see empty state (initial bookmark)
+        assert len(states_seen) == 2
+        assert states_seen[0] == {}  # First contract: fresh state
+        assert states_seen[1] == {}  # Second contract: state was reset
 
 
 class TestOptionsTickerPartitionStreamPartitions:

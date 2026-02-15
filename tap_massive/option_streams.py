@@ -106,12 +106,22 @@ class OptionsTickerPartitionStream(BaseTickerPartitionStream):
             )
             return
 
-        # Prepare base query/path params from stream config once per underlying
+        # SDK can't partition ~12.5M contracts, so state is per-underlying.
+        # Example: Without reset, AAPL 150C bars to 2025-12-31 would cause AAPL 200C
+        # to skip its entire history since the shared bookmark is already at 2025 for ticker AAPL.
+        state = self.get_context_state(context)
+        initial_bookmark = state.copy() if state else {}
+
         _, base_query_params, base_path_params = self._prepare_context_and_params(
             dict(context)
         )
 
         for contract in contracts:
+            # Reset state to initial bookmark before each contract
+            if state is not None:
+                state.clear()
+                state.update(initial_bookmark)
+
             contract_ctx: dict[str, t.Any] = {
                 self._ticker_param: contract["ticker"],
                 "underlying": underlying,
