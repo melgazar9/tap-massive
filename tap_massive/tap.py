@@ -6,6 +6,7 @@ import logging
 import threading
 import typing as t
 from datetime import datetime, timedelta, timezone
+from decimal import Decimal
 
 import requests
 from singer_sdk import Tap
@@ -208,7 +209,7 @@ class TapMassive(Tap):
     _cached_option_tickers: t.List[dict] | None = None
     _option_tickers_stream_instance: OptionsContractsStream | None = None
     _option_tickers_lock = threading.Lock()
-    _spot_price_cache: dict[str, float | None] = {}
+    _spot_price_cache: dict[str, Decimal | None] = {}
 
     # Forex ticker caching
     _cached_forex_tickers: t.List[dict] | None = None
@@ -273,7 +274,7 @@ class TapMassive(Tap):
         return self._cached_option_tickers
 
     # Option per-underlying methods
-    def get_spot_price(self, ticker: str) -> float | None:
+    def get_spot_price(self, ticker: str) -> Decimal | None:
         """Get previous close price for an underlying ticker. Cached per ticker."""
         if ticker in self._spot_price_cache:
             return self._spot_price_cache[ticker]
@@ -291,8 +292,9 @@ class TapMassive(Tap):
             results = data.get("results", [])
             if results:
                 price = results[0].get("c")
-                self._spot_price_cache[ticker] = price
-                return price
+                price_decimal = Decimal(str(price)) if price is not None else None
+                self._spot_price_cache[ticker] = price_decimal
+                return price_decimal
         except (requests.RequestException, ValueError, KeyError) as e:
             logging.warning(f"Could not fetch spot price for {ticker}: {e}")
 
