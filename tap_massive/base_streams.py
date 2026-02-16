@@ -7,6 +7,7 @@ import typing as t
 from datetime import datetime
 from decimal import Decimal, InvalidOperation
 
+import requests
 from singer_sdk import typing as th
 from singer_sdk.helpers.types import Context, Record
 
@@ -49,23 +50,12 @@ class BaseTickerStream(MassiveRestStream):
         return not next_url
 
     def get_ticker_list(self) -> list[str] | None:
-        tickers_cfg = self.config.get(self.name, {})
-        tickers = tickers_cfg.get("select_tickers") if tickers_cfg else None
-
-        if not tickers or tickers in ("*", ["*"]):
-            return None
-
-        if isinstance(tickers, str):
-            try:
-                return tickers.split(",")
-            except AttributeError:
-                raise
-
-        if isinstance(tickers, list):
-            if tickers == ["*"]:
-                return None
-            return tickers
-        return None
+        """Ticker streams also check their own stream name as a config section."""
+        return self.resolve_select_tickers(
+            selector_keys=self.ticker_selector_keys,
+            market=self.market,
+            include_stream_name=True,
+        )
 
     def get_child_context(self, record, context):
         return {"ticker": record.get("ticker")}
@@ -89,23 +79,29 @@ class BaseTickerStream(MassiveRestStream):
 
 
 class BaseTickerPartitionStream(MassiveRestStream):
-    @staticmethod
-    def _apply_select_tickers_filter(
-        tickers: list[dict],
-        select_tickers: list[str] | str | None,
+    _cached_tickers_getter: str | None = None  # e.g. "get_cached_stock_tickers"
+
+    def filter_tickers_from_config(
+        self,
+        tickers: list[dict[str, t.Any]],
+        *,
         key: str = "ticker",
-    ) -> list[dict]:
-        """Filter ticker dicts by a select_tickers list."""
-        if not select_tickers or select_tickers in ("*", ["*"]):
-            return tickers
-        if isinstance(select_tickers, str):
-            select_tickers = select_tickers.split(",")
-        select_set = set(select_tickers)
-        return [t for t in tickers if t[key] in select_set]
+    ) -> list[dict[str, t.Any]]:
+        return self._filter_by_tickers(
+            tickers,
+            allowed=self.get_ticker_list(),
+            key=key,
+        )
 
     @property
     def partitions(self):
-        raise ValueError("Method partitions must be overridden by subclass.")
+        if self._cached_tickers_getter is None:
+            raise ValueError(
+                f"{type(self).__name__} must set _cached_tickers_getter or override partitions."
+            )
+        getter = getattr(self._tap, self._cached_tickers_getter)
+        tickers = self.filter_tickers_from_config(getter())
+        return [{"ticker": t["ticker"]} for t in tickers]
 
 
 class BaseTickerDetailsStream(BaseTickerPartitionStream):
@@ -660,11 +656,63 @@ class BaseTopMarketMoversStream(
     schema = th.PropertiesList(
         th.Property("updated", th.IntegerType),
         th.Property("ticker", th.StringType),
-        th.Property("day", th.AnyType()),
-        th.Property("last_quote", th.AnyType()),
-        th.Property("last_trade", th.AnyType()),
-        th.Property("min", th.AnyType()),
-        th.Property("prev_day", th.AnyType()),
+        th.Property(
+            "day",
+            th.ObjectType(
+                th.Property("o", th.NumberType),
+                th.Property("h", th.NumberType),
+                th.Property("l", th.NumberType),
+                th.Property("c", th.NumberType),
+                th.Property("v", th.IntegerType),
+                th.Property("vw", th.NumberType),
+            ),
+        ),
+        th.Property(
+            "last_quote",
+            th.ObjectType(
+                th.Property("P", th.NumberType),
+                th.Property("S", th.IntegerType),
+                th.Property("p", th.NumberType),
+                th.Property("s", th.IntegerType),
+                th.Property("t", th.IntegerType),
+            ),
+        ),
+        th.Property(
+            "last_trade",
+            th.ObjectType(
+                th.Property("c", th.ArrayType(th.IntegerType)),
+                th.Property("i", th.StringType),
+                th.Property("p", th.NumberType),
+                th.Property("s", th.IntegerType),
+                th.Property("t", th.IntegerType),
+                th.Property("x", th.IntegerType),
+            ),
+        ),
+        th.Property(
+            "min",
+            th.ObjectType(
+                th.Property("av", th.IntegerType),
+                th.Property("o", th.NumberType),
+                th.Property("h", th.NumberType),
+                th.Property("l", th.NumberType),
+                th.Property("c", th.NumberType),
+                th.Property("v", th.IntegerType),
+                th.Property("vw", th.NumberType),
+                th.Property("n", th.IntegerType),
+                th.Property("t", th.IntegerType),
+            ),
+        ),
+        th.Property(
+            "prev_day",
+            th.ObjectType(
+                th.Property("o", th.NumberType),
+                th.Property("h", th.NumberType),
+                th.Property("l", th.NumberType),
+                th.Property("c", th.NumberType),
+                th.Property("v", th.IntegerType),
+                th.Property("vw", th.NumberType),
+            ),
+        ),
         th.Property("todays_change", th.NumberType),
         th.Property("todays_change_percent", th.NumberType),
         th.Property("fmv", th.NumberType),
@@ -677,34 +725,28 @@ class BaseTopMarketMoversStream(
         )
 
     def get_records(self, context: Context | None) -> t.Iterable[dict[str, t.Any]]:
-        if (
-            self.path_params.get("direction") is None
-            or self.path_params.get("direction") == ""
-            or self.path_params.get("direction").lower() == "both"
-            or "direction" not in self.path_params
-        ):
-            for direction in ["gainers", "losers"]:
-                url = self.get_url(context={"direction": direction})
-                data = self.requests_session.get(url, params=self.query_params)
-                data.raise_for_status()
-                response_data = data.json()
-                tickers = response_data.get("tickers")
-                if tickers:
-                    for record in tickers:
-                        record["direction"] = direction
-                        self.post_process(record)
-                        yield record
-                elif response_data.get("status") == "NOT_AUTHORIZED":
-                    self.logger.warning(
-                        f"Not authorized for top market movers: {response_data.get('message')}"
-                    )
-                    return
+        configured_direction = self.path_params.get("direction")
+        if not configured_direction or str(configured_direction).lower() == "both":
+            directions = ["gainers", "losers"]
         else:
-            direction = self.path_params.get("direction")
-            url = self.get_url(context)
-            data = self.requests_session.get(url, params=self.query_params)
-            data.raise_for_status()
-            response_data = data.json()
+            directions = [configured_direction]
+
+        for direction in directions:
+            url = self.get_url(context={"direction": direction})
+            try:
+                response = self.get_response(url=url, query_params=self.query_params)
+            except requests.exceptions.HTTPError as err:
+                if err.response is not None and err.response.status_code == 403:
+                    self.logger.warning(
+                        f"Access denied (403) for top market movers direction={direction}; skipping."
+                    )
+                    continue
+                raise
+
+            if response is None:
+                continue
+
+            response_data = response.json()
             tickers = response_data.get("tickers")
             if tickers:
                 for record in tickers:
@@ -715,7 +757,6 @@ class BaseTopMarketMoversStream(
                 self.logger.warning(
                     f"Not authorized for top market movers: {response_data.get('message')}"
                 )
-                return
 
     def post_process(self, row: Record, context: Context | None = None) -> dict | None:
         row = super().post_process(row, context)
@@ -805,8 +846,8 @@ class BaseTradeStream(_NanosecondIncrementalMixin, BaseTickerPartitionStream):
         th.Property("size", th.NumberType),
         th.Property("tape", th.IntegerType),
         th.Property("sequence_number", th.IntegerType),
-        th.Property("conditions", th.ArrayType(th.AnyType())),
-        th.Property("correction", th.AnyType()),
+        th.Property("conditions", th.ArrayType(th.IntegerType())),
+        th.Property("correction", th.IntegerType()),
         th.Property("trf_id", th.IntegerType),
         th.Property("trf_timestamp", th.IntegerType),
         th.Property("exchange", th.IntegerType),
@@ -823,6 +864,16 @@ class BaseTradeStream(_NanosecondIncrementalMixin, BaseTickerPartitionStream):
             row["participant_timestamp"] = safe_int(row["participant_timestamp"])
         if "trf_timestamp" in row:
             row["trf_timestamp"] = safe_int(row["trf_timestamp"])
+        if "correction" in row:
+            row["correction"] = safe_int(row["correction"])
+        if "conditions" in row and isinstance(row["conditions"], list):
+            row["conditions"] = [
+                condition
+                for condition in (
+                    safe_int(condition) for condition in row["conditions"]
+                )
+                if condition is not None
+            ]
 
         row["price"] = safe_decimal(row["price"])
         return row

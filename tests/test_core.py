@@ -7,8 +7,8 @@ from singer_sdk.testing import get_tap_test_class
 from tap_massive.tap import TapMassive
 
 SAMPLE_CONFIG = {
+    "api_key": "test_key",
     "start_date": datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%d"),
-    # TODO: Initialize minimal tap config
 }
 
 

@@ -15,7 +15,6 @@ from tap_massive.base_streams import (
     BaseTickerDetailsStream,
     BaseTickerPartitionStream,
     BaseTickerStream,
-    BaseTickerTypesStream,
     BaseTopMarketMoversStream,
     _SnapshotNormalizationMixin,
     _TodaysChangePercentMixin,
@@ -50,9 +49,9 @@ class ForexTickerStream(BaseTickerStream):
 
 
 class ForexTickerPartitionStream(BaseTickerPartitionStream):
-    @property
-    def partitions(self):
-        return [{"ticker": t["ticker"]} for t in self._tap.get_cached_forex_tickers()]
+    ticker_selector_keys = ("forex_tickers",)
+    market = "fx"
+    _cached_tickers_getter = "get_cached_forex_tickers"
 
 
 class ForexTickerDetailsStream(ForexTickerPartitionStream, BaseTickerDetailsStream):
@@ -121,13 +120,6 @@ class ForexLastQuoteStream(ForexTickerPartitionStream, BaseLastQuoteStream):
     """Stream for retrieving forex last quote data."""
 
     name = "forex_last_quote"
-
-
-class ForexTickerTypesStream(BaseTickerTypesStream):
-    """Forex ticker types."""
-
-    name = "forex_ticker_types"
-    _asset_class = "fx"
 
 
 class ForexTopMarketMoversStream(BaseTopMarketMoversStream):
@@ -297,6 +289,6 @@ class ForexCurrencyConversionStream(MassiveRestStream):
     ).to_dict()
 
     def get_url(self, context: Context = None) -> str:
-        from_currency = self.path_params.get("from", "USD")
-        to_currency = self.path_params.get("to", "EUR")
+        from_currency = self.path_params.get("from")
+        to_currency = self.path_params.get("to")
         return f"{self.url_base}/v1/conversion/{from_currency}/{to_currency}"

@@ -35,3 +35,11 @@
 ## Configuration & Secrets
 - Prefer environment variables or a local `.env` file; the tap supports `--config=ENV`.
 - Avoid committing credentials; keep local secrets out of version control.
+
+## Massive Options Reliability Notes
+- `options_bars_*` streams only emit bars for contracts/intervals with qualifying trades; missing bars do not always mean ingest failure.
+- For historical backfills, option contract discovery is point-in-time unless `as_of` is pinned. If `as_of` is omitted, the provider defaults to "today", which can silently narrow historical contract coverage.
+- The options contracts endpoint `expired` flag is a selector (active vs expired), not an "include all" toggle.
+- For full historical coverage in one run, use `option_tickers.other_params.expired: "both"`; the tap makes two calls (`expired=true` and `expired=false`) and unions by contract ticker.
+- For non-`"both"` mode, options bars/snapshot/trades contract discovery uses `option_tickers.query_params` in `TapMassive.get_option_contracts_for_underlying()`, not `options_contracts.query_params`.
+- Contract discovery requests now retry with exponential backoff and raise on unrecoverable failures (including exhausted retries), avoiding silent partial contract universes.

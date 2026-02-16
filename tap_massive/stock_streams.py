@@ -64,9 +64,8 @@ class StockTickerStream(BaseTickerStream):
 
 
 class StockTickerPartitionStream(BaseTickerPartitionStream):
-    @property
-    def partitions(self):
-        return [{"ticker": t["ticker"]} for t in self._tap.get_cached_stock_tickers()]
+    ticker_selector_keys = ("stock_tickers",)
+    _cached_tickers_getter = "get_cached_stock_tickers"
 
 
 class StockTickerDetailsStream(StockTickerPartitionStream, BaseTickerDetailsStream):

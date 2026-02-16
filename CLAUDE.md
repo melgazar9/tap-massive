@@ -12,22 +12,42 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 # Install dependencies
 uv sync
 
-# Run tests
-uv run pytest
+# Lint
+./lint.sh
 
-# Run a single test
-uv run pytest tests/test_core.py -k "test_name"
-
-# Lint (pre-commit hooks: ruff, ruff-format, mypy)
-pre-commit run --all-files
+# Run unit tests (mocked, fast)
+uv run pytest tests/test_options_partitioning.py -v
 
 # Run the tap directly
 uv run tap-massive --help
 uv run tap-massive --about
-
-# Run via Meltano (requires meltano install first)
-meltano run tap-massive target-jsonl
 ```
+
+## Testing Streams
+
+**Always test streams this way** — not with `uv run pytest` against real endpoints.
+
+1. Run a stream via Meltano for ~30 seconds, then kill it:
+   ```bash
+   # Single stream
+   meltano el tap-massive target-jsonl --force --select "<stream_name>.*" 2>/tmp/tap-massive-logs/<stream_name>.log &
+   PID=$!; sleep 30; kill $PID 2>/dev/null
+
+   # Multiple streams in parallel — use separate terminal sessions (separate Bash tool calls).
+   # Each stream needs its own meltano invocation with --force since meltano locks the pipeline.
+   ```
+2. Check the JSONL output in the `output/` directory — verify records look correct and fields match the schema.
+   ```bash
+   wc -l output/<stream_name>.jsonl                    # record count
+   head -1 output/<stream_name>.jsonl | python3 -m json.tool  # inspect first record
+   ```
+3. Check logs for errors or fields the API returns that aren't in our schema:
+   ```bash
+   grep -i "error\|traceback\|exception" /tmp/tap-massive-logs/<stream_name>.log
+   ```
+   The logs are extremely detailed — compare the expected schema from the codebase against the exact output in `output/`.
+
+This is the standard integration test workflow. No need for additional pytest tests against real API endpoints. When testing a group of related streams (e.g., all options streams), launch them all in parallel using separate Bash tool calls.
 
 ## Architecture
 
@@ -56,7 +76,7 @@ Three Massive API endpoints support `asset_class` query parameter filtering acro
 
 | Base Class | Endpoint | Asset Classes |
 |---|---|---|
-| `BaseTickerTypesStream` | `/v3/reference/tickers/types` | stocks, options, crypto, fx, indices |
+| `BaseTickerTypesStream` | `/v3/reference/tickers/types` | stocks |
 | `BaseExchangesStream` | `/v3/reference/exchanges` | stocks, options, crypto, fx, futures |
 | `BaseConditionCodesStream` | `/v3/reference/conditions` | stocks, options, crypto, fx |
 
@@ -104,6 +124,28 @@ Stream configuration comes from `meltano.yml` under each stream's name key, stru
 
 Timestamp filter params use `__` as separator in config (e.g., `timestamp__gte`) which gets normalized to `.` (e.g., `timestamp.gte`) for the API.
 
+### Options Contract Discovery
+
+Options bars/snapshot/trades streams (`OptionsTickerPartitionStream` subclasses in `option_streams.py`) depend on `TapMassive.get_option_contracts_for_underlying()` (`tap.py`) to discover which contracts to fetch data for. This method reads `option_tickers.query_params` for API params and `option_tickers.other_params` for tap-level behavior.
+
+**`expired` parameter semantics**: The Massive API's `/v3/reference/options/contracts` endpoint treats `expired` as a **disjoint selector** — `expired=false` returns only active (non-expired) contracts, `expired=true` returns only expired contracts. There is no single API call that returns both.
+
+**`other_params.expired: "both"`**: When set in `option_tickers.other_params`, the tap makes two API calls (expired=true + expired=false) and unions the results, deduplicating by ticker. This is required for full historical backfill since expired contracts won't appear with `expired=false`.
+
+```yaml
+option_tickers:
+  query_params:
+    sort: ticker          # Do NOT set expired here when using "both"
+  other_params:
+    expired: "both"       # Fetch expired + active, union by ticker
+  select_tickers:
+    - "AAPL"
+```
+
+**Retry logic**: contract discovery in `tap.py` calls `get_option_tickers_stream().get_response()` from `MassiveRestStream` (`client.py`), reusing the existing exponential backoff policy (max 10 tries, 600s max, full jitter, giveup on 403). Errors raise instead of silently returning partial contract lists.
+
+**Scale reference** (AAPL, Feb 2026): ~119K expired contracts + ~3K active = ~122K total. Each contract requires a separate bars API call.
+
 ### Incremental Replication
 
 Most streams use `INCREMENTAL` replication with timestamp-based replication keys. The `get_starting_replication_key_value` method resolves the effective start timestamp by taking the max of the Singer state value and the configured `start_date`. Some streams use date-only timestamps (`_incremental_timestamp_is_date = True`), while others expect Unix timestamps (`_api_expects_unix_timestamp = True` with `_unix_timestamp_unit` of `s`, `ms`, or `ns`).
@@ -146,3 +188,374 @@ The meltano.yml `select:` and `config:` keys must match the stream's `name` attr
 - `ANTHROPIC_API_KEY`: Your Anthropic API key (for AI analysis)
 
 **Usage**: Comment `/analyze-changes` on any changelog issue to trigger AI analysis and PR creation
+
+
+STREAMS:
+
+There are 132 streams as of today, but some may have been deprecated, renamed, or added since this list was made.
+
+Stocks: 43
+
+Options: 20
+
+Futures: 9
+
+Indices: 14
+
+Forex: 20
+
+Crypto: 21
+
+Economy: 5
+
+
+
+
+STOCKS
+
+Stocks Overview
+
+Tickers
+
+All Tickers
+
+Ticker Overview
+
+Ticker Types
+
+Related Tickers
+
+Aggregate Bars (OHLC)
+
+Custom Bars
+
+Daily Market Summary
+
+Daily Ticker Summary
+
+Previous Day Bar
+
+Snapshots
+
+Single Ticker Snapshot
+
+Full Market Snapshot
+
+Unified Snapshot
+
+Top Market Movers
+
+Trades & Quotes
+
+Trades
+
+Last Trade
+
+Quotes
+
+Last Quote
+
+Technical Indicators
+
+SMA
+
+EMA
+
+MACD
+
+RSI
+
+Market Operations
+
+Exchanges
+
+Market Holidays
+
+Market Status
+
+Condition Codes
+
+Corporate Actions
+
+IPOs
+
+Splits (Deprecated)
+
+Splits
+
+Dividends (Deprecated)
+
+Dividends
+
+Ticker Events
+
+Fundamentals
+
+Financials (Deprecated)
+
+Balance Sheets
+
+Cash Flow Statements
+
+Income Statements
+
+Ratios
+
+Short Interest
+
+Short Volume
+
+Float
+
+Filings & Disclosures
+
+10-K Sections
+
+Risk Factors
+
+Risk Categories
+
+News
+
+OPTIONS
+
+Options Overview
+
+Contracts
+
+All Contracts
+
+Contract Overview
+
+Aggregate Bars (OHLC)
+
+Custom Bars
+
+Daily Ticker Summary
+
+Previous Day Bar
+
+Snapshots
+
+Option Contract Snapshot
+
+Option Chain Snapshot
+
+Unified Snapshot
+
+Trades & Quotes
+
+Trades
+
+Last Trade
+
+Quotes
+
+Technical Indicators
+
+SMA
+
+EMA
+
+MACD
+
+RSI
+
+Market Operations
+
+Exchanges
+
+Market Holidays
+
+Market Status
+
+Condition Codes
+
+FUTURES
+
+Futures Overview
+
+Contracts
+
+Products
+
+Schedules
+
+Aggregate Bars (OHLC)
+Snapshots
+
+Futures Contracts Snapshot
+
+Trades & Quotes
+
+Trades
+
+Quotes
+
+Market Operations
+
+Market Status
+
+Exchanges
+
+INDICES
+
+Indices Overview
+
+Tickers
+
+All Tickers
+
+Ticker Overview
+
+Aggregate Bars (OHLC)
+
+Custom Bars
+
+Previous Day Bar
+
+Daily Ticker Summary
+
+Snapshots
+
+Indices Snapshot
+
+Unified Snapshot
+
+Technical Indicators
+
+SMA
+
+EMA
+
+MACD
+
+RSI
+
+Market Operations
+
+Market Holidays
+
+Market Status
+
+FOREX
+
+Forex Overview
+
+Tickers
+
+All Tickers
+
+Ticker Overview
+
+Currency Conversion
+
+Aggregate Bars (OHLC)
+
+Custom Bars
+
+Daily Market Summary
+
+Previous Day Bar
+
+Snapshots
+
+Single Ticker Snapshot
+
+Full Market Snapshot
+
+Unified Snapshot
+
+Top Market Movers
+
+Quotes
+
+Quotes
+
+Last Quote
+
+Technical Indicators
+
+SMA
+
+EMA
+
+MACD
+
+RSI
+
+Market Operations
+
+Exchanges
+
+Market Holidays
+
+Market Status
+
+CRYPTO
+
+Crypto Overview
+
+Tickers
+
+All Tickers
+
+Ticker Overview
+
+Aggregate Bars (OHLC)
+
+Custom Bars
+
+Daily Market Summary
+
+Daily Ticker Summary
+
+Previous Day Bar
+
+Snapshots
+
+Single Ticker Snapshot
+
+Full Market Snapshot
+
+Unified Snapshot
+
+Top Market Movers
+
+Trades
+
+Trades
+
+Last Trade
+
+Technical Indicators
+
+SMA
+
+EMA
+
+MACD
+
+RSI
+
+Market Operations
+
+Exchanges
+
+Market Holidays
+
+Market Status
+
+Condition Codes
+
+ECONOMY
+
+Economy Overview
+
+Treasury Yields
+
+Inflation
+
+Inflation Expectations
+
+Labor Market

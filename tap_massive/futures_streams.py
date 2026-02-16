@@ -56,9 +56,8 @@ class FuturesContractsStream(MassiveRestStream):
 
 
 class FuturesTickerPartitionStream(BaseTickerPartitionStream):
-    @property
-    def partitions(self):
-        return [{"ticker": t["ticker"]} for t in self._tap.get_cached_futures_tickers()]
+    ticker_selector_keys = ("futures_tickers", "futures_contracts")
+    _cached_tickers_getter = "get_cached_futures_tickers"
 
 
 class FuturesProductsStream(MassiveRestStream):

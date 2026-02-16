@@ -19,11 +19,29 @@ from tap_massive.base_streams import (
     BaseQuoteStream,
     BaseTickerPartitionStream,
     BaseTickerStream,
-    BaseTickerTypesStream,
     BaseTradeStream,
     _SnapshotNormalizationMixin,
 )
 from tap_massive.client import MassiveRestStream, OptionalTickerPartitionStream
+
+
+def expired_query_variants(
+    base_query_params: dict[str, t.Any],
+    expired_mode: str | None,
+) -> list[dict[str, t.Any]]:
+    """Return query param variants for options expired-mode handling.
+
+    When expired_mode is "both", returns two variants (expired=True, expired=False).
+    Otherwise returns the original params unchanged.
+    """
+    query_params = base_query_params.copy()
+    if expired_mode == "both":
+        query_params.pop("expired", None)
+        return [
+            {**query_params, "expired": True},
+            {**query_params, "expired": False},
+        ]
+    return [query_params]
 
 
 class OptionsContractsStream(BaseTickerStream):
@@ -59,14 +77,35 @@ class OptionsContractsStream(BaseTickerStream):
         ),
     ).to_dict()
 
-    def get_ticker_list(self) -> list[str] | None:
-        """Return None to fetch ALL contracts regardless of option_tickers.select_tickers.
+    # Prefer shared options ticker selector, then fall back to market/name defaults.
+    ticker_selector_keys = ("option_tickers",)
 
-        OptionsContractsStream needs ALL contracts (including expired) for complete
-        historical coverage. The select_tickers filter in option_tickers config should
-        only apply to bars/snapshot streams, not to the contracts table itself.
-        """
-        return None
+    def get_records(
+        self, context: dict[str, t.Any] | None
+    ) -> t.Iterable[dict[str, t.Any]]:
+        """Support option_tickers.other_params.expired='both' for contracts stream."""
+        context = {} if context is None else context
+        ticker_list = self.get_ticker_list()
+        base_query_params = self.query_params.copy()
+
+        expired_mode = (
+            self.config.get("option_tickers", {}).get("other_params", {}).get("expired")
+        )
+        query_variants = expired_query_variants(base_query_params, expired_mode)
+
+        if not ticker_list:
+            logging.info("Pulling all tickers...")
+            for params in query_variants:
+                ctx = dict(context, query_params=params.copy())
+                yield from self.paginate_records(ctx)
+            return
+
+        logging.info(f"Pulling tickers: {ticker_list}")
+        for ticker in ticker_list:
+            for base_params in query_variants:
+                params = {**base_params, self._ticker_param: ticker}
+                ctx = dict(context, query_params=params.copy())
+                yield from self.paginate_records(ctx)
 
     def get_url(self, context: Context = None) -> str:
         return f"{self.url_base}/v3/reference/options/contracts"
@@ -82,15 +121,16 @@ class OptionsTickerPartitionStream(BaseTickerPartitionStream):
     """
 
     state_partitioning_keys = ["underlying"]
+    ticker_selector_keys = ("option_tickers",)
 
     @property
     def partitions(self) -> list[dict[str, t.Any]]:
-        option_cfg = self.config.get("option_tickers", {})
-        stock_tickers = self._apply_select_tickers_filter(
-            self._tap.get_cached_stock_tickers(),
-            option_cfg.get("select_tickers"),
-        )
-        return [{"underlying": t["ticker"]} for t in stock_tickers]
+        selected_underlyings = self.get_ticker_list()
+        if selected_underlyings is not None:
+            return [{"underlying": ticker} for ticker in selected_underlyings]
+        return [
+            {"underlying": t["ticker"]} for t in self._tap.get_cached_stock_tickers()
+        ]
 
     def get_records(
         self, context: dict[str, t.Any] | None
@@ -427,13 +467,6 @@ class OptionsQuoteStream(OptionsTickerPartitionStream, BaseQuoteStream):
         return {k: row.get(k) for k in allowed if k in row}
 
 
-class OptionsTickerTypesStream(BaseTickerTypesStream):
-    """Options ticker types."""
-
-    name = "options_ticker_types"
-    _asset_class = "options"
-
-
 class OptionsExchangesStream(BaseExchangesStream):
     """Options-specific exchanges."""
 
@@ -493,6 +526,7 @@ class OptionsChainSnapshotStream(
     _ticker_param = "underlyingAsset"
     _use_cached_tickers_default = True
     _ticker_in_path_params = True
+    ticker_selector_keys = ("option_tickers",)
 
     schema = th.PropertiesList(
         th.Property("ticker", th.StringType),
@@ -576,6 +610,9 @@ class OptionsChainSnapshotStream(
 
     @property
     def partitions(self):
+        selected_underlyings = self.get_ticker_list()
+        if selected_underlyings is not None:
+            return [{self._ticker_param: ticker} for ticker in selected_underlyings]
         return [
             {self._ticker_param: t["ticker"]}
             for t in self._tap.get_cached_stock_tickers()

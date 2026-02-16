@@ -165,7 +165,7 @@ plugins:
       - crypto_previous_day_bar.*
 #      - crypto_trades.*
 #      - crypto_last_trade.*
-      - crypto_ticker_types.*
+
       - crypto_top_market_movers.*
       - crypto_ticker_snapshot.*
       - crypto_full_market_snapshot.*
@@ -187,7 +187,7 @@ plugins:
       - indices_daily_ticker_summary.*
       - indices_previous_day_bar.*
       - indices_snapshot.*
-      - indices_ticker_types.*
+
       - indices_sma.*
       - indices_ema.*
       - indices_macd.*
@@ -634,16 +634,16 @@ plugins:
       # --- Options ---
       # The tickers that are set here persist across all streams that require a single options ticker as input.
       # To run different tickers across different streams you need to call the tap N times,
-      # where N is the number of distinct groups of ticker.
       # Used by bars/snapshot/trades streams for per-underlying contract fetching.
-      # Full historical backfill: expired=true pulls both active AND expired contracts.
-      # No moneyness/DTE/max_contracts filters — pulling everything for backtesting.
-      # For incremental updates after backfill, switch to expired: false.
+      # other_params.expired controls contract discovery:
+      #   "both"  - fetch expired + active contracts (two API calls, unioned) for full historical backfill
+      #   omitted - use query_params.expired as-is (true=expired only, false=active only)
       option_tickers:
         query_params:
-          expired: false    # Both active AND expired for historical coverage
           sort: ticker
-        other_params: {}
+          expiration_date__gte: "2025-01-01"  # Match the bars date range so contracts have data
+        other_params:
+          expired: "both"  # Fetch both expired and active contracts
         select_tickers:
           - "AAPL"
           - "META"
@@ -869,6 +869,9 @@ plugins:
         query_params:
           sort: ticker
           limit: 1000
+        other_params:
+          select_tickers:
+            - "EUR-USD"
 
       forex_ticker_details:
         query_params: {}
@@ -1058,8 +1061,8 @@ plugins:
 
       forex_currency_conversion:
         path_params:
-          from_currency: "USD"
-          to_currency: "EUR"
+          from: "USD"
+          to: "EUR"
         query_params:
           amount: 100
           precision: 2

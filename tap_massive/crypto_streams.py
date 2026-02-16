@@ -15,7 +15,6 @@ from tap_massive.base_streams import (
     BaseTickerDetailsStream,
     BaseTickerPartitionStream,
     BaseTickerStream,
-    BaseTickerTypesStream,
     BaseTopMarketMoversStream,
     BaseTradeStream,
     _SnapshotNormalizationMixin,
@@ -51,9 +50,8 @@ class CryptoTickerStream(BaseTickerStream):
 
 
 class CryptoTickerPartitionStream(BaseTickerPartitionStream):
-    @property
-    def partitions(self):
-        return [{"ticker": t["ticker"]} for t in self._tap.get_cached_crypto_tickers()]
+    ticker_selector_keys = ("crypto_tickers",)
+    _cached_tickers_getter = "get_cached_crypto_tickers"
 
 
 class CryptoTickerDetailsStream(CryptoTickerPartitionStream, BaseTickerDetailsStream):
@@ -130,13 +128,6 @@ class CryptoLastTradeStream(CryptoTickerPartitionStream, BaseLastTradeStream):
     """Stream for retrieving crypto last trade data."""
 
     name = "crypto_last_trade"
-
-
-class CryptoTickerTypesStream(BaseTickerTypesStream):
-    """Crypto ticker types."""
-
-    name = "crypto_ticker_types"
-    _asset_class = "crypto"
 
 
 class CryptoTopMarketMoversStream(BaseTopMarketMoversStream):

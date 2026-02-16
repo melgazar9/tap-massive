@@ -13,7 +13,6 @@ from tap_massive.base_streams import (
     BaseTickerDetailsStream,
     BaseTickerPartitionStream,
     BaseTickerStream,
-    BaseTickerTypesStream,
     _SnapshotNormalizationMixin,
 )
 from tap_massive.client import MassiveRestStream
@@ -45,9 +44,8 @@ class IndicesTickerStream(BaseTickerStream):
 
 
 class IndicesTickerPartitionStream(BaseTickerPartitionStream):
-    @property
-    def partitions(self):
-        return [{"ticker": t["ticker"]} for t in self._tap.get_cached_indices_tickers()]
+    ticker_selector_keys = ("indices_tickers",)
+    _cached_tickers_getter = "get_cached_indices_tickers"
 
 
 class IndicesTickerDetailsStream(IndicesTickerPartitionStream, BaseTickerDetailsStream):
@@ -102,13 +100,6 @@ class IndicesPreviousDayBarStream(
     """Stream for retrieving indices previous day bar data."""
 
     name = "indices_previous_day_bar"
-
-
-class IndicesTickerTypesStream(BaseTickerTypesStream):
-    """Indices ticker types."""
-
-    name = "indices_ticker_types"
-    _asset_class = "indices"
 
 
 class IndicesSnapshotStream(_SnapshotNormalizationMixin, MassiveRestStream):

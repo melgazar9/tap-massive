@@ -23,6 +23,9 @@ class MassiveRestStream(RESTStream):
     _requires_end_timestamp_in_path_params = False
     _ticker_param = "ticker"
 
+    # Subclasses override to control which config sections are checked for select_tickers.
+    ticker_selector_keys: tuple[str, ...] = ()
+
     @staticmethod
     def to_snake_case(s: str) -> str:
         """Convert camelCase or PascalCase string to snake_case."""
@@ -147,6 +150,111 @@ class MassiveRestStream(RESTStream):
             value = stream_configs.get(parent_key).get(child_key)
             return value
         return None
+
+    @staticmethod
+    def _config_key_for_market(market: str | None) -> str | None:
+        """Map a market name (e.g. 'stock', 'fx') to its config section (e.g. 'stock_tickers')."""
+        if not market:
+            return None
+        return {
+            "stock": "stock_tickers",
+            "stocks": "stock_tickers",
+            "fx": "forex_tickers",
+            "forex": "forex_tickers",
+            "crypto": "crypto_tickers",
+            "indices": "indices_tickers",
+            "option": "option_tickers",
+            "options": "option_tickers",
+            "future": "futures_tickers",
+            "futures": "futures_tickers",
+        }.get(market, f"{market}_tickers")
+
+    @staticmethod
+    def _canonicalize_ticker(ticker: str, market: str | None) -> str:
+        """Strip, uppercase, and apply market-specific formatting (e.g. forex C: prefix)."""
+        normalized = ticker.strip().upper()
+        if not normalized:
+            return normalized
+        if market in ("fx", "forex"):
+            if normalized.startswith("C:"):
+                return normalized
+            letters = re.sub(r"[^A-Z]", "", normalized)
+            if len(letters) == 6:
+                return f"C:{letters}"
+        return normalized
+
+    def resolve_select_tickers(
+        self,
+        *,
+        selector_keys: tuple[str, ...] = (),
+        market: str | None = None,
+        include_stream_name: bool = False,
+    ) -> list[str] | None:
+        """Resolve select_tickers from config, checking sections in precedence order.
+
+        Returns a canonicalized list of ticker strings, or None if no filter is configured.
+        """
+        sections: list[str] = []
+        sections.extend(selector_keys)
+
+        market_key = self._config_key_for_market(market)
+        if market_key:
+            sections.append(market_key)
+
+        if include_stream_name:
+            sections.append(self.name)
+
+        # Deduplicate while preserving order
+        seen: set[str] = set()
+        ordered_sections: list[str] = []
+        for section in sections:
+            if section and section not in seen:
+                seen.add(section)
+                ordered_sections.append(section)
+
+        for section in ordered_sections:
+            cfg = self.config.get(section, {})
+            if not isinstance(cfg, dict):
+                continue
+            raw = cfg.get("select_tickers")
+            if not raw or raw in ("*", ["*"]):
+                continue
+            if isinstance(raw, str):
+                resolved = [
+                    self._canonicalize_ticker(t, market)
+                    for t in raw.split(",")
+                    if t.strip()
+                ]
+            elif isinstance(raw, list):
+                resolved = [
+                    self._canonicalize_ticker(str(t), market)
+                    for t in raw
+                    if str(t).strip()
+                ]
+            else:
+                continue
+            if resolved and resolved != ["*"]:
+                return resolved
+        return None
+
+    @staticmethod
+    def _filter_by_tickers(
+        records: list[dict[str, t.Any]],
+        allowed: list[str] | None,
+        key: str = "ticker",
+    ) -> list[dict[str, t.Any]]:
+        """Filter records to only those whose key is in the allowed ticker list."""
+        if not allowed:
+            return records
+        allowed_set = set(allowed)
+        return [r for r in records if r.get(key) in allowed_set]
+
+    def get_ticker_list(self) -> list[str] | None:
+        """Return the resolved select_tickers for this stream, or None if unfiltered."""
+        return self.resolve_select_tickers(
+            selector_keys=self.ticker_selector_keys,
+            market=getattr(self, "market", None),
+        )
 
     @property
     def use_cached_tickers(self) -> bool:
@@ -377,6 +485,7 @@ class MassiveRestStream(RESTStream):
     def redact_api_key(msg):
         return re.sub(r"(apiKey=)([^\s&]+)", r"\1<REDACTED>", msg)
 
+    @staticmethod
     @backoff.on_exception(
         backoff.expo,
         (requests.exceptions.RequestException,),
@@ -385,17 +494,25 @@ class MassiveRestStream(RESTStream):
         jitter=backoff.full_jitter,
         giveup=lambda e: isinstance(e, requests.exceptions.HTTPError)
         and e.response is not None
-        and e.response.status_code == 403,
+        and e.response.status_code in (403, 404),
         on_backoff=lambda details: logging.warning(
             f"API request failed, retrying in {details['wait']:.1f}s "
             f"(attempt {details['tries']}): {details['exception']}"
         ),
     )
+    def fetch_with_retry(request_get, url: str, params: dict, timeout: int = 60):
+        response = request_get(url, params=params, timeout=timeout)
+        response.raise_for_status()
+        return response
+
     def get_response(self, url, query_params):
         try:
-            response = self.requests_session.get(url, params=query_params, timeout=60)
-            response.raise_for_status()
-            return response
+            return self.fetch_with_retry(
+                request_get=self.requests_session.get,
+                url=url,
+                params=query_params,
+                timeout=60,
+            )
         except requests.exceptions.ConnectionError as ce:
             log_url = self.redact_api_key(url)
             log_exception = self.redact_api_key(str(ce))
@@ -795,6 +912,13 @@ class MassiveRestStream(RESTStream):
 class OptionalTickerPartitionStream(MassiveRestStream):
     _ticker_in_path_params = None
     _ticker_in_query_params = None
+    ticker_selector_keys: tuple[str, ...] = ("stock_tickers",)
+    ticker_record_key = "ticker"
+
+    def get_cached_ticker_records(self) -> list[dict[str, t.Any]]:
+        """Return cached ticker records used for manual ticker looping."""
+        tap_obj = getattr(self, "tap", None) or getattr(self, "_tap")
+        return tap_obj.get_cached_stock_tickers()
 
     def get_records(self, context: Context | None) -> t.Iterable[dict[str, t.Any]]:
         """Loops over tickers manually instead of calling built-in partitions for flexibility in meltano.yml other_params."""
@@ -823,15 +947,24 @@ class OptionalTickerPartitionStream(MassiveRestStream):
             )
 
         if self.use_cached_tickers:
-            ticker_records = self.tap.get_cached_stock_tickers()
+            ticker_records = self.get_cached_ticker_records()
+            ticker_records = self._filter_by_tickers(
+                ticker_records,
+                allowed=self.get_ticker_list(),
+                key=self.ticker_record_key,
+            )
 
             for ticker_record in ticker_records:
                 context["query_params"] = query_params
                 context["path_params"] = path_params
                 if self._ticker_in_query_params:
-                    query_params[self._ticker_param] = ticker_record["ticker"]
+                    query_params[self._ticker_param] = ticker_record[
+                        self.ticker_record_key
+                    ]
                 if self._ticker_in_path_params:
-                    path_params[self._ticker_param] = ticker_record["ticker"]
+                    path_params[self._ticker_param] = ticker_record[
+                        self.ticker_record_key
+                    ]
                 yield from self.paginate_records(context)
         else:
             yield from self.paginate_records(context)
