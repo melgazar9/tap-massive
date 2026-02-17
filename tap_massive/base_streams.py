@@ -326,8 +326,6 @@ class BaseDailyTickerSummaryStream(BaseTickerPartitionStream):
 
     @staticmethod
     def post_process(row: Record, context: Context | None = None) -> dict | None:
-        if "symbol" in row:
-            row["ticker"] = row.pop("symbol")
         row["pre_market"] = row.pop("preMarket", None)
         row["after_hours"] = row.pop("afterHours", None)
         return row
