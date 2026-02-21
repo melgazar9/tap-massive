@@ -14,6 +14,17 @@ from tap_massive.base_streams import (
     AllExchangesStream,
     AllTickerTypesStream,
 )
+from tap_massive.benzinga_streams import (
+    BenzingaAnalystDetailsStream,
+    BenzingaAnalystInsightsStream,
+    BenzingaAnalystRatingsStream,
+    BenzingaBullsBearsSayStream,
+    BenzingaConsensusRatingsStream,
+    BenzingaCorporateGuidanceStream,
+    BenzingaEarningsStream,
+    BenzingaFirmDetailsStream,
+    BenzingaNewsStream,
+)
 from tap_massive.crypto_streams import (
     CryptoBars1DayStream,
     CryptoBars1HourStream,
@@ -481,6 +492,16 @@ class TapMassive(Tap):
             InflationExpectationsStream(self),
             InflationStream(self),
             LaborMarketStream(self),
+            # Benzinga streams
+            BenzingaAnalystDetailsStream(self),
+            BenzingaAnalystInsightsStream(self),
+            BenzingaAnalystRatingsStream(self),
+            BenzingaBullsBearsSayStream(self),
+            BenzingaConsensusRatingsStream(self),
+            BenzingaCorporateGuidanceStream(self),
+            BenzingaEarningsStream(self),
+            BenzingaFirmDetailsStream(self),
+            BenzingaNewsStream(self),
         ]
 
         return streams

@@ -208,6 +208,17 @@ plugins:
 #      - futures_quotes.*
       - futures_contracts_snapshot.*
 
+      # --- Benzinga ---
+      - benzinga_analyst_details.*
+      - benzinga_analyst_insights.*
+      - benzinga_analyst_ratings.*
+      - benzinga_bulls_bears_say.*
+      - benzinga_consensus_ratings.*
+      - benzinga_corporate_guidance.*
+      - benzinga_earnings.*
+      - benzinga_firm_details.*
+      - benzinga_news.*
+
     config:
       # set this for a global start date for all streams -- will be overridden by the streams incremental state if that's more recent.
 
@@ -1556,6 +1567,69 @@ plugins:
           limit: 50000
         other_params:
           use_cached_tickers: true
+
+      # --- Benzinga ---
+      # NOTE: Incremental streams use last_updated (or published for news) as replication key.
+      # The effective start = max(global start_date, stream config timestamp).
+      # To backfill from earliest available history, lower or remove the global start_date.
+
+      benzinga_analyst_details:
+        query_params:
+          sort: full_name.asc
+          limit: 50000
+
+      benzinga_analyst_insights:
+        query_params:
+          last_updated__gte: "2025-01-01"
+          last_updated__lte: "2025-06-01"
+          sort: last_updated.asc
+          limit: 50000
+
+      benzinga_analyst_ratings:
+        query_params:
+          last_updated__gte: "2025-01-01"
+          last_updated__lte: "2025-06-01"
+          sort: last_updated.asc
+          limit: 50000
+
+      benzinga_bulls_bears_say:
+        query_params:
+          last_updated__gte: "2025-01-01"
+          last_updated__lte: "2025-06-01"
+          sort: last_updated.asc
+          limit: 5000
+
+      benzinga_consensus_ratings:
+        query_params:
+          limit: 50000
+        other_params:
+          use_cached_tickers: true
+
+      benzinga_corporate_guidance:
+        query_params:
+          last_updated__gte: "2025-01-01"
+          last_updated__lte: "2025-06-01"
+          sort: last_updated.asc
+          limit: 50000
+
+      benzinga_earnings:
+        query_params:
+          last_updated__gte: "2025-01-01"
+          last_updated__lte: "2025-06-01"
+          sort: last_updated.asc
+          limit: 50000
+
+      benzinga_firm_details:
+        query_params:
+          sort: name.asc
+          limit: 50000
+
+      benzinga_news:
+        query_params:
+          last_updated__gte: "2025-01-01"
+          last_updated__lte: "2025-06-01"
+          sort: published.asc
+          limit: 50000
 
   loaders:
   - name: target-jsonl

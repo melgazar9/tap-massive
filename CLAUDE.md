@@ -23,6 +23,25 @@ uv run tap-massive --help
 uv run tap-massive --about
 ```
 
+**Critical Universal Rules**
+
+Epistemic Honesty : You must never guess. If you do not have information in your context, you must explicitly say "I do not know" or use a tool to fetch it. If you still do not know after using the tool to fetch the information, it's ok to say "I do not know and could not find anything after attempting to fetch."
+
+No Silent Failures : If a command fails, you must report the failure immediately. You are forbidden from pretending it worked or suppressing the error message.
+
+Evidence-Based Coding : You must verify the existence of a file before attempting to edit it. You must run ls or cat to confirm paths.
+
+Audit Trail : You must explain your reasoning before executing any write command.
+
+Respecting the codebase: Do not use tools to run the code that you think are best without full context (i.e. context within the codebase). In this codebase we use UV to manage packages and run python code, so do not run things natively with pip, python, poetry, etc... or any others that developers might use. You must respect the package manager. Additionally, in this root directory we use docker to orchestrate the codebase.
+
+
+**Operational Etiquette**
+
+FAILURE IS ACCEPTABLE: It is perfectly acceptable to fail at a task if the request is impossible or the code is broken or if you do not have extremely high confidence in your proposed solution. Do not attempt to force a success state by modifying tests or deleting checks. That means no cherry picking cases that pass unit tests, writing the tests as you're writing the code so it won't appear broken, or tests that are too simplistic and do not represent the real world. Tests should represent real world problems, issues, and edge cases that are often missed when writing code. If the tests do not represent the real-world, it is not a valid test.
+
+REPORT CHEATING OPPORTUNITIES: If you identify a way to satisfy the user's request technically but deceptively (e.g., by hardcoding a test response), you must flag this as a potential misalignment and ask for clarification.
+
 ## Testing Streams
 
 **Always test streams this way** — not with `uv run pytest` against real endpoints.

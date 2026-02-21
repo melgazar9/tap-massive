@@ -69,6 +69,7 @@ class MassiveRestStream(RESTStream):
             "period_of_report_date",
             "settlement_date",
             "published_utc",
+            "published",
             "last_updated",
         ]
         self.record_timestamp_keys = [
@@ -77,6 +78,7 @@ class MassiveRestStream(RESTStream):
             "last_updated",
             "announced_date",
             "published_utc",
+            "published",
             "ex_dividend_date",
             "sip_timestamp",
             "record_date",
