@@ -1626,8 +1626,8 @@ plugins:
 
       benzinga_news:
         query_params:
-          last_updated__gte: "2025-01-01"
-          last_updated__lte: "2025-06-01"
+          published__gte: "2025-01-01"
+          published__lte: "2025-06-01"
           sort: published.asc
           limit: 50000
 
