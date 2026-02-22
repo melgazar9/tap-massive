@@ -492,7 +492,7 @@ class MassiveRestStream(RESTStream):
         backoff.expo,
         (requests.exceptions.RequestException,),
         max_tries=10,
-        max_time=600,
+        max_time=3600,
         jitter=backoff.full_jitter,
         giveup=lambda e: isinstance(e, requests.exceptions.HTTPError)
         and e.response is not None
@@ -502,18 +502,19 @@ class MassiveRestStream(RESTStream):
             f"(attempt {details['tries']}): {details['exception']}"
         ),
     )
-    def fetch_with_retry(request_get, url: str, params: dict, timeout: int = 60):
+    def fetch_with_retry(request_get, url: str, params: dict, timeout: int = 300):
         response = request_get(url, params=params, timeout=timeout)
         response.raise_for_status()
         return response
 
     def get_response(self, url, query_params):
+        timeout = self.config.get("request_timeout", 300)
         try:
             return self.fetch_with_retry(
                 request_get=self.requests_session.get,
                 url=url,
                 params=query_params,
-                timeout=60,
+                timeout=timeout,
             )
         except requests.exceptions.ConnectionError as ce:
             log_url = self.redact_api_key(url)

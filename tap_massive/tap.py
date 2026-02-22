@@ -205,6 +205,11 @@ class TapMassive(Tap):
             required=True,
             secret=True,
         ),
+        th.Property(
+            "request_timeout",
+            th.IntegerType,
+            default=300,
+        ),
     ).to_dict()
 
     # Ticker caching: one registry instead of 6 copy-pasted blocks.
