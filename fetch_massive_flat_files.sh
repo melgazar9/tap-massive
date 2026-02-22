@@ -35,6 +35,7 @@ END_DATE=""
 PREFIX=""
 ASSET_CLASS=""
 ALL_DATASETS="false"
+ASSET_FILENAME_PREFIX=""
 
 OS_NAME="$(uname -s)"
 DATE_STYLE="gnu"
@@ -140,16 +141,22 @@ fi
 
 case "$ASSET_CLASS" in
   us_stocks_sip)
+    ASSET_FILENAME_PREFIX="stocks"
     ;;
   us_options_opra)
+    ASSET_FILENAME_PREFIX="options"
     ;;
   us_indices)
+    ASSET_FILENAME_PREFIX="indices"
     ;;
   global_forex)
+    ASSET_FILENAME_PREFIX="forex"
     ;;
   global_crypto)
+    ASSET_FILENAME_PREFIX="crypto"
     ;;
   futures)
+    ASSET_FILENAME_PREFIX="futures"
     ;;
   *)
     echo "Error: unsupported asset class '$ASSET_CLASS'. Use Massive S3 prefixes exactly."
@@ -224,7 +231,7 @@ for dataset in "${datasets[@]}"; do
     month=$(epoch_to_month "$current_sec")
 
     s3_path="$BASE_PATH/$data_type/$year/$month/$current_date.csv.gz"
-    local_file="$output_dir/${prefix}_${current_date}.csv.gz"
+    local_file="$output_dir/${ASSET_FILENAME_PREFIX}_${prefix}_${current_date}.csv.gz"
 
     echo "Downloading $s3_path as $local_file"
     aws s3 cp "$s3_path" "$local_file" $ENDPOINT
