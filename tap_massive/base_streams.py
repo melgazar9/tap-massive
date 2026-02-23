@@ -35,6 +35,7 @@ def safe_int(x):
 class BaseTickerStream(MassiveRestStream):
     market = None
     _ticker_param = "ticker"
+    _boolean_flag_key = "active"
     _set_market_query_param = (
         True  # Set to False if endpoint doesn't accept market param
     )
@@ -60,22 +61,49 @@ class BaseTickerStream(MassiveRestStream):
     def get_child_context(self, record, context):
         return {"ticker": record.get("ticker")}
 
+    @staticmethod
+    def boolean_query_variants(
+        base_query_params: dict[str, t.Any],
+        param_name: str,
+        mode: str | None,
+    ) -> list[dict[str, t.Any]]:
+        """Return query param variants for two-pass boolean selector handling."""
+        query_params = base_query_params.copy()
+        if mode == "both":
+            query_params.pop(param_name, None)
+            return [
+                {**query_params, param_name: True},
+                {**query_params, param_name: False},
+            ]
+        return [query_params]
+
+    def _get_boolean_flag_mode(self) -> str | None:
+        return self.other_params.get(self._boolean_flag_key)
+
     def get_records(
         self, context: dict[str, t.Any] | None
     ) -> t.Iterable[dict[str, t.Any]]:
         context = {} if context is None else context
         ticker_list = self.get_ticker_list()
-        query_params = self.query_params.copy()
+        query_variants = self.boolean_query_variants(
+            self.query_params.copy(),
+            self._boolean_flag_key,
+            self._get_boolean_flag_mode(),
+        )
+
         if not ticker_list:
             logging.info("Pulling all tickers...")
-            context["query_params"] = query_params
-            yield from self.paginate_records(context)
-        else:
-            logging.info(f"Pulling tickers: {ticker_list}")
-            for ticker in ticker_list:
-                query_params.update({self._ticker_param: ticker})
-                context["query_params"] = query_params
-                yield from self.paginate_records(context)
+            for params in query_variants:
+                ctx = dict(context, query_params=params.copy())
+                yield from self.paginate_records(ctx)
+            return
+
+        logging.info(f"Pulling tickers: {ticker_list}")
+        for ticker in ticker_list:
+            for base_params in query_variants:
+                params = {**base_params, self._ticker_param: ticker}
+                ctx = dict(context, query_params=params.copy())
+                yield from self.paginate_records(ctx)
 
 
 class AllTickersStream(BaseTickerStream):

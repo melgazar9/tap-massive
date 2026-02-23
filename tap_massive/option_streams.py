@@ -25,25 +25,6 @@ from tap_massive.base_streams import (
 from tap_massive.client import MassiveRestStream, OptionalTickerPartitionStream
 
 
-def expired_query_variants(
-    base_query_params: dict[str, t.Any],
-    expired_mode: str | None,
-) -> list[dict[str, t.Any]]:
-    """Return query param variants for options expired-mode handling.
-
-    When expired_mode is "both", returns two variants (expired=True, expired=False).
-    Otherwise returns the original params unchanged.
-    """
-    query_params = base_query_params.copy()
-    if expired_mode == "both":
-        query_params.pop("expired", None)
-        return [
-            {**query_params, "expired": True},
-            {**query_params, "expired": False},
-        ]
-    return [query_params]
-
-
 class OptionsContractsStream(BaseTickerStream):
     """Stream for retrieving all options contracts."""
 
@@ -51,6 +32,7 @@ class OptionsContractsStream(BaseTickerStream):
     primary_keys = ["ticker"]
     market = "options"
     _ticker_param = "underlying_ticker"
+    _boolean_flag_key = "expired"
     _set_market_query_param = False  # This endpoint doesn't accept market param
     _ticker_in_path_params = True
 
@@ -80,32 +62,12 @@ class OptionsContractsStream(BaseTickerStream):
     # Prefer shared options ticker selector, then fall back to market/name defaults.
     ticker_selector_keys = ("option_tickers",)
 
-    def get_records(
-        self, context: dict[str, t.Any] | None
-    ) -> t.Iterable[dict[str, t.Any]]:
-        """Support option_tickers.other_params.expired='both' for contracts stream."""
-        context = {} if context is None else context
-        ticker_list = self.get_ticker_list()
-        base_query_params = self.query_params.copy()
-
-        expired_mode = (
-            self.config.get("option_tickers", {}).get("other_params", {}).get("expired")
+    def _get_boolean_flag_mode(self) -> str | None:
+        return (
+            self.config.get("option_tickers", {})
+            .get("other_params", {})
+            .get(self._boolean_flag_key)
         )
-        query_variants = expired_query_variants(base_query_params, expired_mode)
-
-        if not ticker_list:
-            logging.info("Pulling all tickers...")
-            for params in query_variants:
-                ctx = dict(context, query_params=params.copy())
-                yield from self.paginate_records(ctx)
-            return
-
-        logging.info(f"Pulling tickers: {ticker_list}")
-        for ticker in ticker_list:
-            for base_params in query_variants:
-                params = {**base_params, self._ticker_param: ticker}
-                ctx = dict(context, query_params=params.copy())
-                yield from self.paginate_records(ctx)
 
     def get_url(self, context: Context = None) -> str:
         return f"{self.url_base}/v3/reference/options/contracts"

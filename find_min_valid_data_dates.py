@@ -486,7 +486,8 @@ def main() -> None:
         tested_streams = {r[0] for r in rows if r[1] == asset}
         missing = sorted(file_streams - tested_streams)
         print(
-            f"- {asset}: tested {len(tested_streams)}/{len(file_streams)} streams from tap_massive/{ASSET_TO_FILE_PREFIX[asset]}_streams.py"
+            f"- {asset}: tested {len(tested_streams)}/{len(file_streams)}"
+            f" streams from tap_massive/{ASSET_TO_FILE_PREFIX[asset]}_streams.py"
         )
         if missing:
             print(f"  missing probes ({len(missing)}): {', '.join(missing)}")

@@ -241,12 +241,28 @@ plugins:
         query_params:
           sort: ticker
           limit: 1000
+        other_params:
+          active: "both"
         select_tickers:
           - "AAPL"
           - "META"
+          - "TWTR"
 
       stock_ticker_details:
         query_params: {}
+
+#      stock_ticker_types:
+#        query_params: {}
+#
+#      stock_exchanges:
+#        query_params: {}
+#
+#      stock_condition_codes:
+#        query_params: {}
+
+      stock_related_tickers:
+        other_params:
+          use_cached_tickers: true
       # Second bars - 1-2 days (very high volume)
       stock_bars_1_second:
         path_params:
@@ -386,6 +402,10 @@ plugins:
           limit: 50000
         other_params:
           loop_over_dates_gte_date: false
+          use_cached_tickers: true
+
+      stock_previous_day_bar:
+        other_params:
           use_cached_tickers: true
 
       stock_top_market_movers:
@@ -529,6 +549,31 @@ plugins:
         other_params:
           use_cached_tickers: true
 
+      # --- Cross-Asset Reference Streams ---
+      all_tickers:
+        query_params:
+          sort: ticker
+          limit: 1000
+        other_params:
+          active: "both"
+
+#      ticker_types:
+#        query_params: {}
+#
+#      exchanges:
+#        query_params: {}
+
+      condition_codes:
+        query_params:
+          limit: 1000
+
+      # --- Market Data ---
+#      market_holidays:
+#        query_params: {}
+#
+#      market_status:
+#        query_params: {}
+
       # --- Fundamentals ---
       stock_financials_deprecated:
         query_params:
@@ -585,6 +630,8 @@ plugins:
           use_cached_tickers: true
 
       stock_float:
+        query_params:
+          limit: 5000
         other_params:
           use_cached_tickers: true
 
@@ -603,6 +650,10 @@ plugins:
           limit: 49999
         other_params:
           use_cached_tickers: true
+
+      stock_risk_categories:
+        query_params:
+          limit: 999
 
       stock_news:
         query_params:
@@ -644,12 +695,9 @@ plugins:
           limit: 50000
 
       # --- Options ---
-      # The tickers that are set here persist across all streams that require a single options ticker as input.
-      # To run different tickers across different streams you need to call the tap N times,
-      # Used by bars/snapshot/trades streams for per-underlying contract fetching.
-      # other_params.expired controls contract discovery:
-      #   "both"  - fetch expired + active contracts (two API calls, unioned) for full historical backfill
-      #   omitted - use query_params.expired as-is (true=expired only, false=active only)
+      # option_tickers is a CONFIG KEY (not a stream). The actual stream is "options_contracts".
+      # Controls contract discovery for all options partition streams (bars, snapshots, trades).
+      # Set other_params.expired to "both" to fetch expired + active contracts (two API calls, unioned).
       option_tickers:
         query_params:
           sort: ticker
@@ -664,6 +712,12 @@ plugins:
         query_params: {}
         other_params:
           use_cached_tickers: true
+
+#      options_exchanges:
+#        query_params: {}
+#
+#      options_condition_codes:
+#        query_params: {}
 
       # Phase 1A: Load ALL contracts including expired for complete backtest history
       # No date filters, no moneyness filters - just complete contract universe
@@ -882,6 +936,7 @@ plugins:
           sort: ticker
           limit: 1000
         other_params:
+          active: "both"
           select_tickers:
             - "EUR-USD"
 
@@ -1084,6 +1139,8 @@ plugins:
         query_params:
           sort: ticker
           limit: 1000
+        other_params:
+          active: "both"
 
       crypto_ticker_details:
         query_params: {}
@@ -1287,6 +1344,8 @@ plugins:
         query_params:
           sort: ticker
           limit: 1000
+        other_params:
+          active: "both"
 
       indices_ticker_details:
         query_params: {}
@@ -1398,6 +1457,10 @@ plugins:
         other_params:
           use_cached_tickers: true
 
+      indices_snapshot:
+        other_params:
+          use_cached_tickers: true
+
       indices_sma:
         query_params:
           timestamp__gte: "2025-01-01T00:00:00Z"
@@ -1457,6 +1520,18 @@ plugins:
         query_params:
           sort: ticker
           limit: 1000
+
+      futures_products:
+        query_params:
+          limit: 50000
+
+      futures_schedules:
+        query_params:
+          limit: 1000
+
+      futures_contracts_snapshot:
+        query_params:
+          limit: 250
 
       futures_bars_1_second:
         path_params:

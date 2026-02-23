@@ -14,6 +14,7 @@ from tap_massive.base_streams import (
     AllExchangesStream,
     AllTickersStream,
     AllTickerTypesStream,
+    BaseTickerStream,
 )
 from tap_massive.benzinga_streams import (
     BenzingaAnalystDetailsStream,
@@ -151,7 +152,6 @@ from tap_massive.option_streams import (
     OptionsSmaStream,
     OptionsTradeStream,
     OptionsUnifiedSnapshotStream,
-    expired_query_variants,
 )
 from tap_massive.stock_streams import (
     EmaStream,
