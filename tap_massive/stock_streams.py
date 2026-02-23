@@ -572,7 +572,7 @@ class StockIPOsStream(OptionalTickerPartitionStream):
         ),
         th.Property("isin", th.StringType),
         th.Property("issuer_name", th.StringType),
-        th.Property("last_updated", th.IntegerType),
+        th.Property("last_updated", th.DateTimeType),
         th.Property("listing_date", th.IntegerType),
         th.Property("lot_size", th.IntegerType),
         th.Property("lowest_offer_price", th.NumberType),
@@ -590,10 +590,26 @@ class StockIPOsStream(OptionalTickerPartitionStream):
     def get_url(self, context: Context = None):
         return f"{self.url_base}/vX/reference/ipos"
 
-    @staticmethod
-    def post_process(row: Record, context: Context | None = None) -> dict | None:
+    def post_process(self, row: Record, context: Context | None = None) -> dict | None:
+        row = super().post_process(row, context)
+        if row is None:
+            return None
+
         if row.get("ipo_status"):
             row["ipo_status"] = row["ipo_status"].lower()
+
+        last_updated = row.get("last_updated")
+        if last_updated not in (None, ""):
+            try:
+                parsed_last_updated = self.safe_parse_datetime(last_updated)
+            except ValueError:
+                parsed_last_updated = None
+
+            if parsed_last_updated is None:
+                row.pop("last_updated", None)
+            else:
+                row["last_updated"] = parsed_last_updated
+
         return row
 
 
@@ -720,7 +736,7 @@ class StockTickerEventsStream(StockTickerPartitionStream):
 
     name = "stock_ticker_events"
 
-    primary_keys = ["date", "event_type", "name"]
+    primary_keys = ["date", "name"]
 
     _ticker_in_path_params = True
 
@@ -740,4 +756,15 @@ class StockTickerEventsStream(StockTickerPartitionStream):
         events = record.get("events", [])
         for event in events:
             if isinstance(event, dict):
-                yield {"name": name, **event}
+                normalized_event = dict(event)
+                event_type = (
+                    normalized_event.get("event_type")
+                    or normalized_event.pop("eventType", None)
+                    or normalized_event.pop("type", None)
+                    or record.get("event_type")
+                    or record.get("eventType")
+                    or record.get("type")
+                )
+                if event_type is not None:
+                    normalized_event["event_type"] = event_type
+                yield {"name": name, **normalized_event}
