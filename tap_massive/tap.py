@@ -306,7 +306,7 @@ class TapMassive(Tap):
         query_params = option_cfg.get("query_params", {}).copy()
         other_params = option_cfg.get("other_params", {})
         expired_mode = other_params.get("expired")
-        query_variants = expired_query_variants(query_params, expired_mode)
+        query_variants = BaseTickerStream.boolean_query_variants(query_params, "expired", expired_mode)
         contracts: list[dict] = []
         for params in query_variants:
             contracts.extend(self._paginate_option_contracts(underlying, params))
