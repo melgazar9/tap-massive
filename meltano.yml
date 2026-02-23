@@ -85,6 +85,7 @@ plugins:
       - stock_news.*
 
       # --- Cross-Asset Reference Streams ---
+      - all_tickers.*
       - ticker_types.*
       - exchanges.*
       - condition_codes.*
