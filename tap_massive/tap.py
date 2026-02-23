@@ -12,6 +12,7 @@ from singer_sdk import typing as th
 from tap_massive.base_streams import (
     AllConditionCodesStream,
     AllExchangesStream,
+    AllTickersStream,
     AllTickerTypesStream,
 )
 from tap_massive.benzinga_streams import (
@@ -357,6 +358,7 @@ class TapMassive(Tap):
             MACDStream(self),
             RSIStream(self),
             # Cross-asset reference streams (All + Stock-specific)
+            AllTickersStream(self),
             AllTickerTypesStream(self),
             AllExchangesStream(self),
             AllConditionCodesStream(self),

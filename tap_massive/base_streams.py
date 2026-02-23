@@ -78,6 +78,35 @@ class BaseTickerStream(MassiveRestStream):
                 yield from self.paginate_records(context)
 
 
+class AllTickersStream(BaseTickerStream):
+    """All tickers across all asset classes (no market filter)."""
+
+    name = "all_tickers"
+    primary_keys = ["ticker"]
+
+    schema = th.PropertiesList(
+        th.Property("cik", th.StringType),
+        th.Property("ticker", th.StringType),
+        th.Property("name", th.StringType),
+        th.Property("active", th.BooleanType),
+        th.Property("currency_symbol", th.StringType),
+        th.Property("currency_name", th.StringType),
+        th.Property("base_currency_symbol", th.StringType),
+        th.Property("composite_figi", th.StringType),
+        th.Property("base_currency_name", th.StringType),
+        th.Property("delisted_utc", th.StringType),
+        th.Property("last_updated_utc", th.StringType),
+        th.Property("locale", th.StringType),
+        th.Property("market", th.StringType),
+        th.Property("primary_exchange", th.StringType),
+        th.Property("share_class_figi", th.StringType),
+        th.Property("type", th.StringType),
+    ).to_dict()
+
+    def get_url(self, context: Context = None) -> str:
+        return f"{self.url_base}/v3/reference/tickers"
+
+
 class BaseTickerPartitionStream(MassiveRestStream):
     _cached_tickers_getter: str | None = None  # e.g. "get_cached_stock_tickers"
 
