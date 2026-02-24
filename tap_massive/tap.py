@@ -5,9 +5,11 @@ from __future__ import annotations
 import logging
 import threading
 import typing as t
+from pathlib import PurePath
 
 from singer_sdk import Tap
 from singer_sdk import typing as th
+from singer_sdk.helpers._util import read_json_file
 
 from tap_massive.base_streams import (
     AllConditionCodesStream,
@@ -230,6 +232,12 @@ class TapMassive(Tap):
         self._ticker_locks: dict[str, threading.Lock] = {
             asset: threading.Lock() for asset in self._ticker_stream_classes
         }
+        catalog_arg = kwargs.get("catalog")
+        if isinstance(catalog_arg, (str, PurePath)):
+            kwargs["catalog"] = read_json_file(catalog_arg)
+        state_arg = kwargs.get("state")
+        if isinstance(state_arg, (str, PurePath)):
+            kwargs["state"] = read_json_file(state_arg)
         super().__init__(*args, **kwargs)
 
     def _get_ticker_stream(self, asset: str) -> MassiveRestStream:
@@ -311,7 +319,15 @@ class TapMassive(Tap):
         )
         contracts: list[dict] = []
         for params in query_variants:
-            contracts.extend(self._paginate_option_contracts(underlying, params))
+            variant_expired = params.get("expired")
+            variant_contracts = self._paginate_option_contracts(underlying, params)
+            for contract in variant_contracts:
+                if (
+                    variant_expired in (True, False)
+                    and contract.get("expired") is None
+                ):
+                    contract = {**contract, "expired": variant_expired}
+                contracts.append(contract)
 
         if len(query_variants) > 1:
             # Dedupe by ticker for expired+active union and keep deterministic ordering.

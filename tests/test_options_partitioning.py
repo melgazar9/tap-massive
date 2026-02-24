@@ -139,6 +139,34 @@ class TestStateResetBetweenContracts:
         assert states_seen[0] == {}  # First contract: fresh state
         assert states_seen[1] == {}  # Second contract: state was reset
 
+    def test_passes_contract_expired_flag_into_context(self, tap_config):
+        from tap_massive.option_streams import OptionsTickerPartitionStream
+
+        stream = OptionsTickerPartitionStream.__new__(OptionsTickerPartitionStream)
+        stream._tap = MagicMock()
+        stream._tap.get_option_contracts_for_underlying.return_value = [
+            {"ticker": "O:AAPL250117C00100000", "expired": True},
+        ]
+        stream.name = "test_stream"
+        stream._ticker_param = "ticker"
+        type(stream).config = PropertyMock(return_value=tap_config)
+
+        stream.get_context_state = MagicMock(return_value={})
+        stream._prepare_context_and_params = MagicMock(return_value=({}, {}, {}))
+
+        contexts_seen = []
+
+        def mock_paginate(ctx):
+            contexts_seen.append(ctx)
+            return iter([])
+
+        stream.paginate_records = mock_paginate
+
+        list(stream.get_records({"underlying": "AAPL"}))
+
+        assert len(contexts_seen) == 1
+        assert contexts_seen[0]["expired"] is True
+
 
 class TestOptionsTickerPartitionStreamPartitions:
     def test_partitions_use_stock_tickers(self, tap_config):
@@ -399,6 +427,20 @@ class TestExpiredBothMode:
         calls = mock_both_tap._mock_option_tickers_stream.get_response.call_args_list
         assert calls[0].args[1]["expired"] is True
         assert calls[1].args[1]["expired"] is False
+
+    def test_adds_expired_flag_when_missing_in_api_response(self, mock_both_tap):
+        expired_resp = _make_response([{"ticker": "O:AAPL240119C00100000"}])
+        active_resp = _make_response([{"ticker": "O:AAPL260320C00200000"}])
+        mock_both_tap._mock_option_tickers_stream.get_response.side_effect = [
+            expired_resp,
+            active_resp,
+        ]
+
+        contracts = mock_both_tap.get_option_contracts_for_underlying("AAPL")
+        by_ticker = {contract["ticker"]: contract for contract in contracts}
+
+        assert by_ticker["O:AAPL240119C00100000"]["expired"] is True
+        assert by_ticker["O:AAPL260320C00200000"]["expired"] is False
 
 
 class TestRetryLogic:

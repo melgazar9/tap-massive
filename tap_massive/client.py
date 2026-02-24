@@ -173,14 +173,14 @@ class MassiveRestStream(RESTStream):
 
     @staticmethod
     def _canonicalize_ticker(ticker: str, market: str | None) -> str:
-        """Strip, uppercase, and apply market-specific formatting (e.g. forex C: prefix)."""
-        normalized = ticker.strip().upper()
+        """Strip and apply minimal market-specific formatting (e.g. forex C: prefix)."""
+        normalized = ticker.strip()
         if not normalized:
             return normalized
         if market in ("fx", "forex"):
             if normalized.startswith("C:"):
                 return normalized
-            letters = re.sub(r"[^A-Z]", "", normalized)
+            letters = re.sub(r"[^A-Za-z]", "", normalized)
             if len(letters) == 6:
                 return f"C:{letters}"
         return normalized

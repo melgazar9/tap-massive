@@ -116,6 +116,7 @@ class AllTickersStream(BaseTickerStream):
         th.Property("cik", th.StringType),
         th.Property("ticker", th.StringType),
         th.Property("name", th.StringType),
+        th.Property("source_feed", th.StringType),
         th.Property("active", th.BooleanType),
         th.Property("currency_symbol", th.StringType),
         th.Property("currency_name", th.StringType),
@@ -289,6 +290,9 @@ class BaseCustomBarsStream(_OhlcMappingMixin, BaseTickerPartitionStream):
     _ticker_in_path_params = True
     ohlc_include_otc = True
     ohlc_timestamp_to_iso = True
+    status_flag_field = "active"
+    status_flag_param = "active"
+    status_flag_default = True
 
     schema = th.PropertiesList(
         th.Property("timestamp", th.DateTimeType),
@@ -300,12 +304,30 @@ class BaseCustomBarsStream(_OhlcMappingMixin, BaseTickerPartitionStream):
         th.Property("volume", th.NumberType),
         th.Property("vwap", th.NumberType),
         th.Property("transactions", th.IntegerType),
+        th.Property("source_feed", th.StringType),
         th.Property("otc", th.BooleanType),
+        th.Property("active", th.BooleanType),
     ).to_dict()
 
     def __init__(self, tap):
         super().__init__(tap)
         self._cfg_ending_timestamp_key = "to"
+
+    @property
+    def partitions(self):
+        if self._cached_tickers_getter is None:
+            raise ValueError(
+                f"{type(self).__name__} must set _cached_tickers_getter or override partitions."
+            )
+        getter = getattr(self._tap, self._cached_tickers_getter)
+        tickers = self.filter_tickers_from_config(getter())
+        partitions: list[dict[str, t.Any]] = []
+        for ticker_record in tickers:
+            partition: dict[str, t.Any] = {"ticker": ticker_record["ticker"]}
+            if isinstance(ticker_record.get("active"), bool):
+                partition["active"] = ticker_record["active"]
+            partitions.append(partition)
+        return partitions
 
     def build_path_params(self, path_params: dict) -> str:
         keys = ["multiplier", "timespan", "from", self._cfg_ending_timestamp_key]
@@ -316,6 +338,60 @@ class BaseCustomBarsStream(_OhlcMappingMixin, BaseTickerPartitionStream):
         path_params = self.build_path_params(context.get("path_params"))
         return f"{self.url_base}/v2/aggs/ticker/{ticker}/range{path_params}"
 
+    def _status_flag_query_params(self) -> dict[str, t.Any]:
+        if self.status_flag_param in self.query_params:
+            return self.query_params
+
+        try:
+            raw_config = self.config
+        except AttributeError:
+            raw_config = getattr(self, "_config", {})
+
+        if not hasattr(raw_config, "get"):
+            return {}
+
+        selector_keys = getattr(self, "ticker_selector_keys", ())
+        for selector_key in selector_keys:
+            cfg = raw_config.get(selector_key, {})
+            if not isinstance(cfg, dict):
+                continue
+            selector_query_params = cfg.get("query_params", {})
+            if isinstance(selector_query_params, dict):
+                return selector_query_params
+
+        return {}
+
+    @staticmethod
+    def _coerce_status_flag(value: t.Any) -> bool | None:
+        if isinstance(value, bool):
+            return value
+        if isinstance(value, str):
+            lowered = value.strip().lower()
+            if lowered in {"true", "1", "yes", "y"}:
+                return True
+            if lowered in {"false", "0", "no", "n"}:
+                return False
+        if isinstance(value, int):
+            if value == 1:
+                return True
+            if value == 0:
+                return False
+        return None
+
+    def _resolve_status_flag(self, context: Context | None) -> bool:
+        context_value = self._coerce_status_flag(
+            (context or {}).get(self.status_flag_field)
+        )
+        if context_value is not None:
+            return context_value
+
+        query_params = self._status_flag_query_params()
+        query_value = self._coerce_status_flag(query_params.get(self.status_flag_param))
+        if query_value is not None:
+            return query_value
+
+        return self.status_flag_default
+
     def post_process(self, row: Record, context: Context | None = None) -> dict | None:
         if "t" not in row and "timestamp" not in row:
             return None
@@ -324,6 +400,7 @@ class BaseCustomBarsStream(_OhlcMappingMixin, BaseTickerPartitionStream):
         if not self.ohlc_include_otc:
             row.pop("otc", None)
         row["timestamp"] = self.safe_parse_datetime(row["timestamp"]).isoformat()
+        row[self.status_flag_field] = self._resolve_status_flag(context)
         return row
 
 

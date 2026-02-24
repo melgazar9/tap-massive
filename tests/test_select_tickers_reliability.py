@@ -32,6 +32,16 @@ def test_stock_partition_honors_stock_tickers_select():
     assert stream.partitions == [{"ticker": "AAPL"}]
 
 
+def test_stock_partition_preserves_ticker_case_from_cache():
+    stream, _ = _build_partition_stream(
+        StockTickerPartitionStream,
+        {"stock_tickers": {"select_tickers": ["BACpK"]}},
+        "get_cached_stock_tickers",
+        [{"ticker": "BACpK"}, {"ticker": "MSFT"}],
+    )
+    assert stream.partitions == [{"ticker": "BACpK"}]
+
+
 def test_forex_partition_honors_forex_tickers_select():
     stream, _ = _build_partition_stream(
         ForexTickerPartitionStream,

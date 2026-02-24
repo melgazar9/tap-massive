@@ -127,6 +127,7 @@ class OptionsTickerPartitionStream(BaseTickerPartitionStream):
             contract_ctx: dict[str, t.Any] = {
                 self._ticker_param: contract["ticker"],
                 "underlying": underlying,
+                "expired": contract.get("expired"),
                 "query_params": base_query_params.copy(),
                 "path_params": base_path_params.copy(),
             }
@@ -135,6 +136,18 @@ class OptionsTickerPartitionStream(BaseTickerPartitionStream):
 
 class OptionsCustomBarsStream(OptionsTickerPartitionStream, BaseCustomBarsStream):
     ohlc_include_otc = False
+    status_flag_field = "expired"
+    status_flag_param = "expired"
+    status_flag_default = False
+
+    def _status_flag_query_params(self) -> dict[str, t.Any]:
+        return self.config.get("option_tickers", {}).get("query_params", {})
+
+    def _resolve_status_flag(self, context: Context | None) -> bool:
+        context_value = self._coerce_status_flag((context or {}).get("expired"))
+        if context_value is not None:
+            return context_value
+        return super()._resolve_status_flag(context)
 
     schema = th.PropertiesList(
         th.Property("timestamp", th.DateTimeType),
@@ -146,6 +159,8 @@ class OptionsCustomBarsStream(OptionsTickerPartitionStream, BaseCustomBarsStream
         th.Property("volume", th.NumberType),
         th.Property("vwap", th.NumberType),
         th.Property("transactions", th.IntegerType),
+        th.Property("source_feed", th.StringType),
+        th.Property("expired", th.BooleanType),
     ).to_dict()
 
 

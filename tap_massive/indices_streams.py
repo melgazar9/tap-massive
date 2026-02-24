@@ -29,6 +29,7 @@ class IndicesTickerStream(BaseTickerStream):
     schema = th.PropertiesList(
         th.Property("ticker", th.StringType),
         th.Property("name", th.StringType),
+        th.Property("source_feed", th.StringType),
         th.Property("active", th.BooleanType),
         th.Property("market", th.StringType),
         th.Property("locale", th.StringType),
