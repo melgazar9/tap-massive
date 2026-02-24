@@ -553,7 +553,7 @@ class StockIPOsStream(OptionalTickerPartitionStream):
     _ticker_in_query_params = True
 
     schema = th.PropertiesList(
-        th.Property("announced_date", th.IntegerType),
+        th.Property("announced_date", th.DateType),
         th.Property("currency_code", th.StringType),
         th.Property("final_issue_price", th.NumberType),
         th.Property("highest_offer_price", th.NumberType),
@@ -573,7 +573,7 @@ class StockIPOsStream(OptionalTickerPartitionStream):
         th.Property("isin", th.StringType),
         th.Property("issuer_name", th.StringType),
         th.Property("last_updated", th.DateTimeType),
-        th.Property("listing_date", th.IntegerType),
+        th.Property("listing_date", th.DateType),
         th.Property("lot_size", th.IntegerType),
         th.Property("lowest_offer_price", th.NumberType),
         th.Property("max_shares_offered", th.IntegerType),

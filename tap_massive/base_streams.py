@@ -894,7 +894,6 @@ class BaseTopMarketMoversStream(
 
     def post_process(self, row: Record, context: Context | None = None) -> dict | None:
         row = super().post_process(row, context)
-        row["updated"] = self.safe_parse_datetime(row["updated"])
         return row
 
 
