@@ -239,7 +239,7 @@ class BenzingaEarningsStream(MassiveRestStream):
 
     name = "benzinga_earnings"
 
-    primary_keys = ["benzinga_id"]
+    primary_keys = ["benzinga_id", "ticker", "last_updated"]
     replication_key = "last_updated"
     replication_method = "INCREMENTAL"
     is_timestamp_replication_key = True
