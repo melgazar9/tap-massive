@@ -271,7 +271,7 @@ plugins:
           from: "2025-01-20"
           to: "2025-01-21"
         query_params:
-          adjusted: true
+          adjusted: false
           sort: "asc"
           limit: 50000
         other_params:
@@ -284,7 +284,7 @@ plugins:
           from: "2025-01-20"
           to: "2025-01-21"
         query_params:
-          adjusted: true
+          adjusted: false
           sort: "asc"
           limit: 50000
         other_params:
@@ -298,7 +298,7 @@ plugins:
           from: "2025-01-20"
           to: "2025-01-22"
         query_params:
-          adjusted: true
+          adjusted: false
           sort: "asc"
           limit: 50000
         other_params:
@@ -311,7 +311,7 @@ plugins:
           from: "2025-01-20"
           to: "2025-01-22"
         query_params:
-          adjusted: true
+          adjusted: false
           sort: "asc"
           limit: 50000
         other_params:
@@ -324,7 +324,7 @@ plugins:
           from: "2025-01-20"
           to: "2025-01-22"
         query_params:
-          adjusted: true
+          adjusted: false
           sort: "asc"
           limit: 50000
         other_params:
@@ -338,7 +338,7 @@ plugins:
           from: "2025-01-20"
           to: "2025-01-24"
         query_params:
-          adjusted: true
+          adjusted: false
           sort: "asc"
           limit: 50000
         other_params:
@@ -352,7 +352,7 @@ plugins:
           from: "2025-01-01"
           to: "2025-01-31"
         query_params:
-          adjusted: true
+          adjusted: false
           sort: "asc"
           limit: 50000
         other_params:
@@ -365,7 +365,7 @@ plugins:
           from: "2025-01-01"
           to: "2025-01-31"
         query_params:
-          adjusted: true
+          adjusted: false
           sort: "asc"
           limit: 50000
         other_params:
@@ -378,7 +378,7 @@ plugins:
           from: "2025-01-01"
           to: "2025-01-31"
         query_params:
-          adjusted: true
+          adjusted: false
           sort: "asc"
           limit: 50000
         other_params:
@@ -388,7 +388,7 @@ plugins:
         path_params:
           date: "2025-01-01"
         query_params:
-          adjusted: true
+          adjusted: false
           include_otc: false
           limit: 50000
         other_params:
@@ -398,7 +398,7 @@ plugins:
         path_params:
           date: "2025-01-01"
         query_params:
-          adjusted: true
+          adjusted: false
           limit: 50000
         other_params:
           loop_over_dates_gte_date: false
@@ -737,7 +737,7 @@ plugins:
           from: "2025-01-20"
           to: "2025-01-21"
         query_params:
-          adjusted: true
+          adjusted: false
           sort: "asc"
           limit: 50000
 
@@ -748,7 +748,7 @@ plugins:
           from: "2025-01-20"
           to: "2025-01-21"
         query_params:
-          adjusted: true
+          adjusted: false
           sort: "asc"
           limit: 50000
 
@@ -760,7 +760,7 @@ plugins:
           from: "2025-01-20"
           to: "2025-01-22"
         query_params:
-          adjusted: true
+          adjusted: false
           sort: "asc"
           limit: 50000
 
@@ -771,7 +771,7 @@ plugins:
           from: "2025-01-20"
           to: "2025-01-22"
         query_params:
-          adjusted: true
+          adjusted: false
           sort: "asc"
           limit: 50000
 
@@ -782,7 +782,7 @@ plugins:
           from: "2025-01-20"
           to: "2025-01-22"
         query_params:
-          adjusted: true
+          adjusted: false
           sort: "asc"
           limit: 50000
 
@@ -794,7 +794,7 @@ plugins:
           from: "2025-01-20"
           to: "2025-01-24"
         query_params:
-          adjusted: true
+          adjusted: false
           sort: "asc"
           limit: 50000
 
@@ -806,7 +806,7 @@ plugins:
           from: "2025-01-01"
           to: "2025-01-31"
         query_params:
-          adjusted: true
+          adjusted: false
           sort: "asc"
           limit: 50000
 
@@ -817,7 +817,7 @@ plugins:
           from: "2025-01-01"
           to: "2025-01-31"
         query_params:
-          adjusted: true
+          adjusted: false
           sort: "asc"
           limit: 50000
 
@@ -828,7 +828,7 @@ plugins:
           from: "2025-01-01"
           to: "2025-01-31"
         query_params:
-          adjusted: true
+          adjusted: false
           sort: "asc"
           limit: 50000
 
@@ -836,7 +836,7 @@ plugins:
         path_params:
           date: "2025-01-20"
         query_params:
-          adjusted: true
+          adjusted: false
         other_params:
           loop_over_dates_gte_date: false
           use_cached_tickers: true
@@ -950,7 +950,7 @@ plugins:
           from: "2025-01-20"
           to: "2025-01-21"
         query_params:
-          adjusted: true
+          adjusted: false
           sort: "asc"
           limit: 50000
         other_params:
@@ -963,7 +963,7 @@ plugins:
           from: "2025-01-20"
           to: "2025-01-22"
         query_params:
-          adjusted: true
+          adjusted: false
           sort: "asc"
           limit: 50000
         other_params:
@@ -976,7 +976,7 @@ plugins:
           from: "2025-01-20"
           to: "2025-01-22"
         query_params:
-          adjusted: true
+          adjusted: false
           sort: "asc"
           limit: 50000
         other_params:
@@ -989,7 +989,7 @@ plugins:
           from: "2025-01-20"
           to: "2025-01-24"
         query_params:
-          adjusted: true
+          adjusted: false
           sort: "asc"
           limit: 50000
         other_params:
@@ -1002,7 +1002,7 @@ plugins:
           from: "2025-01-01"
           to: "2025-01-31"
         query_params:
-          adjusted: true
+          adjusted: false
           sort: "asc"
           limit: 50000
         other_params:
@@ -1015,7 +1015,7 @@ plugins:
           from: "2025-01-01"
           to: "2025-01-31"
         query_params:
-          adjusted: true
+          adjusted: false
           sort: "asc"
           limit: 50000
         other_params:
@@ -1028,7 +1028,7 @@ plugins:
           from: "2025-01-01"
           to: "2025-01-31"
         query_params:
-          adjusted: true
+          adjusted: false
           sort: "asc"
           limit: 50000
         other_params:
@@ -1038,13 +1038,13 @@ plugins:
         path_params:
           date: "2025-01-01"
         query_params:
-          adjusted: true
+          adjusted: false
         other_params:
           loop_over_dates_gte_date: false
 
       forex_previous_day_bar:
         query_params:
-          adjusted: true
+          adjusted: false
         other_params:
           use_cached_tickers: true
 
@@ -1152,7 +1152,7 @@ plugins:
           from: "2025-01-20"
           to: "2025-01-21"
         query_params:
-          adjusted: true
+          adjusted: false
           sort: "asc"
           limit: 50000
         other_params:
@@ -1165,7 +1165,7 @@ plugins:
           from: "2025-01-20"
           to: "2025-01-22"
         query_params:
-          adjusted: true
+          adjusted: false
           sort: "asc"
           limit: 50000
         other_params:
@@ -1178,7 +1178,7 @@ plugins:
           from: "2025-01-20"
           to: "2025-01-22"
         query_params:
-          adjusted: true
+          adjusted: false
           sort: "asc"
           limit: 50000
         other_params:
@@ -1191,7 +1191,7 @@ plugins:
           from: "2025-01-20"
           to: "2025-01-24"
         query_params:
-          adjusted: true
+          adjusted: false
           sort: "asc"
           limit: 50000
         other_params:
@@ -1204,7 +1204,7 @@ plugins:
           from: "2025-01-01"
           to: "2025-01-31"
         query_params:
-          adjusted: true
+          adjusted: false
           sort: "asc"
           limit: 50000
         other_params:
@@ -1217,7 +1217,7 @@ plugins:
           from: "2025-01-01"
           to: "2025-01-31"
         query_params:
-          adjusted: true
+          adjusted: false
           sort: "asc"
           limit: 50000
         other_params:
@@ -1230,7 +1230,7 @@ plugins:
           from: "2025-01-01"
           to: "2025-01-31"
         query_params:
-          adjusted: true
+          adjusted: false
           sort: "asc"
           limit: 50000
         other_params:
@@ -1240,7 +1240,7 @@ plugins:
         path_params:
           date: "2025-01-01"
         query_params:
-          adjusted: true
+          adjusted: false
           limit: 50000
         other_params:
           loop_over_dates_gte_date: false
@@ -1249,7 +1249,7 @@ plugins:
         path_params:
           date: "2025-01-01"
         query_params:
-          adjusted: true
+          adjusted: false
           limit: 50000
         other_params:
           loop_over_dates_gte_date: false
@@ -1257,7 +1257,7 @@ plugins:
 
       crypto_previous_day_bar:
         query_params:
-          adjusted: true
+          adjusted: false
         other_params:
           use_cached_tickers: true
 
@@ -1357,7 +1357,7 @@ plugins:
           from: "2025-01-20"
           to: "2025-01-21"
         query_params:
-          adjusted: true
+          adjusted: false
           sort: "asc"
           limit: 50000
         other_params:
@@ -1370,7 +1370,7 @@ plugins:
           from: "2025-01-20"
           to: "2025-01-22"
         query_params:
-          adjusted: true
+          adjusted: false
           sort: "asc"
           limit: 50000
         other_params:
@@ -1383,7 +1383,7 @@ plugins:
           from: "2025-01-20"
           to: "2025-01-22"
         query_params:
-          adjusted: true
+          adjusted: false
           sort: "asc"
           limit: 50000
         other_params:
@@ -1396,7 +1396,7 @@ plugins:
           from: "2025-01-20"
           to: "2025-01-24"
         query_params:
-          adjusted: true
+          adjusted: false
           sort: "asc"
           limit: 50000
         other_params:
@@ -1409,7 +1409,7 @@ plugins:
           from: "2025-01-01"
           to: "2025-01-31"
         query_params:
-          adjusted: true
+          adjusted: false
           sort: "asc"
           limit: 50000
         other_params:
@@ -1422,7 +1422,7 @@ plugins:
           from: "2025-01-01"
           to: "2025-01-31"
         query_params:
-          adjusted: true
+          adjusted: false
           sort: "asc"
           limit: 50000
         other_params:
@@ -1435,7 +1435,7 @@ plugins:
           from: "2025-01-01"
           to: "2025-01-31"
         query_params:
-          adjusted: true
+          adjusted: false
           sort: "asc"
           limit: 50000
         other_params:
@@ -1445,7 +1445,7 @@ plugins:
         path_params:
           date: "2025-01-01"
         query_params:
-          adjusted: true
+          adjusted: false
           limit: 50000
         other_params:
           loop_over_dates_gte_date: false
@@ -1453,7 +1453,7 @@ plugins:
 
       indices_previous_day_bar:
         query_params:
-          adjusted: true
+          adjusted: false
         other_params:
           use_cached_tickers: true
 
@@ -1540,7 +1540,7 @@ plugins:
           from: "2025-01-20"
           to: "2025-01-21"
         query_params:
-          adjusted: true
+          adjusted: false
           sort: "asc"
           limit: 50000
         other_params:
@@ -1553,7 +1553,7 @@ plugins:
           from: "2025-01-20"
           to: "2025-01-22"
         query_params:
-          adjusted: true
+          adjusted: false
           sort: "asc"
           limit: 50000
         other_params:
@@ -1566,7 +1566,7 @@ plugins:
           from: "2025-01-20"
           to: "2025-01-22"
         query_params:
-          adjusted: true
+          adjusted: false
           sort: "asc"
           limit: 50000
         other_params:
@@ -1579,7 +1579,7 @@ plugins:
           from: "2025-01-20"
           to: "2025-01-24"
         query_params:
-          adjusted: true
+          adjusted: false
           sort: "asc"
           limit: 50000
         other_params:
@@ -1592,7 +1592,7 @@ plugins:
           from: "2025-01-01"
           to: "2025-01-31"
         query_params:
-          adjusted: true
+          adjusted: false
           sort: "asc"
           limit: 50000
         other_params:
@@ -1605,7 +1605,7 @@ plugins:
           from: "2025-01-01"
           to: "2025-01-31"
         query_params:
-          adjusted: true
+          adjusted: false
           sort: "asc"
           limit: 50000
         other_params:
@@ -1618,7 +1618,7 @@ plugins:
           from: "2025-01-01"
           to: "2025-01-31"
         query_params:
-          adjusted: true
+          adjusted: false
           sort: "asc"
           limit: 50000
         other_params:
