@@ -322,10 +322,7 @@ class TapMassive(Tap):
             variant_expired = params.get("expired")
             variant_contracts = self._paginate_option_contracts(underlying, params)
             for contract in variant_contracts:
-                if (
-                    variant_expired in (True, False)
-                    and contract.get("expired") is None
-                ):
+                if variant_expired in (True, False) and contract.get("expired") is None:
                     contract = {**contract, "expired": variant_expired}
                 contracts.append(contract)
 

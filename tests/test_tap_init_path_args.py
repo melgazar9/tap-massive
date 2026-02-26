@@ -23,8 +23,7 @@ def test_catalog_and_state_path_args_do_not_emit_sdk_deprecation(tmp_path):
 
     warning_messages = [str(warning.message) for warning in caught]
     assert not any(
-        "Passing a catalog file path is deprecated" in msg
-        for msg in warning_messages
+        "Passing a catalog file path is deprecated" in msg for msg in warning_messages
     )
     assert not any(
         "Passing a state file path is deprecated" in msg for msg in warning_messages
