@@ -6,6 +6,7 @@
 # ./fetch_massive_flat_files.sh --all --start-date "2025-05-12" --end-date "2025-05-13" --asset-class global_forex
 # ./fetch_massive_flat_files.sh --all --start-date "2025-05-12" --end-date "2025-05-13" --asset-class global_crypto
 # ./fetch_massive_flat_files.sh --bars-1m --start-date "2025-05-12" --end-date "2025-05-13" --asset-class us_indices
+# ./fetch_massive_flat_files.sh --values --start-date "2025-05-12" --end-date "2025-05-13" --asset-class us_indices
 
 if [[ -z "$MASSIVE_FLAT_FILE_AWS_KEY" || -z "$MASSIVE_FLAT_FILE_AWS_SECRET_KEY" ]]; then
   echo "Error: MASSIVE_FLAT_FILE_AWS_KEY and MASSIVE_FLAT_FILE_AWS_SECRET_KEY must be set"
@@ -15,14 +16,14 @@ fi
 ENDPOINT="--endpoint-url https://files.massive.com"
 
 usage() {
-  echo "Usage: $0 --trades|--quotes|--bars-1m|--days|--all --start-date YYYY-MM-DD --end-date YYYY-MM-DD --asset-class ASSET_CLASS"
+  echo "Usage: $0 --trades|--quotes|--bars-1m|--days|--values|--all --start-date YYYY-MM-DD --end-date YYYY-MM-DD --asset-class ASSET_CLASS"
   echo ""
   echo "Asset class examples:"
   echo "  us_stocks_sip, us_options_opra, us_indices"
   echo "  global_forex, global_crypto"
   echo ""
   echo "Notes:"
-  echo "  - Indices flat files support minute and day aggregates only."
+  echo "  - Indices flat files support minute aggregates, day aggregates, and values."
   echo "  - Forex flat files support quotes and minute/day aggregates only."
   echo "  - Crypto flat files support trades and minute/day aggregates only."
   echo "  - Futures flat files are in beta; S3 prefixes are not published in docs yet."
@@ -112,6 +113,11 @@ while [[ $# -gt 0 ]]; do
       PREFIX="eod"
       shift
       ;;
+    --values)
+      DATA_TYPE="values_v1"
+      PREFIX="values"
+      shift
+      ;;
     --start-date)
       START_DATE="$2"
       shift 2
@@ -188,7 +194,7 @@ if [[ "$ALL_DATASETS" == "true" ]]; then
       datasets=("trades_v1:trades" "quotes_v1:quotes" "minute_aggs_v1:bars_1m" "day_aggs_v1:eod")
       ;;
     us_indices)
-      datasets=("minute_aggs_v1:bars_1m" "day_aggs_v1:eod")
+      datasets=("minute_aggs_v1:bars_1m" "day_aggs_v1:eod" "values_v1:values")
       ;;
     global_forex)
       datasets=("quotes_v1:quotes" "minute_aggs_v1:bars_1m" "day_aggs_v1:eod")
@@ -204,8 +210,8 @@ else
   if [[ -z "$DATA_TYPE" ]]; then
     usage
   fi
-  if [[ "$ASSET_CLASS" == "us_indices" && "$DATA_TYPE" != "minute_aggs_v1" && "$DATA_TYPE" != "day_aggs_v1" ]]; then
-    echo "Error: indices flat files support only minute and day aggregates."
+  if [[ "$ASSET_CLASS" == "us_indices" && "$DATA_TYPE" != "minute_aggs_v1" && "$DATA_TYPE" != "day_aggs_v1" && "$DATA_TYPE" != "values_v1" ]]; then
+    echo "Error: indices flat files support only minute aggregates, day aggregates, and values."
     exit 1
   fi
   if [[ "$ASSET_CLASS" == "global_forex" && "$DATA_TYPE" == "trades_v1" ]]; then
@@ -214,6 +220,10 @@ else
   fi
   if [[ "$ASSET_CLASS" == "global_crypto" && "$DATA_TYPE" == "quotes_v1" ]]; then
     echo "Error: crypto flat files do not include quotes; use --trades or aggregates."
+    exit 1
+  fi
+  if [[ "$ASSET_CLASS" != "us_indices" && "$DATA_TYPE" == "values_v1" ]]; then
+    echo "Error: --values is only supported for us_indices."
     exit 1
   fi
   datasets=("${DATA_TYPE}:${PREFIX}")
