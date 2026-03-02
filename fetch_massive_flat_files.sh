@@ -4,6 +4,8 @@
 # ./fetch_massive_flat_files.sh --days --start-date "2025-05-12" --end-date "2025-05-13" --asset-class us_stocks_sip
 # ./fetch_massive_flat_files.sh --trades --start-date "2025-05-12" --end-date "2025-05-13" --asset-class us_options_opra
 # ./fetch_massive_flat_files.sh --all --start-date "2025-05-12" --end-date "2025-05-13" --asset-class global_forex
+# ./fetch_massive_flat_files.sh --all --exclude quotes --start-date "2025-05-12" --end-date "2025-05-13" --asset-class global_forex
+# ./fetch_massive_flat_files.sh --all --exclude quotes,trades --start-date "2025-05-12" --end-date "2025-05-13" --asset-class us_stocks_sip
 # ./fetch_massive_flat_files.sh --all --start-date "2025-05-12" --end-date "2025-05-13" --asset-class global_crypto
 # ./fetch_massive_flat_files.sh --bars-1m --start-date "2025-05-12" --end-date "2025-05-13" --asset-class us_indices
 # ./fetch_massive_flat_files.sh --values --start-date "2025-05-12" --end-date "2025-05-13" --asset-class us_indices
@@ -16,11 +18,16 @@ fi
 ENDPOINT="--endpoint-url https://files.massive.com"
 
 usage() {
-  echo "Usage: $0 --trades|--quotes|--bars-1m|--days|--values|--all --start-date YYYY-MM-DD --end-date YYYY-MM-DD --asset-class ASSET_CLASS"
+  echo "Usage: $0 --trades|--quotes|--bars-1m|--days|--values|--all [--exclude TYPE,...] --start-date YYYY-MM-DD --end-date YYYY-MM-DD --asset-class ASSET_CLASS"
   echo ""
   echo "Asset class examples:"
   echo "  us_stocks_sip, us_options_opra, us_indices"
   echo "  global_forex, global_crypto"
+  echo ""
+  echo "Options:"
+  echo "  --exclude TYPE,...  Exclude dataset types when using --all."
+  echo "                      Valid types: trades, quotes, bars-1m, days, values"
+  echo "                      Example: --all --exclude quotes,trades"
   echo ""
   echo "Notes:"
   echo "  - Indices flat files support minute aggregates, day aggregates, and values."
@@ -36,6 +43,7 @@ END_DATE=""
 PREFIX=""
 ASSET_CLASS=""
 ALL_DATASETS="false"
+EXCLUDE_TYPES=""
 ASSET_FILENAME_PREFIX=""
 
 OS_NAME="$(uname -s)"
@@ -118,6 +126,10 @@ while [[ $# -gt 0 ]]; do
       PREFIX="values"
       shift
       ;;
+    --exclude)
+      EXCLUDE_TYPES="$2"
+      shift 2
+      ;;
     --start-date)
       START_DATE="$2"
       shift 2
@@ -142,6 +154,11 @@ fi
 
 if [[ "$ALL_DATASETS" == "true" && -n "$DATA_TYPE" ]]; then
   echo "Error: --all cannot be combined with a specific data type flag."
+  exit 1
+fi
+
+if [[ -n "$EXCLUDE_TYPES" && "$ALL_DATASETS" != "true" ]]; then
+  echo "Error: --exclude can only be used with --all."
   exit 1
 fi
 
@@ -227,6 +244,41 @@ else
     exit 1
   fi
   datasets=("${DATA_TYPE}:${PREFIX}")
+fi
+
+# Apply --exclude filter
+if [[ -n "$EXCLUDE_TYPES" ]]; then
+  # Map user-facing names to internal data_type prefixes
+  declare -A EXCLUDE_MAP=(
+    [trades]="trades_v1"
+    [quotes]="quotes_v1"
+    [bars-1m]="minute_aggs_v1"
+    [days]="day_aggs_v1"
+    [values]="values_v1"
+  )
+
+  IFS=',' read -ra exclude_arr <<< "$EXCLUDE_TYPES"
+  for ex in "${exclude_arr[@]}"; do
+    ex="$(echo "$ex" | xargs)"  # trim whitespace
+    if [[ -z "${EXCLUDE_MAP[$ex]+x}" ]]; then
+      echo "Error: unknown exclude type '$ex'. Valid types: trades, quotes, bars-1m, days, values"
+      exit 1
+    fi
+    exclude_data_type="${EXCLUDE_MAP[$ex]}"
+    filtered=()
+    for ds in "${datasets[@]}"; do
+      IFS=":" read -r dt pf <<< "$ds"
+      if [[ "$dt" != "$exclude_data_type" ]]; then
+        filtered+=("$ds")
+      fi
+    done
+    datasets=("${filtered[@]}")
+  done
+
+  if [[ ${#datasets[@]} -eq 0 ]]; then
+    echo "Error: all dataset types were excluded; nothing to download."
+    exit 1
+  fi
 fi
 
 for dataset in "${datasets[@]}"; do
