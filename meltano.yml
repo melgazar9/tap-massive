@@ -220,6 +220,16 @@ plugins:
       - benzinga_firm_details.*
       - benzinga_news.*
 
+      # --- TMX ---
+      - tmx_corporate_events.*
+
+      # --- ETF Global ---
+      - etf_global_constituents.*
+      - etf_global_fund_flows.*
+      - etf_global_analytics.*
+      - etf_global_profiles.*
+      - etf_global_taxonomies.*
+
     config:
       # set this for a global start date for all streams -- will be overridden by the streams incremental state if that's more recent.
 
@@ -1706,6 +1716,44 @@ plugins:
           published__lte: "2025-06-01"
           sort: published.asc
           limit: 50000
+
+      # --- TMX ---
+      tmx_corporate_events:
+        query_params:
+          date__gte: "2018-01-01"
+          sort: date.asc
+          limit: 50000
+
+      # --- ETF Global ---
+      etf_global_constituents:
+        query_params:
+          processed_date__gte: "2017-04-03"
+          sort: processed_date.asc
+          limit: 5000
+
+      etf_global_fund_flows:
+        query_params:
+          processed_date__gte: "2017-04-03"
+          sort: processed_date.asc
+          limit: 5000
+
+      etf_global_analytics:
+        query_params:
+          processed_date__gte: "2017-04-05"
+          sort: processed_date.asc
+          limit: 5000
+
+      etf_global_profiles:
+        query_params:
+          processed_date__gte: "2017-04-03"
+          sort: processed_date.asc
+          limit: 5000
+
+      etf_global_taxonomies:
+        query_params:
+          processed_date__gte: "2021-11-01"
+          sort: processed_date.asc
+          limit: 5000
 
   loaders:
   - name: target-jsonl

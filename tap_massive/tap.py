@@ -58,6 +58,13 @@ from tap_massive.economy_streams import (
     LaborMarketStream,
     TreasuryYieldStream,
 )
+from tap_massive.etf_global_streams import (
+    EtfGlobalAnalyticsStream,
+    EtfGlobalConstituentsStream,
+    EtfGlobalFundFlowsStream,
+    EtfGlobalProfilesStream,
+    EtfGlobalTaxonomiesStream,
+)
 from tap_massive.forex_streams import (
     ForexBars1DayStream,
     ForexBars1HourStream,
@@ -196,6 +203,7 @@ from tap_massive.stock_streams import (
     StockTradeStream,
     StockUnifiedSnapshotStream,
 )
+from tap_massive.tmx_streams import TmxCorporateEventsStream
 
 
 class TapMassive(Tap):
@@ -524,6 +532,14 @@ class TapMassive(Tap):
             BenzingaEarningsStream(self),
             BenzingaFirmDetailsStream(self),
             BenzingaNewsStream(self),
+            # TMX streams
+            TmxCorporateEventsStream(self),
+            # ETF Global streams
+            EtfGlobalConstituentsStream(self),
+            EtfGlobalFundFlowsStream(self),
+            EtfGlobalAnalyticsStream(self),
+            EtfGlobalProfilesStream(self),
+            EtfGlobalTaxonomiesStream(self),
         ]
 
         return streams
