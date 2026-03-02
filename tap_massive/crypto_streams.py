@@ -148,6 +148,7 @@ class CryptoTickerSnapshotStream(
 
     name = "crypto_ticker_snapshot"
     primary_keys = ["ticker"]
+    _snapshot_response_key = "ticker"
 
     schema = th.PropertiesList(
         th.Property("ticker", th.StringType),
@@ -226,6 +227,7 @@ class CryptoFullMarketSnapshotStream(
     name = "crypto_full_market_snapshot"
     primary_keys = ["ticker"]
     _use_cached_tickers_default = False
+    _snapshot_response_key = "tickers"
 
     schema = th.PropertiesList(
         th.Property("ticker", th.StringType),

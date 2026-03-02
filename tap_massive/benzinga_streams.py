@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from singer_sdk import typing as th
-from singer_sdk.helpers.types import Context
+from singer_sdk.helpers.types import Context, Record
 
 from tap_massive.client import MassiveRestStream, OptionalTickerPartitionStream
 
@@ -87,6 +87,13 @@ class BenzingaConsensusRatingsStream(OptionalTickerPartitionStream):
         path_params = context.get("path_params", {})
         ticker = path_params.get(self._ticker_param)
         return f"{self.url_base}/benzinga/v1/consensus-ratings/{ticker}"
+
+    def post_process(self, row: Record, context: Context | None = None) -> dict | None:
+        row = super().post_process(row, context)
+        if row is None:
+            return None
+        row["ticker"] = context.get(self._ticker_param)
+        return row
 
 
 # --- INCREMENTAL Streams (replication key: last_updated) ---

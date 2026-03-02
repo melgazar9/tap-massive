@@ -805,19 +805,21 @@ class MassiveRestStream(RESTStream):
                     "'_cfg_starting_timestamp' is not set."
                 )
 
-            start_date = datetime.strptime(
-                self._cfg_starting_timestamp_value.split("T")[0], "%Y-%m-%d"
-            ).date()
+            parsed_start = self.safe_parse_datetime(self._cfg_starting_timestamp_value)
+            if parsed_start is None:
+                raise ConfigValidationError(
+                    f"Stream {self.name}: could not parse starting timestamp "
+                    f"'{self._cfg_starting_timestamp_value}' as a date."
+                )
+            start_date = parsed_start.date()
 
             end_date = datetime.today().date()
 
             if self._cfg_ending_timestamp_key and self._cfg_ending_timestamp_value:
-                try:
-                    configured_end_date = datetime.strptime(
-                        self._cfg_ending_timestamp_value.split("T")[0], "%Y-%m-%d"
-                    ).date()
-                    end_date = min(configured_end_date, end_date)
-                except ValueError:
+                parsed_end = self.safe_parse_datetime(self._cfg_ending_timestamp_value)
+                if parsed_end is not None:
+                    end_date = min(parsed_end.date(), end_date)
+                else:
                     logging.warning(
                         f"Could not parse _cfg_end_timestamp '{self._cfg_ending_timestamp_value}'. Using today's date."
                     )
@@ -960,6 +962,7 @@ class OptionalTickerPartitionStream(MassiveRestStream):
             for ticker_record in ticker_records:
                 context["query_params"] = query_params
                 context["path_params"] = path_params
+                context[self._ticker_param] = ticker_record[self.ticker_record_key]
                 if self._ticker_in_query_params:
                     query_params[self._ticker_param] = ticker_record[
                         self.ticker_record_key

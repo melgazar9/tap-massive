@@ -111,6 +111,7 @@ class StockTickerSnapshotStream(
 
     name = "stock_ticker_snapshot"
     primary_keys = ["ticker"]
+    _snapshot_response_key = "ticker"
 
     schema = th.PropertiesList(
         th.Property("ticker", th.StringType),
@@ -197,12 +198,6 @@ class StockTickerSnapshotStream(
         ),
     ).to_dict()
 
-    def parse_response(self, record: dict, context: dict) -> t.Iterable[dict]:
-        if isinstance(record, dict) and isinstance(record.get("ticker"), dict):
-            yield record["ticker"]
-        else:
-            yield record
-
     def get_url(self, context: Context):
         ticker = context.get(self._ticker_param)
         return f"{self.url_base}/v2/snapshot/locale/us/markets/stocks/tickers/{ticker}"
@@ -216,6 +211,7 @@ class StockFullMarketSnapshotStream(
     name = "stock_full_market_snapshot"
     primary_keys = ["ticker"]
     _use_cached_tickers_default = False
+    _snapshot_response_key = "tickers"
 
     schema = th.PropertiesList(
         th.Property("ticker", th.StringType),
@@ -229,13 +225,6 @@ class StockFullMarketSnapshotStream(
         th.Property("last_quote", th.ObjectType(additional_properties=True)),
         th.Property("last_trade", th.ObjectType(additional_properties=True)),
     ).to_dict()
-
-    def parse_response(self, record: dict, context: dict) -> t.Iterable[dict]:
-        if isinstance(record, dict) and isinstance(record.get("tickers"), list):
-            for ticker in record["tickers"]:
-                yield ticker
-        else:
-            yield record
 
     def get_url(self, context: Context = None) -> str:
         return f"{self.url_base}/v2/snapshot/locale/us/markets/stocks/tickers"

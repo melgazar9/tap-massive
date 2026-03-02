@@ -648,6 +648,7 @@ class _SnapshotNormalizationMixin:
     _last_quote_slugs = ("lastquote",)
     _last_trade_slugs = ("lasttrade",)
     _ohlc_slugs = ("day", "min", "prevday", "lastminute")
+    _snapshot_response_key: str | None = None  # "ticker" (dict) or "tickers" (list)
 
     last_quote_map = {
         "P": "ask_price",
@@ -744,6 +745,17 @@ class _SnapshotNormalizationMixin:
                 self._normalize_last_trade(payload)
             elif slug in self._ohlc_slugs:
                 self._apply_mapping(payload, self._ohlc_map)
+
+    def parse_response(self, record: dict, context: dict) -> t.Iterable[dict]:
+        if self._snapshot_response_key and isinstance(record, dict):
+            value = record.get(self._snapshot_response_key)
+            if isinstance(value, dict):
+                yield value
+                return
+            if isinstance(value, list):
+                yield from value
+                return
+        yield record
 
     def post_process(self, row: Record, context: Context | None = None) -> dict | None:
         self._normalize_snapshot_fields(row)
