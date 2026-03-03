@@ -230,6 +230,10 @@ plugins:
       - etf_global_profiles.*
       - etf_global_taxonomies.*
 
+      # --- Earnings-filtered quotes ---
+      - stock_earnings_quotes.*
+      - options_earnings_quotes.*
+
     config:
       # set this for a global start date for all streams -- will be overridden by the streams incremental state if that's more recent.
 
@@ -242,6 +246,42 @@ plugins:
 
       api_key: ${MASSIVE_API_KEY}
       base_url: https://api.massive.com
+      postgres_host: ${MELTANO_TAP_MASSIVE_POSTGRES_HOST}
+      postgres_port: ${MELTANO_TAP_MASSIVE_POSTGRES_PORT}
+      postgres_database: ${MELTANO_TAP_MASSIVE_POSTGRES_DATABASE}
+      postgres_user: ${MELTANO_TAP_MASSIVE_POSTGRES_PRODUCTION_USER}
+      postgres_password: ${MELTANO_TAP_MASSIVE_POSTGRES_PRODUCTION_PASSWORD}
+
+      # --- Earnings-filtered quotes ---
+      # earnings_source: "postgres" (default) or "api" (hit Massive API endpoints)
+      # earnings_data_source: "both" (default), "benzinga", or "tmx"
+      # us_only: true (default) filters out non-US tickers (e.g. .HK, .SA, .TW)
+      # earnings_db_schema: postgres schema where benzinga_earnings & tmx_corporate_events live
+      stock_earnings_quotes:
+        other_params:
+          earnings_source: postgres
+          earnings_data_source: both
+          us_only: true
+          earnings_db_schema: tap_massive_production
+          earnings_start_date: "2026-02-17"
+          earnings_end_date: "2026-02-19"
+        query_params:
+          sort: timestamp
+          order: asc
+          limit: 50000
+
+      options_earnings_quotes:
+        other_params:
+          earnings_source: postgres
+          earnings_data_source: both
+          us_only: true
+          earnings_db_schema: tap_massive_production
+          earnings_start_date: "2026-02-17"
+          earnings_end_date: "2026-02-19"
+        query_params:
+          sort: timestamp
+          order: asc
+          limit: 50000
 
       # --- Stocks ---
       # The tickers that are set here persist across all streams that require a single stock ticker as input.

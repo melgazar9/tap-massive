@@ -203,6 +203,11 @@ from tap_massive.stock_streams import (
     StockTradeStream,
     StockUnifiedSnapshotStream,
 )
+from tap_massive.subset_quotes import (
+    EarningsCalendar,
+    OptionsEarningsQuotesStream,
+    StockEarningsQuotesStream,
+)
 from tap_massive.tmx_streams import TmxCorporateEventsStream
 
 
@@ -221,6 +226,11 @@ class TapMassive(Tap):
             th.IntegerType,
             default=300,
         ),
+        th.Property("postgres_host", th.StringType),
+        th.Property("postgres_port", th.StringType, default="5432"),
+        th.Property("postgres_database", th.StringType),
+        th.Property("postgres_user", th.StringType),
+        th.Property("postgres_password", th.StringType, secret=True),
     ).to_dict()
 
     # Ticker caching: one registry instead of 6 copy-pasted blocks.
@@ -240,6 +250,8 @@ class TapMassive(Tap):
         self._ticker_locks: dict[str, threading.Lock] = {
             asset: threading.Lock() for asset in self._ticker_stream_classes
         }
+        self._earnings_calendar_cache: dict[str, EarningsCalendar] = {}
+        self._earnings_calendar_lock = threading.Lock()
         catalog_arg = kwargs.get("catalog")
         if isinstance(catalog_arg, (str, PurePath)):
             kwargs["catalog"] = read_json_file(catalog_arg)
@@ -355,6 +367,48 @@ class TapMassive(Tap):
 
     def get_cached_futures_tickers(self) -> list[dict]:
         return self._get_cached_tickers("futures")
+
+    def get_earnings_calendar(
+        self,
+        *,
+        earnings_source: str,
+        start_date: str,
+        end_date: str,
+        db_schema: str = "public",
+        us_only: bool = True,
+        earnings_data_source: str = "both",
+    ) -> EarningsCalendar:
+        """Thread-safe cached earnings calendar construction."""
+        cache_key = (
+            f"{earnings_source}:{start_date}:{end_date}:"
+            f"{db_schema}:{us_only}:{earnings_data_source}"
+        )
+        if cache_key not in self._earnings_calendar_cache:
+            with self._earnings_calendar_lock:
+                if cache_key not in self._earnings_calendar_cache:
+                    self.logger.info(
+                        f"Building EarningsCalendar ({earnings_source}) "
+                        f"for {start_date} to {end_date} "
+                        f"(schema={db_schema}, us_only={us_only}, "
+                        f"data_source={earnings_data_source})..."
+                    )
+                    self._earnings_calendar_cache[cache_key] = EarningsCalendar(
+                        earnings_source=earnings_source,
+                        start_date=start_date,
+                        end_date=end_date,
+                        db_host=self.config.get("postgres_host"),
+                        db_port=int(self.config.get("postgres_port", 5432)),
+                        db_name=self.config.get("postgres_database"),
+                        db_user=self.config.get("postgres_user"),
+                        db_password=self.config.get("postgres_password"),
+                        db_schema=db_schema,
+                        us_only=us_only,
+                        earnings_data_source=earnings_data_source,
+                        api_key=self.config.get("api_key"),
+                        base_url=self.config.get("base_url", "https://api.massive.com"),
+                        request_timeout=self.config.get("request_timeout", 300),
+                    )
+        return self._earnings_calendar_cache[cache_key]
 
     def discover_streams(self) -> list[MassiveRestStream]:
         stock_tickers_stream = self.get_stock_tickers_stream()
@@ -540,6 +594,9 @@ class TapMassive(Tap):
             EtfGlobalAnalyticsStream(self),
             EtfGlobalProfilesStream(self),
             EtfGlobalTaxonomiesStream(self),
+            # Earnings-filtered quote streams
+            StockEarningsQuotesStream(self),
+            OptionsEarningsQuotesStream(self),
         ]
 
         return streams
