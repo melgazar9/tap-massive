@@ -11,6 +11,8 @@
 
 Epistemic Honesty : You must never guess. If you do not have information in your context, you must explicitly say "I do not know" or use a tool to fetch it. If you still do not know after using the tool to fetch the information, it's ok to say "I do not know and could not find anything after attempting to fetch."
 
+NEVER RUN GIT COMMANDS!!!!!!
+
 No Silent Failures : If a command fails, you must report the failure immediately. You are forbidden from pretending it worked or suppressing the error message.
 
 Evidence-Based Coding : You must verify the existence of a file before attempting to edit it. You must run ls or cat to confirm paths.

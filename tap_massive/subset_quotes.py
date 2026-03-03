@@ -423,7 +423,13 @@ class StockEarningsQuotesStream(_EarningsQuoteStreamBase):
         th.Property("conditions", th.ArrayType(th.IntegerType)),
         th.Property("indicators", th.ArrayType(th.IntegerType)),
         th.Property("participant_timestamp", th.IntegerType),
-        th.Property("sequence_number", th.IntegerType),
+        th.Property(
+            "sequence_number",
+            th.IntegerType(
+                minimum=0,
+                maximum=9_223_372_036_854_775_807,
+            ),
+        ),
         th.Property("sip_timestamp", th.IntegerType),
         th.Property("tape", th.IntegerType),
         th.Property("trf_timestamp", th.IntegerType),
@@ -503,7 +509,13 @@ class OptionsEarningsQuotesStream(_EarningsQuoteStreamBase):
         th.Property("bid_exchange", th.IntegerType),
         th.Property("bid_price", th.NumberType),
         th.Property("bid_size", th.NumberType),
-        th.Property("sequence_number", th.IntegerType),
+        th.Property(
+            "sequence_number",
+            th.IntegerType(
+                minimum=0,
+                maximum=9_223_372_036_854_775_807,
+            ),
+        ),
         th.Property("sip_timestamp", th.IntegerType),
     ).to_dict()
 

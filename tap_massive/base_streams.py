@@ -990,7 +990,13 @@ class BaseTradeStream(_NanosecondIncrementalMixin, BaseTickerPartitionStream):
         th.Property("price", th.NumberType),
         th.Property("size", th.NumberType),
         th.Property("tape", th.IntegerType),
-        th.Property("sequence_number", th.IntegerType),
+        th.Property(
+            "sequence_number",
+            th.IntegerType(
+                minimum=0,
+                maximum=9_223_372_036_854_775_807,
+            ),
+        ),
         th.Property("conditions", th.ArrayType(th.IntegerType())),
         th.Property("correction", th.IntegerType()),
         th.Property("trf_id", th.IntegerType),
@@ -1079,7 +1085,13 @@ class BaseLastTradeStream(
     schema = th.PropertiesList(
         th.Property("ticker", th.StringType),
         th.Property("trf_timestamp", th.IntegerType),
-        th.Property("sequence_number", th.IntegerType),
+        th.Property(
+            "sequence_number",
+            th.IntegerType(
+                minimum=0,
+                maximum=9_223_372_036_854_775_807,
+            ),
+        ),
         th.Property("sip_timestamp", th.IntegerType),
         th.Property("participant_timestamp", th.IntegerType),
         th.Property("conditions", th.ArrayType(th.IntegerType)),
@@ -1126,7 +1138,13 @@ class BaseQuoteStream(_NanosecondIncrementalMixin, BaseTickerPartitionStream):
         th.Property("conditions", th.ArrayType(th.IntegerType)),
         th.Property("indicators", th.ArrayType(th.IntegerType)),
         th.Property("participant_timestamp", th.IntegerType),
-        th.Property("sequence_number", th.IntegerType),
+        th.Property(
+            "sequence_number",
+            th.IntegerType(
+                minimum=0,
+                maximum=9_223_372_036_854_775_807,
+            ),
+        ),
         th.Property("sip_timestamp", th.IntegerType),
         th.Property("tape", th.IntegerType),
         th.Property("trf_timestamp", th.IntegerType),
@@ -1156,7 +1174,13 @@ class BaseLastQuoteStream(
     schema = th.PropertiesList(
         th.Property("ticker", th.StringType),
         th.Property("trf_timestamp", th.IntegerType),
-        th.Property("sequence_number", th.IntegerType),
+        th.Property(
+            "sequence_number",
+            th.IntegerType(
+                minimum=0,
+                maximum=9_223_372_036_854_775_807,
+            ),
+        ),
         th.Property("sip_timestamp", th.IntegerType),
         th.Property("participant_timestamp", th.IntegerType),
         th.Property("ask_price", th.NumberType),
