@@ -5,6 +5,7 @@ from __future__ import annotations
 import typing as t
 from dataclasses import asdict
 from datetime import datetime
+from decimal import Decimal
 
 from singer_sdk import typing as th
 from singer_sdk.helpers.types import Context, Record
@@ -312,6 +313,39 @@ class StockUnifiedSnapshotStream(_SnapshotNormalizationMixin, MassiveRestStream)
 
     def get_url(self, context: Context = None) -> str:
         return f"{self.url_base}/v3/snapshot"
+
+    @staticmethod
+    def _coerce_integral(value: t.Any) -> t.Any:
+        if isinstance(value, bool):
+            return value
+        if isinstance(value, int):
+            return value
+        if isinstance(value, Decimal):
+            if value == value.to_integral_value():
+                return int(value)
+            return value
+        if isinstance(value, float):
+            if value.is_integer():
+                return int(value)
+            return value
+        return value
+
+    def post_process(self, row: Record, context: Context | None = None) -> dict | None:
+        row = super().post_process(row, context)
+        if row is None:
+            return None
+
+        last_quote = row.get("last_quote")
+        if isinstance(last_quote, dict):
+            for key in ("ask_size", "bid_size"):
+                if key in last_quote:
+                    last_quote[key] = self._coerce_integral(last_quote[key])
+
+        last_trade = row.get("last_trade")
+        if isinstance(last_trade, dict) and "size" in last_trade:
+            last_trade["size"] = self._coerce_integral(last_trade["size"])
+
+        return row
 
 
 class StockTradeStream(StockTickerPartitionStream, BaseTradeStream):

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import logging
 import typing as t
 
@@ -597,6 +598,58 @@ class OptionsChainSnapshotStream(
 
     def get_url(self, context: Context = None) -> str:
         return f"{self.url_base}/v3/snapshot/options/{context.get('path_params').get(self._ticker_param)}"
+
+    @staticmethod
+    def _context_dedupe_key(context: t.Any) -> str:
+        try:
+            return json.dumps(context, sort_keys=True, default=str)
+        except Exception:
+            return repr(context)
+
+    def _dedupe_duplicate_partition_entries(self) -> int:
+        bookmarks = self.tap_state.get("bookmarks", {})
+        stream_state = bookmarks.get(self.name)
+        if not isinstance(stream_state, dict):
+            return 0
+
+        partitions = stream_state.get("partitions")
+        if not isinstance(partitions, list) or len(partitions) < 2:
+            return 0
+
+        deduped_by_context: dict[str, dict] = {}
+        for partition_state in partitions:
+            if not isinstance(partition_state, dict):
+                continue
+            key = self._context_dedupe_key(partition_state.get("context"))
+            deduped_by_context[key] = partition_state
+
+        removed = len(partitions) - len(deduped_by_context)
+        if removed > 0:
+            stream_state["partitions"] = list(deduped_by_context.values())
+        return removed
+
+    def get_context_state(self, context: Context | None) -> dict:
+        removed = self._dedupe_duplicate_partition_entries()
+        if removed:
+            logging.warning(
+                "Removed %s duplicate options_chain_snapshot partition state entr%s before processing.",
+                removed,
+                "y" if removed == 1 else "ies",
+            )
+        try:
+            return super().get_context_state(context)
+        except ValueError as exc:
+            if "duplicate entries for partition" not in str(exc):
+                raise
+            removed = self._dedupe_duplicate_partition_entries()
+            if removed:
+                logging.warning(
+                    "Removed %s duplicate options_chain_snapshot partition state entr%s after lookup failure. Retrying.",
+                    removed,
+                    "y" if removed == 1 else "ies",
+                )
+                return super().get_context_state(context)
+            raise
 
     def post_process(self, row, context: Context | None = None):
         row = super().post_process(row, context)
