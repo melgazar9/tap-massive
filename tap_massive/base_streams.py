@@ -912,6 +912,21 @@ class BaseTopMarketMoversStream(
 class _NanosecondIncrementalMixin:
     """Use integer nanoseconds for incremental replication keys."""
 
+    def compare_start_date(self, value: str, start_date_value: str) -> str:
+        """Compare bookmark to start_date using datetime comparison.
+
+        The SDK default calls datetime.fromisoformat() which fails on integer
+        Unix timestamps. This override uses safe_parse_datetime (from client.py)
+        which already handles int/float/str/datetime. Per SDK docs, taps with
+        non-datetime replication keys should override this method.
+        """
+        value_dt = self.safe_parse_datetime(value)
+        start_dt = self.safe_parse_datetime(start_date_value)
+
+        if value_dt is not None and start_dt is not None:
+            return value if value_dt >= start_dt else start_date_value
+        return value if value_dt is not None else start_date_value
+
     def get_starting_replication_key_value(
         self, context: Context | None
     ) -> t.Any | None:
