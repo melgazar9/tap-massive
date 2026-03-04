@@ -521,10 +521,12 @@ class OptionsEarningsQuotesStream(_EarningsQuoteStreamBase):
 
     @property
     def partitions(self) -> list[dict[str, str]]:
-        return [
-            {"underlying": u}
-            for u in self._get_earnings_calendar().get_earnings_underlyings()
-        ]
+        underlyings = self._get_earnings_calendar().get_earnings_underlyings()
+        allowed = self.resolve_select_tickers(selector_keys=("option_tickers",))
+        if allowed:
+            allowed_set = set(allowed)
+            underlyings = [u for u in underlyings if u in allowed_set]
+        return [{"underlying": u} for u in underlyings]
 
     def get_url(self, context: Context) -> str:
         ticker = context.get("ticker")
@@ -557,7 +559,11 @@ class OptionsEarningsQuotesStream(_EarningsQuoteStreamBase):
         )
 
         for contract in contracts:
+            exp = contract.get("expiration_date")
+            exp_date = date.fromisoformat(exp) if exp else None
             for qd in quote_dates:
+                if exp_date and qd > exp_date:
+                    continue
                 if state is not None:
                     state.clear()
                     state.update(initial_bookmark)
