@@ -1674,23 +1674,23 @@ plugins:
         other_params:
           use_cached_tickers: true
 
-#      futures_trades:
-#        query_params:
-#          sort: "timestamp.asc"
-#          timestamp__gte: "2025-02-18T00:00:00Z"
-#          timestamp__lte: "2025-02-19T23:59:59Z"
-#          limit: 50000
-#        other_params:
-#          use_cached_tickers: true
-#
-#      futures_quotes:
-#        query_params:
-#          sort: "timestamp.asc"
-#          timestamp__gte: "2025-02-18T00:00:00Z"
-#          timestamp__lte: "2025-02-19T23:59:59Z"
-#          limit: 50000
-#        other_params:
-#          use_cached_tickers: true
+      futures_trades:
+        query_params:
+          sort: "timestamp.asc"
+          timestamp__gte: "2025-02-24T00:00:00Z"
+          timestamp__lte: "2025-02-25T23:59:59Z"
+          limit: 50000
+        other_params:
+          use_cached_tickers: true
+
+      futures_quotes:
+        query_params:
+          sort: "timestamp.asc"
+          timestamp__gte: "2025-02-24T00:00:00Z"
+          timestamp__lte: "2025-02-25T23:59:59Z"
+          limit: 50000
+        other_params:
+          use_cached_tickers: true
 
       # --- Benzinga ---
       # NOTE: Incremental streams use last_updated (or published for news) as replication key.
