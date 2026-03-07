@@ -198,10 +198,12 @@ plugins:
       - futures_contracts.*
       - futures_products.*
       - futures_schedules.*
-      - futures_bars_1_second.*
-      - futures_bars_1_minute.*
-      - futures_bars_5_minute.*
-      - futures_bars_1_hour.*
+      - futures_exchanges.*
+      - futures_market_status.*
+#      - futures_bars_1_second.*
+#      - futures_bars_1_minute.*
+#      - futures_bars_5_minute.*
+#      - futures_bars_1_hour.*
       - futures_bars_1_day.*
       - futures_bars_1_week.*
       - futures_bars_1_month.*
@@ -483,8 +485,8 @@ plugins:
         query_params:
           sort: timestamp
           order: "asc"
-          timestamp__gte: "2025-01-20T00:00:00Z"
-          timestamp__lte: "2025-01-22T23:59:59Z"
+          timestamp__gte: "2025-02-18T00:00:00Z"
+          timestamp__lte: "2025-02-19T23:59:59Z"
           limit: 50000
         other_params:
           use_cached_tickers: true
@@ -495,8 +497,8 @@ plugins:
 
       stock_quotes:
         query_params:
-          timestamp__gte: "2025-01-20T00:00:00Z"
-          timestamp__lte: "2025-01-22T23:59:59Z"
+          timestamp__gte: "2025-02-18T00:00:00Z"
+          timestamp__lte: "2025-02-19T23:59:59Z"
           sort: timestamp
           order: asc
           limit: 50000
@@ -902,14 +904,14 @@ plugins:
         query_params:
           sort: timestamp
           order: "asc"
-          timestamp__gte: "2025-01-20T00:00:00Z"
-          timestamp__lte: "2025-01-22T23:59:59Z"
+          timestamp__gte: "2025-02-18T00:00:00Z"
+          timestamp__lte: "2025-02-19T23:59:59Z"
           limit: 50000
 
       options_quotes:
         query_params:
-          timestamp__gte: "2025-01-20T00:00:00Z"
-          timestamp__lte: "2025-01-22T23:59:59Z"
+          timestamp__gte: "2025-02-18T00:00:00Z"
+          timestamp__lte: "2025-02-19T23:59:59Z"
           sort: timestamp
           order: asc
           limit: 50000
@@ -1100,8 +1102,8 @@ plugins:
 
       forex_quotes:
         query_params:
-          timestamp__gte: "2025-01-20T00:00:00Z"
-          timestamp__lte: "2025-01-22T23:59:59Z"
+          timestamp__gte: "2025-02-18T00:00:00Z"
+          timestamp__lte: "2025-02-19T23:59:59Z"
           sort: timestamp
           order: asc
           limit: 50000
@@ -1315,8 +1317,8 @@ plugins:
         query_params:
           sort: timestamp
           order: "asc"
-          timestamp__gte: "2025-01-20T00:00:00Z"
-          timestamp__lte: "2025-01-22T23:59:59Z"
+          timestamp__gte: "2025-02-18T00:00:00Z"
+          timestamp__lte: "2025-02-19T23:59:59Z"
           limit: 50000
         other_params:
           use_cached_tickers: true
@@ -1566,6 +1568,17 @@ plugins:
           use_cached_tickers: true
 
       # --- Futures ---
+      futures_tickers:
+        query_params:
+          sort: ticker
+          limit: 1000
+        select_tickers:
+          - "ESH5"
+          - "CLJ5"
+        other_params:
+          select_product_codes: ["ES", "CL"]
+          # select_types: ["single"]  # Uncomment to exclude combos
+
       futures_contracts:
         query_params:
           sort: ticker
@@ -1579,120 +1592,105 @@ plugins:
         query_params:
           limit: 1000
 
+      futures_exchanges:
+        query_params:
+          limit: 999
+
+      futures_market_status:
+        query_params:
+          limit: 50000
+
       futures_contracts_snapshot:
         query_params:
-          limit: 250
+          limit: 50000
 
       futures_bars_1_second:
-        path_params:
-          multiplier: 1
-          timespan: "second"
-          from: "2025-01-20"
-          to: "2025-01-21"
         query_params:
-          adjusted: false
-          sort: "asc"
+          resolution: "1sec"
+          window_start__gte: "2025-02-24"
+          window_start__lte: "2025-02-28"
           limit: 50000
+          sort: "window_start.asc"
         other_params:
           use_cached_tickers: true
 
       futures_bars_1_minute:
-        path_params:
-          multiplier: 1
-          timespan: "minute"
-          from: "2025-01-20"
-          to: "2025-01-22"
         query_params:
-          adjusted: false
-          sort: "asc"
+          resolution: "1min"
+          window_start__gte: "2025-02-24"
+          window_start__lte: "2025-02-28"
           limit: 50000
+          sort: "window_start.asc"
         other_params:
           use_cached_tickers: true
 
       futures_bars_5_minute:
-        path_params:
-          multiplier: 5
-          timespan: "minute"
-          from: "2025-01-20"
-          to: "2025-01-22"
         query_params:
-          adjusted: false
-          sort: "asc"
+          resolution: "5mins"
+          window_start__gte: "2025-02-24"
+          window_start__lte: "2025-02-28"
           limit: 50000
+          sort: "window_start.asc"
         other_params:
           use_cached_tickers: true
 
       futures_bars_1_hour:
-        path_params:
-          multiplier: 1
-          timespan: "hour"
-          from: "2025-01-20"
-          to: "2025-01-24"
         query_params:
-          adjusted: false
-          sort: "asc"
+          resolution: "1hour"
+          window_start__gte: "2025-02-24"
+          window_start__lte: "2025-02-28"
           limit: 50000
+          sort: "window_start.asc"
         other_params:
           use_cached_tickers: true
 
       futures_bars_1_day:
-        path_params:
-          multiplier: 1
-          timespan: "day"
-          from: "2025-01-01"
-          to: "2025-01-31"
         query_params:
-          adjusted: false
-          sort: "asc"
+          resolution: "1day"
+          window_start__gte: "2025-02-24"
+          window_start__lte: "2025-02-28"
           limit: 50000
+          sort: "window_start.asc"
         other_params:
           use_cached_tickers: true
 
       futures_bars_1_week:
-        path_params:
-          multiplier: 1
-          timespan: "week"
-          from: "2025-01-01"
-          to: "2025-01-31"
         query_params:
-          adjusted: false
-          sort: "asc"
+          resolution: "1week"
+          window_start__gte: "2025-02-24"
+          window_start__lte: "2025-02-28"
           limit: 50000
+          sort: "window_start.asc"
         other_params:
           use_cached_tickers: true
 
       futures_bars_1_month:
-        path_params:
-          multiplier: 1
-          timespan: "month"
-          from: "2025-01-01"
-          to: "2025-01-31"
         query_params:
-          adjusted: false
-          sort: "asc"
+          resolution: "1month"
+          window_start__gte: "2025-02-24"
+          window_start__lte: "2025-02-28"
           limit: 50000
+          sort: "window_start.asc"
         other_params:
           use_cached_tickers: true
 
-      futures_trades:
-        query_params:
-          sort: timestamp
-          order: "asc"
-          timestamp__gte: "2025-01-20T00:00:00Z"
-          timestamp__lte: "2025-01-22T23:59:59Z"
-          limit: 50000
-        other_params:
-          use_cached_tickers: true
-
-      futures_quotes:
-        query_params:
-          timestamp__gte: "2025-01-20T00:00:00Z"
-          timestamp__lte: "2025-01-22T23:59:59Z"
-          sort: timestamp
-          order: asc
-          limit: 50000
-        other_params:
-          use_cached_tickers: true
+#      futures_trades:
+#        query_params:
+#          sort: "timestamp.asc"
+#          timestamp__gte: "2025-02-18T00:00:00Z"
+#          timestamp__lte: "2025-02-19T23:59:59Z"
+#          limit: 50000
+#        other_params:
+#          use_cached_tickers: true
+#
+#      futures_quotes:
+#        query_params:
+#          sort: "timestamp.asc"
+#          timestamp__gte: "2025-02-18T00:00:00Z"
+#          timestamp__lte: "2025-02-19T23:59:59Z"
+#          limit: 50000
+#        other_params:
+#          use_cached_tickers: true
 
       # --- Benzinga ---
       # NOTE: Incremental streams use last_updated (or published for news) as replication key.

@@ -59,6 +59,7 @@ class MassiveRestStream(RESTStream):
             "to_",
             "date",
             "timestamp",
+            "window_start",
             "ex_dividend_date",
             "record_date",
             "declaration_date",
@@ -74,6 +75,7 @@ class MassiveRestStream(RESTStream):
         ]
         self.record_timestamp_keys = [
             "timestamp",
+            "window_start",
             "date",
             "last_updated",
             "announced_date",

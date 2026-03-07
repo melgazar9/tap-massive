@@ -37,19 +37,24 @@ class TestStockIPOsStream:
 
 
 class TestStockTickerEventsStream:
-    def test_primary_keys_do_not_require_event_type(self):
-        assert StockTickerEventsStream.primary_keys == ["date", "name"]
+    def test_primary_keys(self):
+        assert StockTickerEventsStream.primary_keys == ["ticker", "date", "type"]
 
-    def test_parse_response_maps_type_alias_to_event_type(self):
+    def test_parse_response_preserves_api_fields(self):
         stream = StockTickerEventsStream.__new__(StockTickerEventsStream)
         raw = {
-            "name": "ticker_change",
+            "name": "Meta Platforms, Inc. Class A Common Stock",
             "events": [
                 {
-                    "date": "2026-02-19",
+                    "date": "2022-06-09",
                     "type": "ticker_change",
-                    "ticker_change": {"ticker": "ABC"},
-                }
+                    "ticker_change": {"ticker": "META"},
+                },
+                {
+                    "date": "2012-05-18",
+                    "type": "ticker_change",
+                    "ticker_change": {"ticker": "FB"},
+                },
             ],
         }
 
@@ -57,9 +62,15 @@ class TestStockTickerEventsStream:
 
         assert records == [
             {
-                "name": "ticker_change",
-                "date": "2026-02-19",
-                "event_type": "ticker_change",
-                "ticker_change": {"ticker": "ABC"},
-            }
+                "name": "Meta Platforms, Inc. Class A Common Stock",
+                "date": "2022-06-09",
+                "type": "ticker_change",
+                "ticker_change": {"ticker": "META"},
+            },
+            {
+                "name": "Meta Platforms, Inc. Class A Common Stock",
+                "date": "2012-05-18",
+                "type": "ticker_change",
+                "ticker_change": {"ticker": "FB"},
+            },
         ]

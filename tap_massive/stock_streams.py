@@ -755,18 +755,19 @@ class StockDividendsStream(OptionalTickerPartitionStream):
 
 
 class StockTickerEventsStream(StockTickerPartitionStream):
-    """Ticker Events Stream"""
+    """Ticker Events Stream."""
 
     name = "stock_ticker_events"
 
-    primary_keys = ["date", "name"]
+    primary_keys = ["ticker", "date", "type"]
 
     _ticker_in_path_params = True
 
     schema = th.PropertiesList(
+        th.Property("ticker", th.StringType),
         th.Property("name", th.StringType),
         th.Property("date", th.DateType),
-        th.Property("event_type", th.StringType),
+        th.Property("type", th.StringType),
         th.Property("ticker_change", th.ObjectType(additional_properties=True)),
     ).to_dict()
 
@@ -776,18 +777,12 @@ class StockTickerEventsStream(StockTickerPartitionStream):
 
     def parse_response(self, record: dict, context: dict) -> t.Iterable[dict]:
         name = record.get("name")
-        events = record.get("events", [])
-        for event in events:
+        for event in record.get("events", []):
             if isinstance(event, dict):
-                normalized_event = dict(event)
-                event_type = (
-                    normalized_event.get("event_type")
-                    or normalized_event.pop("eventType", None)
-                    or normalized_event.pop("type", None)
-                    or record.get("event_type")
-                    or record.get("eventType")
-                    or record.get("type")
-                )
-                if event_type is not None:
-                    normalized_event["event_type"] = event_type
-                yield {"name": name, **normalized_event}
+                yield {"name": name, **event}
+
+    def post_process(self, row: dict, context: Context | None = None) -> dict | None:
+        row = super().post_process(row, context)
+        if row and context:
+            row["ticker"] = context.get(self._ticker_param)
+        return row
