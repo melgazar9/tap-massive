@@ -277,7 +277,9 @@ class TapMassive(Tap):
                 if self._ticker_caches.get(asset) is None:
                     self.logger.info(f"Fetching and caching {asset} tickers...")
                     stream = self._get_ticker_stream(asset)
-                    self._ticker_caches[asset] = list(stream.get_records(context=None))
+                    tickers = list(stream.get_records(context=None))
+                    tickers.sort(key=lambda t: t.get("ticker", ""))
+                    self._ticker_caches[asset] = tickers
                     self.logger.info(
                         f"Cached {len(self._ticker_caches[asset])} {asset} tickers."
                     )

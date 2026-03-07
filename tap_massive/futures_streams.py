@@ -511,3 +511,12 @@ class FuturesContractsSnapshotStream(MassiveRestStream):
 
     def get_url(self, context: Context = None) -> str:
         return f"{self.url_base}/futures/vX/snapshot"
+
+    def post_process(self, row, context=None):
+        row = super().post_process(row, context)
+        if row is None:
+            return None
+        details = row.get("details") or {}
+        row.setdefault("ticker", details.get("ticker"))
+        row.setdefault("product_code", details.get("product_code"))
+        return row
