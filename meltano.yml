@@ -236,6 +236,44 @@ plugins:
       - stock_earnings_quotes.*
       - options_earnings_quotes.*
 
+      # --- Flat file streams ---
+      # Uncomment any flat file streams you want to sync.
+      # Set MASSIVE_FLAT_FILES_BASE_DIR env var and run ./fetch_massive_flat_files.sh first.
+      # Optional per-stream config: start_file_date, end_file_date (YYYY-MM-DD).
+#      - stocks_flat_files_eod.*
+#      - stocks_flat_files_1m.*
+#      - stocks_flat_files_trades.*
+#      - stocks_flat_files_quotes.*
+#      - options_flat_files_eod.*
+#      - options_flat_files_1m.*
+#      - options_flat_files_trades.*
+#      - options_flat_files_quotes.*
+#      - indices_flat_files_eod.*
+#      - indices_flat_files_1m.*
+#      - indices_flat_files_values.*
+#      - forex_flat_files_eod.*
+#      - forex_flat_files_1m.*
+#      - forex_flat_files_quotes.*
+#      - crypto_flat_files_eod.*
+#      - crypto_flat_files_1m.*
+#      - crypto_flat_files_trades.*
+#      - futures_flat_files_eod.*
+#      - futures_flat_files_1m.*
+#      - futures_flat_files_trades.*
+#      - futures_flat_files_quotes.*
+
+      # --- Earnings-filtered flat file streams ---
+      # Like flat file streams, but only emit rows for tickers with earnings on the file date.
+      # Requires per-stream config with earnings_start_date, earnings_end_date, etc.
+#      - stocks_earnings_flat_files_eod.*
+#      - stocks_earnings_flat_files_1m.*
+#      - stocks_earnings_flat_files_trades.*
+#      - stocks_earnings_flat_files_quotes.*
+#      - options_earnings_flat_files_eod.*
+#      - options_earnings_flat_files_1m.*
+#      - options_earnings_flat_files_trades.*
+#      - options_earnings_flat_files_quotes.*
+
     config:
       # set this for a global start date for all streams -- will be overridden by the streams incremental state if that's more recent.
 
@@ -248,6 +286,25 @@ plugins:
 
       api_key: ${MASSIVE_API_KEY}
       base_url: https://api.massive.com
+      flat_files_base_dir: ${MASSIVE_FLAT_FILES_BASE_DIR}
+
+      # --- Flat file stream date ranges (example) ---
+      # stocks_flat_files_1m:
+      #   start_file_date: "2026-02-18"
+      #   end_file_date: "2026-02-24"
+
+      # --- Earnings-filtered flat file stream config (example) ---
+      # Each earnings flat file stream needs its own config block with
+      # earnings_start_date and earnings_end_date at minimum.
+      # stocks_earnings_flat_files_1m:
+      #   earnings_source: postgres
+      #   earnings_data_source: both
+      #   us_only: true
+      #   earnings_db_schema: tap_massive_production
+      #   earnings_start_date: "2026-02-17"
+      #   earnings_end_date: "2026-02-24"
+      #   end_file_date: "2026-02-24"
+
       postgres_host: ${MELTANO_TAP_MASSIVE_POSTGRES_HOST}
       postgres_port: ${MELTANO_TAP_MASSIVE_POSTGRES_PORT}
       postgres_database: ${MELTANO_TAP_MASSIVE_POSTGRES_DATABASE}
@@ -261,7 +318,7 @@ plugins:
       # earnings_db_schema: postgres schema where benzinga_earnings & tmx_corporate_events live
       stock_earnings_quotes:
         other_params:
-          earnings_source: postgres
+          earnings_source: api
           earnings_data_source: both
           us_only: true
           earnings_db_schema: tap_massive_production
@@ -274,7 +331,7 @@ plugins:
 
       options_earnings_quotes:
         other_params:
-          earnings_source: postgres
+          earnings_source: api
           earnings_data_source: both
           us_only: true
           earnings_db_schema: tap_massive_production
@@ -296,9 +353,9 @@ plugins:
         other_params:
           active: "both"
         select_tickers:
-          - "AAPL"
-          - "META"
-          - "TWTR"
+          - "*"
+#          - "META"
+#          - "TWTR"
 
       stock_ticker_details:
         query_params: {}

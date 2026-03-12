@@ -130,6 +130,16 @@ meltano invoke tap-massive --version
 meltano run tap-massive target-jsonl
 ```
 
+### Flat File Streams
+
+The flat file streams read historical market data from local CSV/CSV.gz files (e.g., stocks EOD, 1-minute bars, trades, quotes). Before running these streams, fetch the data files by running:
+
+```bash
+./fetch_massive_flat_files.sh
+```
+
+Then set `flat_files_base_dir` in your tap config (or `MASSIVE_FLAT_FILES_BASE_DIR` env var) to the directory containing the asset-class subdirectories (e.g., `us_stocks_sip/eod/`, `global_crypto/bars_1m/`).
+
 ### SDK Dev Guide
 
 See the [dev guide](https://sdk.meltano.com/en/latest/dev_guide.html) for more instructions on how to use the SDK to

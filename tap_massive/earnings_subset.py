@@ -1,14 +1,17 @@
-"""Earnings-filtered quote streams.
+"""Earnings-filtered streams.
 
-Pulls tick-level quotes only for tickers on their earnings dates
-(plus the previous and next NYSE trading day). Earnings data comes
-from either a local PostgreSQL database or the Massive API.
+Includes:
+- API-based earnings quote streams (tick-level quotes around earnings dates)
+- Flat-file earnings streams (CSV/CSV.gz files filtered to earnings tickers)
+
+Earnings data comes from either a local PostgreSQL database or the Massive API.
 """
 
 from __future__ import annotations
 
 import bisect
 import logging
+import re
 import typing as t
 from datetime import date, datetime, timedelta, timezone
 
@@ -97,6 +100,7 @@ class EarningsCalendar:
         self._ticker_to_quote_dates: dict[str, list[date]] = self._compute_quote_dates(
             raw_earnings
         )
+        self._date_to_tickers: dict[date, frozenset[str]] | None = None
 
         total_partitions = sum(len(v) for v in self._ticker_to_quote_dates.values())
         logging.info(
@@ -182,6 +186,16 @@ class EarningsCalendar:
     def get_quote_dates_for_underlying(self, underlying: str) -> list[date]:
         """Return quote dates for a given underlying ticker."""
         return self._ticker_to_quote_dates.get(underlying, [])
+
+    def get_tickers_for_earnings_date(self, query_date: date) -> frozenset[str]:
+        """Return tickers that have earnings activity on the given date."""
+        if self._date_to_tickers is None:
+            mapping: dict[date, set[str]] = {}
+            for ticker, dates in self._ticker_to_quote_dates.items():
+                for d in dates:
+                    mapping.setdefault(d, set()).add(ticker)
+            self._date_to_tickers = {d: frozenset(t) for d, t in mapping.items()}
+        return self._date_to_tickers.get(query_date, frozenset())
 
     # -- Data source: PostgreSQL -------------------------------------------
 
@@ -585,3 +599,196 @@ class OptionsEarningsQuotesStream(_EarningsQuoteStreamBase):
         row["ticker"] = context.get("ticker")
         row[self.replication_key] = safe_int(row.get(self.replication_key))
         return {k: row.get(k) for k in _OPTIONS_QUOTE_FIELDS if k in row}
+
+
+# ---------------------------------------------------------------------------
+# Earnings-filtered flat file streams
+# ---------------------------------------------------------------------------
+
+_OPTIONS_UNDERLYING_RE = re.compile(r"^O:([A-Z]+)")
+
+
+class EarningsFlatFilesStream:
+    """Mixin for flat file streams filtered to tickers with earnings on the file date.
+
+    Reuses the ``EarningsCalendar`` (postgres or API) to determine which
+    tickers had earnings activity on each date. Only rows matching those
+    tickers are emitted — dramatically reducing volume compared to the
+    full flat file streams.
+
+    For options streams, the underlying is extracted from the contract
+    ticker (e.g. ``O:AAPL260220C00125000`` → ``AAPL``) and matched
+    against the earnings calendar.
+
+    Subclasses set ``IS_OPTIONS = True`` to enable this behaviour.
+
+    Must be mixed with ``FlatFilesStream`` (imported at method level to
+    avoid circular imports).
+    """
+
+    IS_OPTIONS: t.ClassVar[bool] = False
+
+    _earnings_calendar: EarningsCalendar | None = None
+
+    def _get_earnings_calendar(self) -> EarningsCalendar:
+        """Build or return the cached EarningsCalendar via the tap."""
+        if self._earnings_calendar is not None:
+            return self._earnings_calendar
+
+        stream_cfg = self.config.get(self.name)
+        if not isinstance(stream_cfg, dict):
+            msg = (
+                f"Stream {self.name}: per-stream config with "
+                "'earnings_start_date' and 'earnings_end_date' is required."
+            )
+            raise ValueError(msg)
+
+        start = stream_cfg.get("earnings_start_date")
+        end = stream_cfg.get("earnings_end_date")
+        if not start or not end:
+            msg = (
+                f"Stream {self.name} requires 'earnings_start_date' and "
+                "'earnings_end_date' in per-stream config."
+            )
+            raise ValueError(msg)
+
+        earnings_source = stream_cfg.get("earnings_source", "postgres")
+        db_schema = stream_cfg.get("earnings_db_schema", "public")
+        us_only = stream_cfg.get("us_only", True)
+        earnings_data_source = stream_cfg.get("earnings_data_source", "both")
+
+        self._earnings_calendar = self._tap.get_earnings_calendar(
+            earnings_source=earnings_source,
+            start_date=start,
+            end_date=end,
+            db_schema=db_schema,
+            us_only=us_only,
+            earnings_data_source=earnings_data_source,
+        )
+        return self._earnings_calendar
+
+    @staticmethod
+    def _extract_underlying(options_ticker: str) -> str | None:
+        """Extract underlying symbol from an options contract ticker."""
+        m = _OPTIONS_UNDERLYING_RE.match(options_ticker)
+        return m.group(1) if m else None
+
+    def get_records(self, context: dict | None) -> t.Iterable[dict[str, t.Any]]:
+        """Yield only rows whose ticker had earnings on the file date."""
+        calendar = self._get_earnings_calendar()
+
+        for file_date, filepath in self._iter_files_in_bounds(context):
+            earnings_tickers = calendar.get_tickers_for_earnings_date(
+                date.fromisoformat(file_date)
+            )
+            if not earnings_tickers:
+                self.logger.info(
+                    "Skipping %s — no earnings tickers for %s.",
+                    filepath.name,
+                    file_date,
+                )
+                continue
+
+            self.logger.info(
+                "Processing %s (date=%s, %d earnings tickers)",
+                filepath.name,
+                file_date,
+                len(earnings_tickers),
+            )
+            emitted = 0
+            for row in self._read_csv(filepath):
+                ticker = row.get("ticker", "")
+                if self.IS_OPTIONS:
+                    underlying = self._extract_underlying(ticker)
+                    if underlying not in earnings_tickers:
+                        continue
+                elif ticker not in earnings_tickers:
+                    continue
+
+                row["file_date"] = file_date
+                emitted += 1
+                yield row
+
+            self.logger.info(
+                "Emitted %d rows from %s for %s.",
+                emitted,
+                filepath.name,
+                file_date,
+            )
+
+
+# Deferred import to avoid circular dependency (FlatFilesStream -> EarningsCalendar).
+from tap_massive.flat_files_streams import FlatFilesStream  # noqa: E402
+
+# -- Stocks earnings flat files ---------------------------------------------
+
+
+class EarningsFlatFilesStreamStockEod(EarningsFlatFilesStream, FlatFilesStream):
+    """Stock EOD bars filtered to earnings tickers."""
+
+    name = "stocks_earnings_flat_files_eod"
+    SUBDIR = "us_stocks_sip/eod"
+    primary_keys = ["file_date", "ticker", "window_start"]
+
+
+class EarningsFlatFilesStreamStock1m(EarningsFlatFilesStream, FlatFilesStream):
+    """Stock 1-minute bars filtered to earnings tickers."""
+
+    name = "stocks_earnings_flat_files_1m"
+    SUBDIR = "us_stocks_sip/bars_1m"
+    primary_keys = ["file_date", "ticker", "window_start"]
+
+
+class EarningsFlatFilesStreamStockTrades(EarningsFlatFilesStream, FlatFilesStream):
+    """Stock trades filtered to earnings tickers."""
+
+    name = "stocks_earnings_flat_files_trades"
+    SUBDIR = "us_stocks_sip/trades"
+    primary_keys = ["file_date", "ticker", "sip_timestamp", "sequence_number"]
+
+
+class EarningsFlatFilesStreamStockQuotes(EarningsFlatFilesStream, FlatFilesStream):
+    """Stock quotes filtered to earnings tickers."""
+
+    name = "stocks_earnings_flat_files_quotes"
+    SUBDIR = "us_stocks_sip/quotes"
+    primary_keys = ["file_date", "ticker", "sip_timestamp", "sequence_number"]
+
+
+# -- Options earnings flat files --------------------------------------------
+
+
+class EarningsFlatFilesStreamOptionEod(EarningsFlatFilesStream, FlatFilesStream):
+    """Options EOD bars filtered to earnings underlyings."""
+
+    name = "options_earnings_flat_files_eod"
+    SUBDIR = "us_options_opra/eod"
+    IS_OPTIONS = True
+    primary_keys = ["file_date", "ticker", "window_start"]
+
+
+class EarningsFlatFilesStreamOption1m(EarningsFlatFilesStream, FlatFilesStream):
+    """Options 1-minute bars filtered to earnings underlyings."""
+
+    name = "options_earnings_flat_files_1m"
+    SUBDIR = "us_options_opra/bars_1m"
+    IS_OPTIONS = True
+    primary_keys = ["file_date", "ticker", "window_start"]
+
+
+class EarningsFlatFilesStreamOptionTrades(EarningsFlatFilesStream, FlatFilesStream):
+    """Options trades filtered to earnings underlyings."""
+
+    name = "options_earnings_flat_files_trades"
+    SUBDIR = "us_options_opra/trades"
+    IS_OPTIONS = True
+    primary_keys = ["file_date", "ticker", "sip_timestamp"]
+
+
+class EarningsFlatFilesStreamOptionQuotes(EarningsFlatFilesStream, FlatFilesStream):
+    """Options quotes filtered to earnings underlyings."""
+
+    name = "options_earnings_flat_files_quotes"
+    SUBDIR = "us_options_opra/quotes"
+    IS_OPTIONS = True
+    primary_keys = ["file_date", "ticker", "sip_timestamp", "sequence_number"]

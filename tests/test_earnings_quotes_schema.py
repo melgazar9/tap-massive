@@ -1,9 +1,9 @@
 from tap_massive.base_streams import BaseLastQuoteStream, BaseQuoteStream
-from tap_massive.option_streams import OptionsQuoteStream
-from tap_massive.subset_quotes import (
+from tap_massive.earnings_subset import (
     OptionsEarningsQuotesStream,
     StockEarningsQuotesStream,
 )
+from tap_massive.option_streams import OptionsQuoteStream
 
 
 def _sequence_number_schema(stream_schema: dict) -> dict:

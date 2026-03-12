@@ -52,6 +52,19 @@ from tap_massive.crypto_streams import (
     CryptoTopMarketMoversStream,
     CryptoTradeStream,
 )
+from tap_massive.earnings_subset import (
+    EarningsCalendar,
+    EarningsFlatFilesStreamOption1m,
+    EarningsFlatFilesStreamOptionEod,
+    EarningsFlatFilesStreamOptionQuotes,
+    EarningsFlatFilesStreamOptionTrades,
+    EarningsFlatFilesStreamStock1m,
+    EarningsFlatFilesStreamStockEod,
+    EarningsFlatFilesStreamStockQuotes,
+    EarningsFlatFilesStreamStockTrades,
+    OptionsEarningsQuotesStream,
+    StockEarningsQuotesStream,
+)
 from tap_massive.economy_streams import (
     InflationExpectationsStream,
     InflationStream,
@@ -64,6 +77,29 @@ from tap_massive.etf_global_streams import (
     EtfGlobalFundFlowsStream,
     EtfGlobalProfilesStream,
     EtfGlobalTaxonomiesStream,
+)
+from tap_massive.flat_files_streams import (
+    FlatFilesStreamCrypto1m,
+    FlatFilesStreamCryptoEod,
+    FlatFilesStreamCryptoTrades,
+    FlatFilesStreamForex1m,
+    FlatFilesStreamForexEod,
+    FlatFilesStreamForexQuotes,
+    FlatFilesStreamFuture1m,
+    FlatFilesStreamFutureEod,
+    FlatFilesStreamFutureQuotes,
+    FlatFilesStreamFutureTrades,
+    FlatFilesStreamIndex1m,
+    FlatFilesStreamIndexEod,
+    FlatFilesStreamIndexValues,
+    FlatFilesStreamOption1m,
+    FlatFilesStreamOptionEod,
+    FlatFilesStreamOptionQuotes,
+    FlatFilesStreamOptionTrades,
+    FlatFilesStreamStock1m,
+    FlatFilesStreamStockEod,
+    FlatFilesStreamStockQuotes,
+    FlatFilesStreamStockTrades,
 )
 from tap_massive.forex_streams import (
     ForexBars1DayStream,
@@ -205,11 +241,6 @@ from tap_massive.stock_streams import (
     StockTradeStream,
     StockUnifiedSnapshotStream,
 )
-from tap_massive.subset_quotes import (
-    EarningsCalendar,
-    OptionsEarningsQuotesStream,
-    StockEarningsQuotesStream,
-)
 from tap_massive.tmx_streams import TmxCorporateEventsStream
 
 
@@ -233,6 +264,7 @@ class TapMassive(Tap):
         th.Property("postgres_database", th.StringType),
         th.Property("postgres_user", th.StringType),
         th.Property("postgres_password", th.StringType, secret=True),
+        th.Property("flat_files_base_dir", th.StringType),
     ).to_dict()
 
     # Ticker caching: one registry instead of 6 copy-pasted blocks.
@@ -603,6 +635,37 @@ class TapMassive(Tap):
             # Earnings-filtered quote streams
             StockEarningsQuotesStream(self),
             OptionsEarningsQuotesStream(self),
+            # Flat file streams
+            FlatFilesStreamStockEod(self),
+            FlatFilesStreamStock1m(self),
+            FlatFilesStreamStockTrades(self),
+            FlatFilesStreamStockQuotes(self),
+            FlatFilesStreamOptionEod(self),
+            FlatFilesStreamOption1m(self),
+            FlatFilesStreamOptionTrades(self),
+            FlatFilesStreamOptionQuotes(self),
+            FlatFilesStreamIndexEod(self),
+            FlatFilesStreamIndex1m(self),
+            FlatFilesStreamIndexValues(self),
+            FlatFilesStreamForexEod(self),
+            FlatFilesStreamForex1m(self),
+            FlatFilesStreamForexQuotes(self),
+            FlatFilesStreamCryptoEod(self),
+            FlatFilesStreamCrypto1m(self),
+            FlatFilesStreamCryptoTrades(self),
+            FlatFilesStreamFutureEod(self),
+            FlatFilesStreamFuture1m(self),
+            FlatFilesStreamFutureTrades(self),
+            FlatFilesStreamFutureQuotes(self),
+            # Earnings-filtered flat file streams
+            EarningsFlatFilesStreamStockEod(self),
+            EarningsFlatFilesStreamStock1m(self),
+            EarningsFlatFilesStreamStockTrades(self),
+            EarningsFlatFilesStreamStockQuotes(self),
+            EarningsFlatFilesStreamOptionEod(self),
+            EarningsFlatFilesStreamOption1m(self),
+            EarningsFlatFilesStreamOptionTrades(self),
+            EarningsFlatFilesStreamOptionQuotes(self),
         ]
 
         return streams
