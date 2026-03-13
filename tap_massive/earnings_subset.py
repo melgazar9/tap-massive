@@ -21,6 +21,12 @@ from singer_sdk.helpers.types import Context
 
 from tap_massive.base_streams import _NanosecondIncrementalMixin, safe_int
 from tap_massive.client import MassiveRestStream
+from tap_massive.flat_files_streams import (
+    _BARS_SCHEMA,
+    _SIP_QUOTES_SCHEMA,
+    _SIP_TRADES_SCHEMA,
+    FlatFilesStream,
+)
 
 # ---------------------------------------------------------------------------
 # EarningsCalendar — query earnings dates and resolve NYSE trading days
@@ -711,6 +717,7 @@ class EarningsFlatFilesStream:
                     continue
 
                 row["file_date"] = file_date
+                self._coerce_row(row)
                 emitted += 1
                 yield row
 
@@ -722,9 +729,6 @@ class EarningsFlatFilesStream:
             )
 
 
-# Deferred import to avoid circular dependency (FlatFilesStream -> EarningsCalendar).
-from tap_massive.flat_files_streams import FlatFilesStream  # noqa: E402
-
 # -- Stocks earnings flat files ---------------------------------------------
 
 
@@ -734,6 +738,7 @@ class EarningsFlatFilesStreamStockEod(EarningsFlatFilesStream, FlatFilesStream):
     name = "stocks_earnings_flat_files_eod"
     SUBDIR = "us_stocks_sip/eod"
     primary_keys = ["file_date", "ticker", "window_start"]
+    schema = _BARS_SCHEMA
 
 
 class EarningsFlatFilesStreamStock1m(EarningsFlatFilesStream, FlatFilesStream):
@@ -742,6 +747,7 @@ class EarningsFlatFilesStreamStock1m(EarningsFlatFilesStream, FlatFilesStream):
     name = "stocks_earnings_flat_files_1m"
     SUBDIR = "us_stocks_sip/bars_1m"
     primary_keys = ["file_date", "ticker", "window_start"]
+    schema = _BARS_SCHEMA
 
 
 class EarningsFlatFilesStreamStockTrades(EarningsFlatFilesStream, FlatFilesStream):
@@ -750,6 +756,7 @@ class EarningsFlatFilesStreamStockTrades(EarningsFlatFilesStream, FlatFilesStrea
     name = "stocks_earnings_flat_files_trades"
     SUBDIR = "us_stocks_sip/trades"
     primary_keys = ["file_date", "ticker", "sip_timestamp", "sequence_number"]
+    schema = _SIP_TRADES_SCHEMA
 
 
 class EarningsFlatFilesStreamStockQuotes(EarningsFlatFilesStream, FlatFilesStream):
@@ -758,6 +765,7 @@ class EarningsFlatFilesStreamStockQuotes(EarningsFlatFilesStream, FlatFilesStrea
     name = "stocks_earnings_flat_files_quotes"
     SUBDIR = "us_stocks_sip/quotes"
     primary_keys = ["file_date", "ticker", "sip_timestamp", "sequence_number"]
+    schema = _SIP_QUOTES_SCHEMA
 
 
 # -- Options earnings flat files --------------------------------------------
@@ -770,6 +778,7 @@ class EarningsFlatFilesStreamOptionEod(EarningsFlatFilesStream, FlatFilesStream)
     SUBDIR = "us_options_opra/eod"
     IS_OPTIONS = True
     primary_keys = ["file_date", "ticker", "window_start"]
+    schema = _BARS_SCHEMA
 
 
 class EarningsFlatFilesStreamOption1m(EarningsFlatFilesStream, FlatFilesStream):
@@ -779,6 +788,7 @@ class EarningsFlatFilesStreamOption1m(EarningsFlatFilesStream, FlatFilesStream):
     SUBDIR = "us_options_opra/bars_1m"
     IS_OPTIONS = True
     primary_keys = ["file_date", "ticker", "window_start"]
+    schema = _BARS_SCHEMA
 
 
 class EarningsFlatFilesStreamOptionTrades(EarningsFlatFilesStream, FlatFilesStream):
@@ -788,6 +798,7 @@ class EarningsFlatFilesStreamOptionTrades(EarningsFlatFilesStream, FlatFilesStre
     SUBDIR = "us_options_opra/trades"
     IS_OPTIONS = True
     primary_keys = ["file_date", "ticker", "sip_timestamp"]
+    schema = _SIP_TRADES_SCHEMA
 
 
 class EarningsFlatFilesStreamOptionQuotes(EarningsFlatFilesStream, FlatFilesStream):
@@ -797,3 +808,4 @@ class EarningsFlatFilesStreamOptionQuotes(EarningsFlatFilesStream, FlatFilesStre
     SUBDIR = "us_options_opra/quotes"
     IS_OPTIONS = True
     primary_keys = ["file_date", "ticker", "sip_timestamp", "sequence_number"]
+    schema = _SIP_QUOTES_SCHEMA

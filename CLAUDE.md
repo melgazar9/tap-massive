@@ -195,20 +195,17 @@ The meltano.yml `select:` and `config:` keys must match the stream's `name` attr
 
 ## Automated Changelog Monitoring
 
-**Setup**: GitHub Actions workflows in `.github/workflows/` automatically monitor Massive API changes
+**Setup**: GitHub Actions workflow in `.github/workflows/monitor-massive-changelog.yml` automatically monitors Massive API changes
 
 **How it works**:
 1. Weekly automated check of Massive changelog RSS feed (https://massive.com/changelog/rss.xml)
-2. Creates GitHub issues when changes detected
-3. Email notifications via GitHub
-4. Claude AI analyzes changes and creates PRs on-demand
+2. If new changes detected, Claude reads the changelog + all stream files + CLAUDE.md
+3. Claude identifies schema updates and creates a PR directly (no issue creation)
 
 **Configuration**: See `.github/CHANGELOG_AUTOMATION.md` for setup instructions
 
 **Required Secrets**:
 - `ANTHROPIC_API_KEY`: Your Anthropic API key (for AI analysis)
-
-**Usage**: Comment `/analyze-changes` on any changelog issue to trigger AI analysis and PR creation
 
 
 STREAMS:

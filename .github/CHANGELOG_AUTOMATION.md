@@ -7,10 +7,9 @@ Automated monitoring of Massive API changes with AI-powered analysis and PR crea
 ```
 Weekly (Monday 9 AM UTC)
   → GitHub Action checks Massive RSS feed
-  → New changes? → Creates GitHub Issue (triggers email)
-  → You comment /analyze-changes on the issue
-  → Claude reads changelog + all stream files
-  → Claude creates branch + PR with schema updates
+  → New changes? → Claude reads changelog + all stream files + CLAUDE.md
+  → Claude identifies schema updates needed
+  → Creates branch + PR with schema updates
   → You review, test, merge
 ```
 
@@ -24,28 +23,18 @@ Add these in Repository Settings → Secrets → Actions:
 
 **Note**: No Massive API key needed for changelog monitoring (uses public RSS feed)
 
-## Email Notifications
-
-1. Go to https://github.com/settings/notifications
-2. Check "Issues" under email preferences
-3. Watch this repository → Custom → Issues
-
-## Workflows
+## Workflow
 
 ### `monitor-massive-changelog.yml`
-- **Trigger**: Weekly cron (Monday 9 AM UTC) or manual
-- **What it does**: Fetches Massive RSS feed (https://massive.com/changelog/rss.xml), parses entries from last 21 days
-- **Output**: Creates a GitHub issue if new changes found (skips if open issue already exists)
-- **Never pushes to main**
-
-### `analyze-changelog-with-claude.yml`
-- **Trigger**: Comment `/analyze-changes` on an issue with `massive-api-update` label
+- **Trigger**: Weekly cron (Monday 9 AM UTC) or manual (`workflow_dispatch`)
 - **What it does**:
-  1. Reads all stream files in `tap_massive/streams/`
-  2. Sends changelog + full codebase context to Claude API
-  3. Claude identifies affected schemas and generates updated files
-  4. Creates a new branch and PR via GitHub API (never pushes to main)
-- **Fallback**: If Claude's response can't be parsed as JSON, posts raw analysis as an issue comment
+  1. Fetches Massive RSS feed (https://massive.com/changelog/rss.xml), parses entries from last 21 days
+  2. If new changes found, reads all stream files in `tap_massive/streams/` plus `CLAUDE.md`
+  3. Sends changelog + full codebase context to Claude API
+  4. Claude identifies affected schemas and generates updated files
+  5. Creates a new branch and PR via GitHub API (never pushes to main)
+- **No changes needed**: If Claude determines no code changes are required, the workflow ends with a summary note
+- **Never pushes to main**
 
 ## Customization
 
@@ -63,15 +52,7 @@ Edit the `21 days ago` value in `monitor-massive-changelog.yml`.
 
 ## Troubleshooting
 
-- **No email**: Check GitHub notification settings + spam folder
 - **Workflow not running**: Verify ANTHROPIC_API_KEY secret is set and workflow is on `main` branch
-- **Claude returns garbage**: Raw analysis is posted as an issue comment for manual review
-- **Duplicate issues**: Workflow skips issue creation if one with `massive-api-update` label is already open
+- **Claude returns invalid JSON**: Workflow fails with error; check the Actions run log for the raw response
 - **RSS feed fails**: Check https://massive.com/changelog/rss.xml is accessible
-
-## Differences from tap-fmp
-
-- Uses **RSS feed** instead of scraping (more reliable)
-- No API key needed for changelog monitoring
-- Label is `massive-api-update` (vs `fmp-api-update`)
-- Stream files in `tap_massive/streams/` (vs `tap_fmp/streams/`)
+- **Duplicate PRs**: The workflow runs weekly; if the same changelog entries are still within the 21-day window, a new PR may be created. Close or merge existing PRs to keep things tidy.

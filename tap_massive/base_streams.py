@@ -28,7 +28,7 @@ def safe_int(x):
         if x is None or x == "":
             return None
         return int(Decimal(str(x)))
-    except (ValueError, TypeError):
+    except (ValueError, TypeError, InvalidOperation):
         return None
 
 

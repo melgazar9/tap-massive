@@ -1,13 +1,18 @@
 """Flat file streams for reading local CSV / CSV.gz historical data.
 
-Reads date-sorted flat files from a configured directory, discovers
-schema dynamically from CSV headers, and yields records incrementally
-using ``file_date`` (extracted from each filename) as the replication key.
+Reads date-sorted flat files from a configured directory and yields
+records incrementally using ``file_date`` (extracted from each filename)
+as the replication key.
+
+Every stream defines an explicit schema with proper types.  CSV string
+values are coerced to the declared types (integer, number, boolean) at
+read time so that downstream targets receive correctly-typed data.
 """
 
 from __future__ import annotations
 
 import csv
+import functools
 import gzip
 import logging
 import re
@@ -17,6 +22,8 @@ from pathlib import Path
 from singer_sdk import Stream
 from singer_sdk import typing as th
 
+from tap_massive.base_streams import safe_int
+
 try:
     from isal import igzip
 
@@ -24,12 +31,121 @@ try:
 except ImportError:
     _open_gz = gzip.open
 
-if t.TYPE_CHECKING:
-    from singer_sdk import Tap
-
 logger = logging.getLogger(__name__)
 
 _FILE_DATE_RE = re.compile(r"(\d{4}-\d{2}-\d{2})")
+
+
+# ---------------------------------------------------------------------------
+# Type coercion helpers (CSV string → Python)
+# ---------------------------------------------------------------------------
+
+
+def _to_float(value: str) -> float | None:
+    """Coerce a CSV string to float, returning None for empty/invalid values."""
+    if value is None or value == "":
+        return None
+    try:
+        return float(value)
+    except (ValueError, TypeError):
+        return None
+
+
+def _to_bool(value: str) -> bool | None:
+    """Coerce a CSV string to bool, returning None for empty/invalid values."""
+    if value is None or value == "":
+        return None
+    if isinstance(value, bool):
+        return value
+    return str(value).strip().lower() in ("true", "1")
+
+
+_JSON_TYPE_COERCERS: dict[str, t.Callable] = {
+    "integer": safe_int,
+    "number": _to_float,
+    "boolean": _to_bool,
+}
+
+
+# ---------------------------------------------------------------------------
+# Shared explicit schemas
+# ---------------------------------------------------------------------------
+
+_BARS_SCHEMA = th.PropertiesList(
+    th.Property("file_date", th.StringType),
+    th.Property("ticker", th.StringType),
+    th.Property("window_start", th.IntegerType),
+    th.Property("open", th.NumberType),
+    th.Property("close", th.NumberType),
+    th.Property("high", th.NumberType),
+    th.Property("low", th.NumberType),
+    th.Property("volume", th.NumberType),
+    th.Property("vwap", th.NumberType),
+    th.Property("transactions", th.IntegerType),
+    th.Property("otc", th.BooleanType),
+).to_dict()
+
+_SIP_TRADES_SCHEMA = th.PropertiesList(
+    th.Property("file_date", th.StringType),
+    th.Property("ticker", th.StringType),
+    th.Property("sip_timestamp", th.IntegerType),
+    th.Property("participant_timestamp", th.IntegerType),
+    th.Property("trf_timestamp", th.IntegerType),
+    th.Property("sequence_number", th.IntegerType),
+    th.Property("id", th.StringType),
+    th.Property("price", th.NumberType),
+    th.Property("size", th.NumberType),
+    th.Property("conditions", th.StringType),
+    th.Property("correction", th.IntegerType),
+    th.Property("exchange", th.IntegerType),
+    th.Property("tape", th.IntegerType),
+    th.Property("trf_id", th.IntegerType),
+).to_dict()
+
+_SIP_QUOTES_SCHEMA = th.PropertiesList(
+    th.Property("file_date", th.StringType),
+    th.Property("ticker", th.StringType),
+    th.Property("sip_timestamp", th.IntegerType),
+    th.Property("participant_timestamp", th.IntegerType),
+    th.Property("trf_timestamp", th.IntegerType),
+    th.Property("sequence_number", th.IntegerType),
+    th.Property("ask_exchange", th.IntegerType),
+    th.Property("ask_price", th.NumberType),
+    th.Property("ask_size", th.NumberType),
+    th.Property("bid_exchange", th.IntegerType),
+    th.Property("bid_price", th.NumberType),
+    th.Property("bid_size", th.NumberType),
+    th.Property("conditions", th.StringType),
+    th.Property("indicators", th.StringType),
+    th.Property("tape", th.IntegerType),
+).to_dict()
+
+_CRYPTO_TRADES_SCHEMA = th.PropertiesList(
+    th.Property("file_date", th.StringType),
+    th.Property("ticker", th.StringType),
+    th.Property("participant_timestamp", th.IntegerType),
+    th.Property("id", th.StringType),
+    th.Property("price", th.NumberType),
+    th.Property("size", th.NumberType),
+    th.Property("conditions", th.StringType),
+    th.Property("exchange", th.IntegerType),
+).to_dict()
+
+_FOREX_QUOTES_SCHEMA = th.PropertiesList(
+    th.Property("file_date", th.StringType),
+    th.Property("ticker", th.StringType),
+    th.Property("participant_timestamp", th.IntegerType),
+    th.Property("ask_price", th.NumberType),
+    th.Property("bid_price", th.NumberType),
+    th.Property("exchange", th.IntegerType),
+).to_dict()
+
+_INDEX_VALUES_SCHEMA = th.PropertiesList(
+    th.Property("file_date", th.StringType),
+    th.Property("ticker", th.StringType),
+    th.Property("timestamp", th.IntegerType),
+    th.Property("value", th.NumberType),
+).to_dict()
 
 
 # ---------------------------------------------------------------------------
@@ -40,10 +156,9 @@ _FILE_DATE_RE = re.compile(r"(\d{4}-\d{2}-\d{2})")
 class FlatFilesStream(Stream):
     """Base stream that reads sorted local CSV/CSV.gz flat files.
 
-    Schema is discovered dynamically from the first file's CSV headers.
-    All columns are emitted as strings; the target handles type coercion.
-
-    Subclasses set ``name``, ``SUBDIR``, and ``primary_keys``.
+    Subclasses set ``name``, ``SUBDIR``, ``primary_keys``, and ``schema``.
+    CSV string values are automatically coerced to the types declared in
+    the schema (integer, number, boolean).
     """
 
     SUBDIR: t.ClassVar[str] = ""
@@ -52,47 +167,28 @@ class FlatFilesStream(Stream):
     replication_key = "file_date"
     is_sorted = True
 
-    # -- lifecycle -----------------------------------------------------------
+    # -- type coercion -------------------------------------------------------
 
-    def __init__(self, tap: Tap, **kwargs: t.Any) -> None:
-        self._discovered_schema: dict | None = None
-        super().__init__(tap=tap, **kwargs)
+    @functools.cached_property
+    def _field_coercers(self) -> dict[str, t.Callable]:
+        """Build field → coercion function map from the declared schema."""
+        props = self.schema.get("properties", {})
+        coercers: dict[str, t.Callable] = {}
+        for field, prop_def in props.items():
+            json_types = prop_def.get("type", [])
+            if isinstance(json_types, str):
+                json_types = [json_types]
+            for jt in json_types:
+                if jt in _JSON_TYPE_COERCERS:
+                    coercers[field] = _JSON_TYPE_COERCERS[jt]
+                    break
+        return coercers
 
-    # -- schema --------------------------------------------------------------
-
-    @property
-    def schema(self) -> dict:
-        """Lazily discover schema from the first file's CSV headers."""
-        if self._discovered_schema is None:
-            self._discover_schema()
-        return self._discovered_schema  # type: ignore[return-value]
-
-    def _discover_schema(self) -> None:
-        files = self._list_files()
-        if not files:
-            logger.warning(
-                "No files found for %s — minimal schema only.",
-                self.name,
-            )
-            self._discovered_schema = th.PropertiesList(
-                th.Property("file_date", th.StringType),
-            ).to_dict()
-            return
-
-        headers = self._read_headers(files[0][1])
-        props: list[th.Property] = [th.Property("file_date", th.StringType)]
-        for col in headers:
-            props.append(th.Property(col, th.StringType))
-        self._discovered_schema = th.PropertiesList(*props).to_dict()
-
-    @staticmethod
-    def _read_headers(filepath: Path) -> list[str]:
-        """Read CSV column names from the first line of a file."""
-        if filepath.name.endswith(".gz"):
-            with _open_gz(filepath, "rt") as fh:
-                return next(csv.reader(fh))
-        with filepath.open() as fh:
-            return next(csv.reader(fh))
+    def _coerce_row(self, row: dict) -> None:
+        """Coerce CSV string values to the types declared in the schema."""
+        for field, coercer in self._field_coercers.items():
+            if field in row:
+                row[field] = coercer(row[field])
 
     # -- directory / file helpers --------------------------------------------
 
@@ -190,6 +286,7 @@ class FlatFilesStream(Stream):
             self.logger.info("Processing %s (date=%s)", filepath.name, file_date)
             for row in self._read_csv(filepath):
                 row["file_date"] = file_date
+                self._coerce_row(row)
                 yield row
 
 
@@ -204,6 +301,7 @@ class FlatFilesStreamStockEod(FlatFilesStream):
     name = "stocks_flat_files_eod"
     SUBDIR = "us_stocks_sip/eod"
     primary_keys = ["file_date", "ticker", "window_start"]
+    schema = _BARS_SCHEMA
 
 
 class FlatFilesStreamStock1m(FlatFilesStream):
@@ -212,6 +310,7 @@ class FlatFilesStreamStock1m(FlatFilesStream):
     name = "stocks_flat_files_1m"
     SUBDIR = "us_stocks_sip/bars_1m"
     primary_keys = ["file_date", "ticker", "window_start"]
+    schema = _BARS_SCHEMA
 
 
 class FlatFilesStreamStockTrades(FlatFilesStream):
@@ -220,6 +319,7 @@ class FlatFilesStreamStockTrades(FlatFilesStream):
     name = "stocks_flat_files_trades"
     SUBDIR = "us_stocks_sip/trades"
     primary_keys = ["file_date", "ticker", "sip_timestamp", "sequence_number"]
+    schema = _SIP_TRADES_SCHEMA
 
 
 class FlatFilesStreamStockQuotes(FlatFilesStream):
@@ -228,6 +328,7 @@ class FlatFilesStreamStockQuotes(FlatFilesStream):
     name = "stocks_flat_files_quotes"
     SUBDIR = "us_stocks_sip/quotes"
     primary_keys = ["file_date", "ticker", "sip_timestamp", "sequence_number"]
+    schema = _SIP_QUOTES_SCHEMA
 
 
 # ---------------------------------------------------------------------------
@@ -241,6 +342,7 @@ class FlatFilesStreamOptionEod(FlatFilesStream):
     name = "options_flat_files_eod"
     SUBDIR = "us_options_opra/eod"
     primary_keys = ["file_date", "ticker", "window_start"]
+    schema = _BARS_SCHEMA
 
 
 class FlatFilesStreamOption1m(FlatFilesStream):
@@ -249,6 +351,7 @@ class FlatFilesStreamOption1m(FlatFilesStream):
     name = "options_flat_files_1m"
     SUBDIR = "us_options_opra/bars_1m"
     primary_keys = ["file_date", "ticker", "window_start"]
+    schema = _BARS_SCHEMA
 
 
 class FlatFilesStreamOptionTrades(FlatFilesStream):
@@ -257,6 +360,7 @@ class FlatFilesStreamOptionTrades(FlatFilesStream):
     name = "options_flat_files_trades"
     SUBDIR = "us_options_opra/trades"
     primary_keys = ["file_date", "ticker", "sip_timestamp"]
+    schema = _SIP_TRADES_SCHEMA
 
 
 class FlatFilesStreamOptionQuotes(FlatFilesStream):
@@ -265,6 +369,7 @@ class FlatFilesStreamOptionQuotes(FlatFilesStream):
     name = "options_flat_files_quotes"
     SUBDIR = "us_options_opra/quotes"
     primary_keys = ["file_date", "ticker", "sip_timestamp", "sequence_number"]
+    schema = _SIP_QUOTES_SCHEMA
 
 
 # ---------------------------------------------------------------------------
@@ -278,6 +383,7 @@ class FlatFilesStreamIndexEod(FlatFilesStream):
     name = "indices_flat_files_eod"
     SUBDIR = "us_indices/eod"
     primary_keys = ["file_date", "ticker", "window_start"]
+    schema = _BARS_SCHEMA
 
 
 class FlatFilesStreamIndex1m(FlatFilesStream):
@@ -286,6 +392,7 @@ class FlatFilesStreamIndex1m(FlatFilesStream):
     name = "indices_flat_files_1m"
     SUBDIR = "us_indices/bars_1m"
     primary_keys = ["file_date", "ticker", "window_start"]
+    schema = _BARS_SCHEMA
 
 
 class FlatFilesStreamIndexValues(FlatFilesStream):
@@ -294,6 +401,7 @@ class FlatFilesStreamIndexValues(FlatFilesStream):
     name = "indices_flat_files_values"
     SUBDIR = "us_indices/values"
     primary_keys = ["file_date", "ticker", "timestamp"]
+    schema = _INDEX_VALUES_SCHEMA
 
 
 # ---------------------------------------------------------------------------
@@ -307,6 +415,7 @@ class FlatFilesStreamForexEod(FlatFilesStream):
     name = "forex_flat_files_eod"
     SUBDIR = "global_forex/eod"
     primary_keys = ["file_date", "ticker", "window_start"]
+    schema = _BARS_SCHEMA
 
 
 class FlatFilesStreamForex1m(FlatFilesStream):
@@ -315,6 +424,7 @@ class FlatFilesStreamForex1m(FlatFilesStream):
     name = "forex_flat_files_1m"
     SUBDIR = "global_forex/bars_1m"
     primary_keys = ["file_date", "ticker", "window_start"]
+    schema = _BARS_SCHEMA
 
 
 class FlatFilesStreamForexQuotes(FlatFilesStream):
@@ -323,6 +433,7 @@ class FlatFilesStreamForexQuotes(FlatFilesStream):
     name = "forex_flat_files_quotes"
     SUBDIR = "global_forex/quotes"
     primary_keys = ["file_date", "ticker", "participant_timestamp"]
+    schema = _FOREX_QUOTES_SCHEMA
 
 
 # ---------------------------------------------------------------------------
@@ -336,6 +447,7 @@ class FlatFilesStreamCryptoEod(FlatFilesStream):
     name = "crypto_flat_files_eod"
     SUBDIR = "global_crypto/eod"
     primary_keys = ["file_date", "ticker", "window_start"]
+    schema = _BARS_SCHEMA
 
 
 class FlatFilesStreamCrypto1m(FlatFilesStream):
@@ -344,6 +456,7 @@ class FlatFilesStreamCrypto1m(FlatFilesStream):
     name = "crypto_flat_files_1m"
     SUBDIR = "global_crypto/bars_1m"
     primary_keys = ["file_date", "ticker", "window_start"]
+    schema = _BARS_SCHEMA
 
 
 class FlatFilesStreamCryptoTrades(FlatFilesStream):
@@ -352,6 +465,7 @@ class FlatFilesStreamCryptoTrades(FlatFilesStream):
     name = "crypto_flat_files_trades"
     SUBDIR = "global_crypto/trades"
     primary_keys = ["file_date", "ticker", "participant_timestamp", "id"]
+    schema = _CRYPTO_TRADES_SCHEMA
 
 
 # ---------------------------------------------------------------------------
@@ -365,6 +479,7 @@ class FlatFilesStreamFutureEod(FlatFilesStream):
     name = "futures_flat_files_eod"
     SUBDIR = "us_futures/eod"
     primary_keys = ["file_date", "ticker", "window_start"]
+    schema = _BARS_SCHEMA
 
 
 class FlatFilesStreamFuture1m(FlatFilesStream):
@@ -373,6 +488,7 @@ class FlatFilesStreamFuture1m(FlatFilesStream):
     name = "futures_flat_files_1m"
     SUBDIR = "us_futures/bars_1m"
     primary_keys = ["file_date", "ticker", "window_start"]
+    schema = _BARS_SCHEMA
 
 
 class FlatFilesStreamFutureTrades(FlatFilesStream):
@@ -381,6 +497,7 @@ class FlatFilesStreamFutureTrades(FlatFilesStream):
     name = "futures_flat_files_trades"
     SUBDIR = "us_futures/trades"
     primary_keys = ["file_date", "ticker", "sip_timestamp", "sequence_number"]
+    schema = _SIP_TRADES_SCHEMA
 
 
 class FlatFilesStreamFutureQuotes(FlatFilesStream):
@@ -389,3 +506,4 @@ class FlatFilesStreamFutureQuotes(FlatFilesStream):
     name = "futures_flat_files_quotes"
     SUBDIR = "us_futures/quotes"
     primary_keys = ["file_date", "ticker", "sip_timestamp", "sequence_number"]
+    schema = _SIP_QUOTES_SCHEMA

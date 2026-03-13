@@ -7,10 +7,11 @@ on:
   workflow_dispatch: # Allow manual triggering
 
 permissions:
-  issues: write
+  contents: write
+  pull-requests: write
 
 jobs:
-  check-changelog:
+  check-and-update:
     runs-on: ubuntu-latest
 
     steps:
@@ -72,7 +73,34 @@ jobs:
         env:
           SINCE: ${{ env.SINCE }}
 
-      - name: Format entries for issue
+      - name: Checkout repository
+        if: steps.check.outputs.has_new == 'true'
+        uses: actions/checkout@v4
+
+      - name: Gather codebase context
+        if: steps.check.outputs.has_new == 'true'
+        run: |
+          # Include CLAUDE.md for project conventions
+          echo "## CLAUDE.md" > codebase-context.md
+          echo '```markdown' >> codebase-context.md
+          cat CLAUDE.md >> codebase-context.md
+          echo '```' >> codebase-context.md
+          echo "" >> codebase-context.md
+
+          # Collect all stream file paths and their class/schema definitions
+          echo "## Stream Files in tap_massive/streams/" >> codebase-context.md
+          echo "" >> codebase-context.md
+
+          for f in tap_massive/streams/*.py; do
+            [ "$f" = "tap_massive/streams/__init__.py" ] && continue
+            echo "### $f" >> codebase-context.md
+            echo '```python' >> codebase-context.md
+            cat "$f" >> codebase-context.md
+            echo '```' >> codebase-context.md
+            echo "" >> codebase-context.md
+          done
+
+      - name: Format changelog entries
         if: steps.check.outputs.has_new == 'true'
         run: |
           python3 << 'PYTHON_SCRIPT'
@@ -95,59 +123,190 @@ jobs:
               f.write('\n'.join(md_lines))
           PYTHON_SCRIPT
 
-      - name: Check for existing open issue
+      - name: Call Claude API for analysis
         if: steps.check.outputs.has_new == 'true'
-        id: existing
-        uses: actions/github-script@v7
-        with:
-          script: |
-            const { data: issues } = await github.rest.issues.listForRepo({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              labels: 'massive-api-update',
-              state: 'open',
-              per_page: 1
-            });
-            core.setOutput('exists', issues.length > 0 ? 'true' : 'false');
+        id: claude
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: |
+          CHANGELOG=$(cat formatted-entries.md)
+          CODEBASE=$(cat codebase-context.md)
 
-      - name: Create GitHub issue
-        if: steps.check.outputs.has_new == 'true' && steps.existing.outputs.exists == 'false'
+          # Build the prompt
+          cat > prompt.txt << 'PROMPT_END'
+          You are updating a Singer tap for the Massive API (https://massive.com).
+
+          CRITICAL RULES:
+          - Read the CLAUDE.md file included in the codebase context below for full project conventions.
+          - Field names must be snake_case (the SDK auto-converts from camelCase)
+          - Use singer_sdk typing: th.StringType, th.IntegerType, th.BooleanType, th.NumberType, th.DateType, th.DateTimeType, th.ArrayType, th.ObjectType
+          - Only add new fields to existing schemas. Do NOT remove fields, rename classes, or change endpoints unless the changelog explicitly says to.
+          - All streams already have additionalProperties: True, so missing fields won't cause errors. But explicit schema fields are preferred for type validation.
+          - Massive API endpoints are documented at: https://massive.com/docs
+          - Follow the class hierarchy and code conventions described in CLAUDE.md.
+
+          Based on the changelog entries below, identify which stream schemas need new fields added.
+
+          For each file that needs changes, output the COMPLETE updated file contents. Do not output partial files or diffs.
+
+          Output your response as a JSON object with this exact structure:
+          {
+            "analysis": "Human-readable summary of changes needed",
+            "no_changes_needed": false,
+            "files": [
+              {
+                "path": "tap_massive/streams/labor_market_streams.py",
+                "content": "...full file content...",
+                "description": "Added new_field field to SomeStream"
+              }
+            ]
+          }
+
+          If no code changes are needed (e.g., all changes are internal/non-breaking), set "no_changes_needed": true and "files": [].
+
+          IMPORTANT: Output ONLY the JSON object. No markdown fences, no commentary before or after.
+          PROMPT_END
+
+          # Use jq to safely build the API request JSON
+          jq -n \
+            --arg prompt "$(cat prompt.txt)" \
+            --arg changelog "$CHANGELOG" \
+            --arg codebase "$CODEBASE" \
+            '{
+              model: "claude-sonnet-4-5-20250929",
+              max_tokens: 16000,
+              messages: [{
+                role: "user",
+                content: ($prompt + "\n\n## CHANGELOG ENTRIES\n\n" + $changelog + "\n\n## CURRENT CODEBASE\n\n" + $codebase)
+              }]
+            }' > api-request.json
+
+          # Call Claude API
+          HTTP_CODE=$(curl -s -o claude-response.json -w "%{http_code}" \
+            https://api.anthropic.com/v1/messages \
+            -H "x-api-key: $ANTHROPIC_API_KEY" \
+            -H "anthropic-version: 2023-06-01" \
+            -H "content-type: application/json" \
+            -d @api-request.json)
+
+          if [ "$HTTP_CODE" != "200" ]; then
+            echo "::error::Claude API returned HTTP $HTTP_CODE"
+            cat claude-response.json
+            exit 1
+          fi
+
+          # Extract the text content from Claude's response
+          jq -r '.content[0].text' claude-response.json > claude-analysis-raw.txt
+
+          # Strip markdown code fences if Claude wrapped the JSON
+          sed -n '/^{/,/^}/p' claude-analysis-raw.txt > claude-analysis.json
+
+          # Validate it's parseable JSON
+          if ! jq empty claude-analysis.json 2>/dev/null; then
+            echo "::error::Claude did not return valid JSON"
+            echo "Raw response:"
+            cat claude-analysis-raw.txt
+            exit 1
+          fi
+
+          NO_CHANGES=$(jq -r '.no_changes_needed // false' claude-analysis.json)
+          echo "no_changes=$NO_CHANGES" >> "$GITHUB_OUTPUT"
+
+      - name: Apply file changes and create PR
+        if: steps.check.outputs.has_new == 'true' && steps.claude.outputs.no_changes != 'true'
         uses: actions/github-script@v7
         with:
           script: |
             const fs = require('fs');
-            const entries = fs.readFileSync('formatted-entries.md', 'utf8');
-            const count = '${{ steps.check.outputs.new_count }}';
+            const analysis = JSON.parse(fs.readFileSync('claude-analysis.json', 'utf8'));
 
-            const body = [
-              `## Massive API Changelog Updates`,
-              ``,
-              `**${count} new change(s)** detected:`,
-              ``,
-              entries,
-              ``,
-              `## Next Steps`,
-              ``,
-              `1. Review the changes above`,
-              `2. Comment \`/analyze-changes\` to have Claude analyze the impact and open a PR with fixes`,
-              `3. Or manually update streams in \`tap_massive/streams/\``,
-              ``,
-              `**Changelog**: https://massive.com/changelog`,
-              `**RSS Feed**: https://massive.com/changelog/rss.xml`,
-            ].join('\n');
-
-            await github.rest.issues.create({
+            // Create branch
+            const branchName = `massive-api-update-${new Date().toISOString().split('T')[0].replace(/-/g, '')}`;
+            const mainRef = await github.rest.git.getRef({
               owner: context.repo.owner,
               repo: context.repo.repo,
-              title: `[Massive API] ${count} changelog update(s) — ${new Date().toISOString().split('T')[0]}`,
-              body: body,
-              labels: ['massive-api-update']
+              ref: 'heads/main'
+            });
+
+            await github.rest.git.createRef({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              ref: `refs/heads/${branchName}`,
+              sha: mainRef.data.object.sha
+            });
+
+            // Apply each file change as a commit
+            for (const file of analysis.files) {
+              let fileSha;
+              try {
+                const { data: existing } = await github.rest.repos.getContent({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  path: file.path,
+                  ref: branchName
+                });
+                fileSha = existing.sha;
+              } catch (e) {
+                fileSha = undefined;
+              }
+
+              await github.rest.repos.createOrUpdateFileContents({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                path: file.path,
+                message: `chore: ${file.description}`,
+                content: Buffer.from(file.content).toString('base64'),
+                branch: branchName,
+                ...(fileSha ? { sha: fileSha } : {})
+              });
+            }
+
+            // Build PR body
+            const changelog = fs.readFileSync('formatted-entries.md', 'utf8');
+            const fileList = analysis.files
+              .map(f => `- \`${f.path}\`: ${f.description}`)
+              .join('\n');
+
+            const prBody = [
+              `## Massive API Schema Updates`,
+              ``,
+              analysis.analysis,
+              ``,
+              `### Files Changed`,
+              ``,
+              fileList,
+              ``,
+              `### Changelog Entries`,
+              ``,
+              changelog,
+              ``,
+              `### Testing Checklist`,
+              ``,
+              `- [ ] \`./lint.sh\` passes`,
+              `- [ ] \`uv run pytest\` passes`,
+              `- [ ] Test affected streams: \`meltano run tap-massive target-jsonl\``,
+              `- [ ] Review schema changes match Massive API docs`,
+              ``,
+              `---`,
+              `Generated by Claude AI`,
+            ].join('\n');
+
+            await github.rest.pulls.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: `[Massive API] Schema updates — ${new Date().toISOString().split('T')[0]}`,
+              head: branchName,
+              base: 'main',
+              body: prBody
             });
 
       - name: Workflow summary
+        if: always()
         run: |
-          if [ "${{ steps.check.outputs.has_new }}" = "true" ]; then
-            echo "### Massive Changelog: ${{ steps.check.outputs.new_count }} new change(s)" >> "$GITHUB_STEP_SUMMARY"
-          else
+          if [ "${{ steps.check.outputs.has_new }}" != "true" ]; then
             echo "### Massive Changelog: No new changes in the last 21 days" >> "$GITHUB_STEP_SUMMARY"
+          elif [ "${{ steps.claude.outputs.no_changes }}" = "true" ]; then
+            echo "### Massive Changelog: ${{ steps.check.outputs.new_count }} change(s) detected, no code changes needed" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "### Massive Changelog: ${{ steps.check.outputs.new_count }} change(s) detected, PR created" >> "$GITHUB_STEP_SUMMARY"
           fi
