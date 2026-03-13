@@ -382,11 +382,13 @@ class _EarningsQuoteStreamBase(_NanosecondIncrementalMixin, MassiveRestStream):
     def _get_earnings_calendar(self) -> EarningsCalendar:
         """Get or create the cached EarningsCalendar from the tap."""
         start = self.other_params.get("earnings_start_date")
-        end = self.other_params.get("earnings_end_date")
-        if not start or not end:
+        end = self.other_params.get(
+            "earnings_end_date",
+            date.today().isoformat(),
+        )
+        if not start:
             msg = (
-                f"Stream {self.name} requires 'earnings_start_date' and "
-                "'earnings_end_date' in other_params."
+                f"Stream {self.name} requires 'earnings_start_date' " "in other_params."
             )
             raise ValueError(msg)
 
@@ -639,16 +641,19 @@ class EarningsFlatFilesStream:
         if not isinstance(stream_cfg, dict):
             msg = (
                 f"Stream {self.name}: per-stream config with "
-                "'earnings_start_date' and 'earnings_end_date' is required."
+                "'earnings_start_date' is required."
             )
             raise ValueError(msg)
 
         start = stream_cfg.get("earnings_start_date")
-        end = stream_cfg.get("earnings_end_date")
-        if not start or not end:
+        end = stream_cfg.get(
+            "earnings_end_date",
+            date.today().isoformat(),
+        )
+        if not start:
             msg = (
-                f"Stream {self.name} requires 'earnings_start_date' and "
-                "'earnings_end_date' in per-stream config."
+                f"Stream {self.name} requires 'earnings_start_date' "
+                "in per-stream config."
             )
             raise ValueError(msg)
 

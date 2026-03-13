@@ -639,6 +639,62 @@ class Stock10KSectionsStream(OptionalTickerPartitionStream):
         return f"{self.url_base}/stocks/filings/10-K/vX/sections"
 
 
+class Stock8KTextStream(OptionalTickerPartitionStream):
+    """8-K Text Stream — parsed plain-text content from SEC 8-K filings."""
+
+    name = "stock_8k_text"
+
+    primary_keys = ["accession_number"]
+    replication_key = "filing_date"
+    replication_method = "INCREMENTAL"
+    is_timestamp_replication_key = True
+
+    _use_cached_tickers_default = False
+    _incremental_timestamp_is_date = True
+    _ticker_in_query_params = True
+
+    schema = th.PropertiesList(
+        th.Property("accession_number", th.StringType),
+        th.Property("cik", th.StringType),
+        th.Property("ticker", th.StringType),
+        th.Property("filing_date", th.DateType),
+        th.Property("filing_url", th.StringType),
+        th.Property("form_type", th.StringType),
+        th.Property("items_text", th.StringType),
+    ).to_dict()
+
+    def get_url(self, context: Context = None):
+        return f"{self.url_base}/stocks/filings/8-K/vX/text"
+
+
+class StockFilingsIndexStream(OptionalTickerPartitionStream):
+    """SEC EDGAR Filings Index Stream — master index of all SEC filings."""
+
+    name = "stock_filings_index"
+
+    primary_keys = ["accession_number"]
+    replication_key = "filing_date"
+    replication_method = "INCREMENTAL"
+    is_timestamp_replication_key = True
+
+    _use_cached_tickers_default = False
+    _incremental_timestamp_is_date = True
+    _ticker_in_query_params = True
+
+    schema = th.PropertiesList(
+        th.Property("accession_number", th.StringType),
+        th.Property("cik", th.StringType),
+        th.Property("ticker", th.StringType),
+        th.Property("filing_date", th.DateType),
+        th.Property("filing_url", th.StringType),
+        th.Property("form_type", th.StringType),
+        th.Property("issuer_name", th.StringType),
+    ).to_dict()
+
+    def get_url(self, context: Context = None):
+        return f"{self.url_base}/stocks/filings/vX/index"
+
+
 class StockRiskFactorsStream(OptionalTickerPartitionStream):
     """Risk Factors Stream"""
 

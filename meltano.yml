@@ -79,7 +79,9 @@ plugins:
       - stock_short_interest.*
       - stock_short_volume.*
       - stock_float.*
+      - stock_8k_text.*
       - stock_10k_sections.*
+      - stock_filings_index.*
       - stock_risk_factors.*
       - stock_risk_categories.*
       - stock_news.*
@@ -744,11 +746,25 @@ plugins:
         other_params:
           use_cached_tickers: true
 
+      stock_8k_text:
+        query_params:
+          filing_date__gte: "2025-01-01"
+          limit: 999
+        other_params:
+          use_cached_tickers: true
+
       stock_10k_sections:
         query_params:
           filing_date__gte: "2025-01-05"
           filing_date__lte: "2025-01-07"
           limit: 9999
+        other_params:
+          use_cached_tickers: true
+
+      stock_filings_index:
+        query_params:
+          filing_date__gte: "1999-05-24"
+          limit: 50000
         other_params:
           use_cached_tickers: true
 
