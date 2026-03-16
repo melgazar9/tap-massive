@@ -304,6 +304,15 @@ class TapMassive(Tap):
         th.Property("flat_files_aws_key", th.StringType, secret=True),
         th.Property("flat_files_aws_secret", th.StringType, secret=True),
         th.Property("disk_cache_ttl_hours", th.NumberType, default=36),
+        th.Property(
+            "duckdb_params",
+            th.ObjectType(
+                th.Property("threads", th.IntegerType),
+                th.Property("memory_limit", th.StringType),
+                th.Property("temp_directory", th.StringType),
+                th.Property("preserve_insertion_order", th.BooleanType),
+            ),
+        ),
     ).to_dict()
 
     # Ticker caching: one registry instead of 6 copy-pasted blocks.

@@ -811,6 +811,15 @@ class QuoteSnapshotFlatFilesStream(FlatFilesStream):
             file_path="{file_path}",
         )
         conn = duckdb.connect()
+        duckdb_params = self.config.get("duckdb_params") or {}
+        for param, value in duckdb_params.items():
+            if isinstance(value, bool):
+                conn.execute(f"SET {param}={str(value).lower()}")
+            elif isinstance(value, int):
+                conn.execute(f"SET {param}={value}")
+            else:
+                value = os.path.expanduser(str(value))
+                conn.execute(f"SET {param}='{value}'")
 
         try:
             if workers > 0:

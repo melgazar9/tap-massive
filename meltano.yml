@@ -37,6 +37,11 @@ plugins:
       value: 36
       description: TTL in hours for the shared disk cache (option contracts, tickers). Defaults to ~/.cache; override with MELTANO_SHARED_CACHE_DIR env var.
 
+    - name: duckdb_params
+      kind: object
+      label: DuckDB Parameters
+      description: DuckDB connection parameters (threads, memory_limit, temp_directory, preserve_insertion_order)
+
     select:
       # --- Stocks ---
       - stock_tickers.*
