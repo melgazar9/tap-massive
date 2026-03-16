@@ -246,9 +246,9 @@ class FuturesCustomBarsStream(FuturesTickerPartitionStream, BaseCustomBarsStream
     Endpoint: ``GET /futures/vX/aggs/{ticker}``
     Max limit: 50000
 
-    Uses nanosecond ``window_start`` timestamps.  Additional fields vs the
-    generic ``/v2/aggs`` endpoint: ``settlement_price``, ``session_end_date``,
-    ``dollar_volume``.
+    Uses nanosecond ``window_start`` timestamps from the API.  Additional fields
+    vs the generic ``/v2/aggs`` endpoint: ``settlement_price``,
+    ``session_end_date``, ``dollar_volume``.
     """
 
     TYPE_CONFORMANCE_LEVEL = TypeConformanceLevel.NONE
@@ -268,8 +268,11 @@ class FuturesCustomBarsStream(FuturesTickerPartitionStream, BaseCustomBarsStream
         "dollar_volume",
     )
 
+    primary_keys = ["window_start", "ticker"]
+    replication_key = "window_start"
+
     schema = th.PropertiesList(
-        th.Property("timestamp", th.DateTimeType),
+        th.Property("window_start", th.IntegerType),
         th.Property("ticker", th.StringType),
         th.Property("open", th.NumberType),
         th.Property("high", th.NumberType),
@@ -303,7 +306,7 @@ class FuturesCustomBarsStream(FuturesTickerPartitionStream, BaseCustomBarsStream
         for key in self._DECIMAL_KEYS:
             if key in row:
                 row[key] = safe_decimal(row[key])
-        row["timestamp"] = self.safe_parse_datetime(row.pop("window_start")).isoformat()
+        row["window_start"] = safe_int(row.get("window_start"))
         row["ticker"] = context.get(self._ticker_param)
         row[self.status_flag_field] = self._resolve_status_flag(context)
         return row

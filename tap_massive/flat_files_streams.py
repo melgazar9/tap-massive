@@ -128,6 +128,21 @@ _SIP_QUOTES_SCHEMA = th.PropertiesList(
     th.Property("tape", th.IntegerType),
 ).to_dict()
 
+# Options quotes have fewer columns than stock quotes — no participant_timestamp,
+# trf_timestamp, conditions, indicators, or tape.
+_OPTIONS_QUOTES_SCHEMA = th.PropertiesList(
+    th.Property("file_date", th.StringType),
+    th.Property("ticker", th.StringType),
+    th.Property("sip_timestamp", th.IntegerType),
+    th.Property("sequence_number", th.IntegerType),
+    th.Property("ask_exchange", th.IntegerType),
+    th.Property("ask_price", th.NumberType),
+    th.Property("ask_size", th.NumberType),
+    th.Property("bid_exchange", th.IntegerType),
+    th.Property("bid_price", th.NumberType),
+    th.Property("bid_size", th.NumberType),
+).to_dict()
+
 _CRYPTO_TRADES_SCHEMA = th.PropertiesList(
     th.Property("file_date", th.StringType),
     th.Property("ticker", th.StringType),
@@ -377,7 +392,7 @@ class FlatFilesStreamOptionQuotes(FlatFilesStream):
     name = "options_flat_files_quotes"
     SUBDIR = "us_options_opra/quotes"
     primary_keys = ["file_date", "ticker", "sip_timestamp", "sequence_number"]
-    schema = _SIP_QUOTES_SCHEMA
+    schema = _OPTIONS_QUOTES_SCHEMA
 
 
 # ---------------------------------------------------------------------------
@@ -521,10 +536,10 @@ class FlatFilesStreamFutureQuotes(FlatFilesStream):
 # Quote update bars from flat files (DuckDB aggregation)
 # ---------------------------------------------------------------------------
 
-_QUOTE_UPDATE_BAR_SQL = """
+_QUOTE_SNAPSHOT_SQL = """
 SELECT
     ticker,
-    (((sip_timestamp - 1) // {interval_ns}) + 1) * {interval_ns} AS window_start,
+    (((sip_timestamp - 1) // {interval_ns}) + 1) * {interval_ns} AS asof_timestamp,
     last(sip_timestamp ORDER BY sip_timestamp, sequence_number) AS sip_timestamp,
     last(participant_timestamp ORDER BY sip_timestamp, sequence_number) AS participant_timestamp,
     last(trf_timestamp ORDER BY sip_timestamp, sequence_number) AS trf_timestamp,
@@ -543,10 +558,6 @@ FROM read_csv(
     header=true,
     columns={{
         'ticker': 'VARCHAR',
-        'sip_timestamp': 'BIGINT',
-        'participant_timestamp': 'BIGINT',
-        'trf_timestamp': 'BIGINT',
-        'sequence_number': 'BIGINT',
         'ask_exchange': 'INTEGER',
         'ask_price': 'DOUBLE',
         'ask_size': 'DOUBLE',
@@ -555,17 +566,21 @@ FROM read_csv(
         'bid_size': 'DOUBLE',
         'conditions': 'VARCHAR',
         'indicators': 'VARCHAR',
-        'tape': 'INTEGER'
+        'participant_timestamp': 'BIGINT',
+        'sequence_number': 'BIGINT',
+        'sip_timestamp': 'BIGINT',
+        'tape': 'INTEGER',
+        'trf_timestamp': 'BIGINT'
     }}
 )
-GROUP BY ticker, window_start
-ORDER BY ticker, window_start
+GROUP BY ticker, asof_timestamp
+ORDER BY ticker, asof_timestamp
 """
 
-_QUOTE_UPDATE_BAR_FLAT_FILES_SCHEMA = th.PropertiesList(
+_QUOTE_SNAPSHOT_FLAT_FILES_SCHEMA = th.PropertiesList(
     th.Property("file_date", th.StringType),
     th.Property("ticker", th.StringType),
-    th.Property("window_start", th.IntegerType),
+    th.Property("asof_timestamp", th.IntegerType),
     th.Property("sip_timestamp", th.IntegerType),
     th.Property("participant_timestamp", th.IntegerType),
     th.Property("trf_timestamp", th.IntegerType),
@@ -581,23 +596,71 @@ _QUOTE_UPDATE_BAR_FLAT_FILES_SCHEMA = th.PropertiesList(
     th.Property("tape", th.IntegerType),
 ).to_dict()
 
+# Options quote update bar SQL — options CSVs have no participant_timestamp,
+# trf_timestamp, conditions, indicators, or tape columns.
+_OPTIONS_QUOTE_SNAPSHOT_SQL = """
+SELECT
+    ticker,
+    (((sip_timestamp - 1) // {interval_ns}) + 1) * {interval_ns} AS asof_timestamp,
+    last(sip_timestamp ORDER BY sip_timestamp, sequence_number) AS sip_timestamp,
+    last(sequence_number ORDER BY sip_timestamp, sequence_number) AS sequence_number,
+    last(ask_exchange ORDER BY sip_timestamp, sequence_number) AS ask_exchange,
+    last(ask_price ORDER BY sip_timestamp, sequence_number) AS ask_price,
+    last(ask_size ORDER BY sip_timestamp, sequence_number) AS ask_size,
+    last(bid_exchange ORDER BY sip_timestamp, sequence_number) AS bid_exchange,
+    last(bid_price ORDER BY sip_timestamp, sequence_number) AS bid_price,
+    last(bid_size ORDER BY sip_timestamp, sequence_number) AS bid_size
+FROM read_csv(
+    '{file_path}',
+    header=true,
+    columns={{
+        'ticker': 'VARCHAR',
+        'ask_exchange': 'INTEGER',
+        'ask_price': 'DOUBLE',
+        'ask_size': 'DOUBLE',
+        'bid_exchange': 'INTEGER',
+        'bid_price': 'DOUBLE',
+        'bid_size': 'DOUBLE',
+        'sequence_number': 'BIGINT',
+        'sip_timestamp': 'BIGINT'
+    }}
+)
+GROUP BY ticker, asof_timestamp
+ORDER BY ticker, asof_timestamp
+"""
 
-class QuoteUpdateBarFlatFilesStream(FlatFilesStream):
+_OPTIONS_QUOTE_SNAPSHOT_FLAT_FILES_SCHEMA = th.PropertiesList(
+    th.Property("file_date", th.StringType),
+    th.Property("ticker", th.StringType),
+    th.Property("asof_timestamp", th.IntegerType),
+    th.Property("sip_timestamp", th.IntegerType),
+    th.Property("sequence_number", th.IntegerType),
+    th.Property("ask_exchange", th.IntegerType),
+    th.Property("ask_price", th.NumberType),
+    th.Property("ask_size", th.NumberType),
+    th.Property("bid_exchange", th.IntegerType),
+    th.Property("bid_price", th.NumberType),
+    th.Property("bid_size", th.NumberType),
+).to_dict()
+
+
+class QuoteSnapshotFlatFilesStream(FlatFilesStream):
     """Quote update bars aggregated from flat file tick quotes via DuckDB.
 
     Reads daily CSV.gz quote files and aggregates to interval-contained bars:
-    last quote per (ticker, window) where window = ceil(sip_timestamp / interval).
+    last quote per (ticker, asof_timestamp) where asof_timestamp = ceil(sip_timestamp / interval).
 
     Downloads are parallelized via a prefetch buffer (configurable workers).
     Processing + yielding remains sequential (no SQLite state contention).
     """
 
     _interval_ns: int = 60_000_000_000  # 1 minute default
+    _RAW_SQL_TEMPLATE: str = _QUOTE_SNAPSHOT_SQL
     _S3_ENDPOINT = "https://files.massive.com"
     _S3_BUCKET_TEMPLATE = "s3://flatfiles/{subdir}/{year}/{month}/{date}.csv.gz"
 
-    schema = _QUOTE_UPDATE_BAR_FLAT_FILES_SCHEMA
-    primary_keys = ["file_date", "ticker", "window_start"]
+    schema = _QUOTE_SNAPSHOT_FLAT_FILES_SCHEMA
+    primary_keys = ["file_date", "ticker", "asof_timestamp"]
 
     @property
     def _effective_subdir(self) -> str:
@@ -743,7 +806,7 @@ class QuoteUpdateBarFlatFilesStream(FlatFilesStream):
             else 0
         )
 
-        sql_template = _QUOTE_UPDATE_BAR_SQL.format(
+        sql_template = self._RAW_SQL_TEMPLATE.format(
             interval_ns=self._interval_ns,
             file_path="{file_path}",
         )
@@ -862,7 +925,7 @@ class QuoteUpdateBarFlatFilesStream(FlatFilesStream):
         file_date: str,
     ) -> t.Iterable[dict[str, t.Any]]:
         """Execute the aggregation query and yield rows."""
-        query = sql_template.format(file_path=source)
+        query = sql_template.replace("{file_path}", source)
         result = conn.execute(query)
         columns = [desc[0] for desc in result.description]
         while batch := result.fetchmany(10000):
@@ -872,31 +935,33 @@ class QuoteUpdateBarFlatFilesStream(FlatFilesStream):
                 yield row
 
 
-class _OptionsQuoteUpdateBarFlatFilesBase(QuoteUpdateBarFlatFilesStream):
+class _OptionsQuoteSnapshotFlatFilesBase(QuoteSnapshotFlatFilesStream):
     # Massive docs use quotes_v1; override SUBDIR if your account uses "quotes"
     SUBDIR = "us_options_opra/quotes_v1"
+    _RAW_SQL_TEMPLATE = _OPTIONS_QUOTE_SNAPSHOT_SQL
+    schema = _OPTIONS_QUOTE_SNAPSHOT_FLAT_FILES_SCHEMA
 
 
-class OptionsQuoteUpdateBarFlatFiles1SecondStream(_OptionsQuoteUpdateBarFlatFilesBase):
-    name = "options_quote_update_bars_flat_files_1_second"
+class OptionsQuoteSnapshotFlatFiles1SecondStream(_OptionsQuoteSnapshotFlatFilesBase):
+    name = "options_quote_snapshots_flat_files_1_second"
     _interval_ns = 1_000_000_000
 
 
-class OptionsQuoteUpdateBarFlatFiles30SecondStream(_OptionsQuoteUpdateBarFlatFilesBase):
-    name = "options_quote_update_bars_flat_files_30_second"
+class OptionsQuoteSnapshotFlatFiles30SecondStream(_OptionsQuoteSnapshotFlatFilesBase):
+    name = "options_quote_snapshots_flat_files_30_second"
     _interval_ns = 30_000_000_000
 
 
-class OptionsQuoteUpdateBarFlatFiles1MinuteStream(_OptionsQuoteUpdateBarFlatFilesBase):
-    name = "options_quote_update_bars_flat_files_1_minute"
+class OptionsQuoteSnapshotFlatFiles1MinuteStream(_OptionsQuoteSnapshotFlatFilesBase):
+    name = "options_quote_snapshots_flat_files_1_minute"
     _interval_ns = 60_000_000_000
 
 
-class OptionsQuoteUpdateBarFlatFiles5MinuteStream(_OptionsQuoteUpdateBarFlatFilesBase):
-    name = "options_quote_update_bars_flat_files_5_minute"
+class OptionsQuoteSnapshotFlatFiles5MinuteStream(_OptionsQuoteSnapshotFlatFilesBase):
+    name = "options_quote_snapshots_flat_files_5_minute"
     _interval_ns = 300_000_000_000
 
 
-class OptionsQuoteUpdateBarFlatFiles30MinuteStream(_OptionsQuoteUpdateBarFlatFilesBase):
-    name = "options_quote_update_bars_flat_files_30_minute"
+class OptionsQuoteSnapshotFlatFiles30MinuteStream(_OptionsQuoteSnapshotFlatFilesBase):
+    name = "options_quote_snapshots_flat_files_30_minute"
     _interval_ns = 1_800_000_000_000

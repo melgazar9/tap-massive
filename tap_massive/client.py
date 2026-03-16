@@ -75,6 +75,7 @@ class MassiveRestStream(RESTStream):
         ]
         self.record_timestamp_keys = [
             "timestamp",
+            "asof_timestamp",
             "window_start",
             "date",
             "last_updated",

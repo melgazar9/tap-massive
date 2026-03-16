@@ -48,7 +48,7 @@ def _fetch_nyse_schedule(start_ns: int, end_ns: int):
 def compute_nyse_market_windows(
     interval_seconds: int, start_ns: int, end_ns: int
 ) -> list[int]:
-    """Return window_start nanosecond timestamps during NYSE hours."""
+    """Return asof_timestamp nanosecond timestamps during NYSE hours."""
     schedule = _fetch_nyse_schedule(start_ns, end_ns)
     windows: list[int] = []
     interval_td = timedelta(seconds=interval_seconds)

@@ -1,39 +1,33 @@
-"""Tests for QuoteUpdateBarFlatFilesStream DuckDB aggregation."""
+"""Tests for QuoteSnapshotFlatFilesStream DuckDB aggregation."""
 
 from __future__ import annotations
 
 from pathlib import Path
 
-from tap_massive.flat_files_streams import _QUOTE_UPDATE_BAR_SQL
+from tap_massive.flat_files_streams import _QUOTE_SNAPSHOT_SQL
+
+from .duckdb_helpers import run_duckdb_bar_query
 
 FIXTURE = Path(__file__).parent / "fixtures" / "test_quotes.csv.gz"
 INTERVAL_NS = 60_000_000_000  # 1 minute
 
 
 def _run_query(filepath: str, interval_ns: int = INTERVAL_NS) -> list[dict]:
-    import duckdb
-
-    sql = _QUOTE_UPDATE_BAR_SQL.format(interval_ns=interval_ns, file_path=filepath)
-    conn = duckdb.connect()
-    result = conn.execute(sql)
-    columns = [d[0] for d in result.description]
-    rows = [dict(zip(columns, r)) for r in result.fetchall()]
-    conn.close()
-    return rows
+    return run_duckdb_bar_query(_QUOTE_SNAPSHOT_SQL, filepath, interval_ns)
 
 
 class TestFlatFileBucketMath:
-    """Verify window_start assignment and last-quote selection."""
+    """Verify asof_timestamp assignment and last-quote selection."""
 
     def test_exact_boundary_stays_in_current_window(self):
         """A quote at exactly 60B ns should be in the 60B window, not 120B."""
         rows = _run_query(str(FIXTURE))
-        # Find the row for ticker C (call) at window_start=60B
+        # Find the row for ticker C (call) at asof_timestamp=60B
         call_60 = [
             r
             for r in rows
             if r["ticker"] == "O:TEST260320C00100000"
-            and r["window_start"] == 60_000_000_000
+            and r["asof_timestamp"] == 60_000_000_000
         ]
         assert len(call_60) == 1
         assert call_60[0]["sip_timestamp"] == 60_000_000_000
@@ -46,7 +40,7 @@ class TestFlatFileBucketMath:
             r
             for r in rows
             if r["ticker"] == "O:TEST260320C00100000"
-            and r["window_start"] == 120_000_000_000
+            and r["asof_timestamp"] == 120_000_000_000
         ]
         assert len(call_120) == 1
         # Should be the 100B quote (last), not the 90B one
@@ -65,22 +59,22 @@ class TestFlatFileBucketMath:
         rows = _run_query(str(FIXTURE))
         put_rows = [r for r in rows if r["ticker"] == "O:TEST260320P00100000"]
         assert len(put_rows) == 1
-        assert put_rows[0]["window_start"] == 120_000_000_000
+        assert put_rows[0]["asof_timestamp"] == 120_000_000_000
         assert put_rows[0]["bid_price"] == 4.5
 
     def test_no_future_leakage(self):
-        """Every sip_timestamp must be <= window_start."""
+        """Every sip_timestamp must be <= asof_timestamp."""
         rows = _run_query(str(FIXTURE))
         for r in rows:
             assert (
-                r["sip_timestamp"] <= r["window_start"]
-            ), f"Leakage: sip={r['sip_timestamp']} > window={r['window_start']}"
+                r["sip_timestamp"] <= r["asof_timestamp"]
+            ), f"Leakage: sip={r['sip_timestamp']} > window={r['asof_timestamp']}"
 
-    def test_window_start_is_interval_aligned(self):
-        """All window_start values should be multiples of interval_ns."""
+    def test_asof_timestamp_is_interval_aligned(self):
+        """All asof_timestamp values should be multiples of interval_ns."""
         rows = _run_query(str(FIXTURE))
         for r in rows:
-            assert r["window_start"] % INTERVAL_NS == 0
+            assert r["asof_timestamp"] % INTERVAL_NS == 0
 
     def test_total_row_count(self):
         """4 raw quotes should produce 3 bars (2 call windows + 1 put window)."""

@@ -23,15 +23,16 @@ from tap_massive.base_streams import _NanosecondIncrementalMixin
 from tap_massive.client import MassiveRestStream
 from tap_massive.flat_files_streams import (
     _BARS_SCHEMA,
+    _OPTIONS_QUOTES_SCHEMA,
     _SIP_QUOTES_SCHEMA,
     _SIP_TRADES_SCHEMA,
     FlatFilesStream,
 )
 from tap_massive.option_streams import (
-    OPTIONS_QUOTE_UPDATE_BAR_SCHEMA,
+    OPTIONS_QUOTE_SNAPSHOT_SCHEMA,
     _rename_to_option_ticker,
 )
-from tap_massive.quote_update_bar_streams import QuoteUpdateBarStream
+from tap_massive.quote_snapshot_streams import QuoteSnapshotStream
 from tap_massive.utils import safe_int
 
 # ---------------------------------------------------------------------------
@@ -636,20 +637,20 @@ class OptionsEarningsQuotesStream(BaseEarningsQuoteStream):
 # ---------------------------------------------------------------------------
 
 
-class BaseEarningsQuoteUpdateBarStream(BaseEarningsQuoteStream, QuoteUpdateBarStream):
+class BaseEarningsQuoteSnapshotStream(BaseEarningsQuoteStream, QuoteSnapshotStream):
     """Earnings-filtered point-in-time quote update bars.
 
     Inherits update bar logic (schema, post_process, _yield_update_bars)
-    from QuoteUpdateBarStream. Earnings calendar and partitions
+    from QuoteSnapshotStream. Earnings calendar and partitions
     come from BaseEarningsQuoteStream and concrete subclasses.
     """
 
     _interval_seconds: int | None = None  # Must be set by subclass
 
     # Override MRO: BaseEarningsQuoteStream sets replication_key="sip_timestamp"
-    # and is_sorted=False. Update bars use window_start and are sorted.
-    primary_keys = ["ticker", "window_start"]
-    replication_key = "window_start"
+    # and is_sorted=False. Update bars use asof_timestamp and are sorted.
+    primary_keys = ["ticker", "asof_timestamp"]
+    replication_key = "asof_timestamp"
     is_sorted = True
 
     def _bookmark_adjusted_range(
@@ -669,7 +670,7 @@ class BaseEarningsQuoteUpdateBarStream(BaseEarningsQuoteStream, QuoteUpdateBarSt
         return start_ns, end_ns
 
 
-class StockEarningsQuoteUpdateBarStream(BaseEarningsQuoteUpdateBarStream):
+class StockEarningsQuoteSnapshotStream(BaseEarningsQuoteSnapshotStream):
     """Point-in-time quote update bars for stocks near earnings.
 
     Partitions by (ticker, snapshot_date). The SDK handles iteration
@@ -702,57 +703,57 @@ class StockEarningsQuoteUpdateBarStream(BaseEarningsQuoteUpdateBarStream):
         yield from self._yield_update_bars(ticker, *adjusted, context)
 
 
-class StockEarningsQuoteUpdateBar1SecondStream(StockEarningsQuoteUpdateBarStream):
+class StockEarningsQuoteSnapshot1SecondStream(StockEarningsQuoteSnapshotStream):
     """Stock earnings quote update bars at 1-second intervals."""
 
-    name = "stock_earnings_quote_update_bars_1_second"
+    name = "stock_earnings_quote_snapshots_1_second"
     _interval_seconds = 1
 
 
-class StockEarningsQuoteUpdateBar30SecondStream(StockEarningsQuoteUpdateBarStream):
+class StockEarningsQuoteSnapshot30SecondStream(StockEarningsQuoteSnapshotStream):
     """Stock earnings quote update bars at 30-second intervals."""
 
-    name = "stock_earnings_quote_update_bars_30_second"
+    name = "stock_earnings_quote_snapshots_30_second"
     _interval_seconds = 30
 
 
-class StockEarningsQuoteUpdateBar1MinuteStream(StockEarningsQuoteUpdateBarStream):
+class StockEarningsQuoteSnapshot1MinuteStream(StockEarningsQuoteSnapshotStream):
     """Stock earnings quote update bars at 1-minute intervals."""
 
-    name = "stock_earnings_quote_update_bars_1_minute"
+    name = "stock_earnings_quote_snapshots_1_minute"
     _interval_seconds = 60
 
 
-class StockEarningsQuoteUpdateBar5MinuteStream(StockEarningsQuoteUpdateBarStream):
+class StockEarningsQuoteSnapshot5MinuteStream(StockEarningsQuoteSnapshotStream):
     """Stock earnings quote update bars at 5-minute intervals."""
 
-    name = "stock_earnings_quote_update_bars_5_minute"
+    name = "stock_earnings_quote_snapshots_5_minute"
     _interval_seconds = 300
 
 
-class StockEarningsQuoteUpdateBar30MinuteStream(StockEarningsQuoteUpdateBarStream):
+class StockEarningsQuoteSnapshot30MinuteStream(StockEarningsQuoteSnapshotStream):
     """Stock earnings quote update bars at 30-minute intervals."""
 
-    name = "stock_earnings_quote_update_bars_30_minute"
+    name = "stock_earnings_quote_snapshots_30_minute"
     _interval_seconds = 1800
 
 
-class StockEarningsQuoteUpdateBar1HourStream(StockEarningsQuoteUpdateBarStream):
+class StockEarningsQuoteSnapshot1HourStream(StockEarningsQuoteSnapshotStream):
     """Stock earnings quote update bars at 1-hour intervals."""
 
-    name = "stock_earnings_quote_update_bars_1_hour"
+    name = "stock_earnings_quote_snapshots_1_hour"
     _interval_seconds = 3600
 
 
-class OptionsEarningsQuoteUpdateBarStream(BaseEarningsQuoteUpdateBarStream):
+class OptionsEarningsQuoteSnapshotStream(BaseEarningsQuoteSnapshotStream):
     """Point-in-time quote update bars for options contracts near earnings.
 
     Contract-level SDK partitions via _build_options_contract_partitions.
     State tracked per option_ticker automatically by the SDK.
     """
 
-    primary_keys = ["option_ticker", "window_start"]
-    schema = OPTIONS_QUOTE_UPDATE_BAR_SCHEMA
+    primary_keys = ["option_ticker", "asof_timestamp"]
+    schema = OPTIONS_QUOTE_SNAPSHOT_SCHEMA
 
     @property
     def partitions(self) -> list[dict]:
@@ -787,45 +788,45 @@ class OptionsEarningsQuoteUpdateBarStream(BaseEarningsQuoteUpdateBarStream):
         return _rename_to_option_ticker(row, context)
 
 
-class OptionsEarningsQuoteUpdateBar1SecondStream(OptionsEarningsQuoteUpdateBarStream):
+class OptionsEarningsQuoteSnapshot1SecondStream(OptionsEarningsQuoteSnapshotStream):
     """Options earnings quote update bars at 1-second intervals."""
 
-    name = "options_earnings_quote_update_bars_1_second"
+    name = "options_earnings_quote_snapshots_1_second"
     _interval_seconds = 1
 
 
-class OptionsEarningsQuoteUpdateBar30SecondStream(OptionsEarningsQuoteUpdateBarStream):
+class OptionsEarningsQuoteSnapshot30SecondStream(OptionsEarningsQuoteSnapshotStream):
     """Options earnings quote update bars at 30-second intervals."""
 
-    name = "options_earnings_quote_update_bars_30_second"
+    name = "options_earnings_quote_snapshots_30_second"
     _interval_seconds = 30
 
 
-class OptionsEarningsQuoteUpdateBar1MinuteStream(OptionsEarningsQuoteUpdateBarStream):
+class OptionsEarningsQuoteSnapshot1MinuteStream(OptionsEarningsQuoteSnapshotStream):
     """Options earnings quote update bars at 1-minute intervals."""
 
-    name = "options_earnings_quote_update_bars_1_minute"
+    name = "options_earnings_quote_snapshots_1_minute"
     _interval_seconds = 60
 
 
-class OptionsEarningsQuoteUpdateBar5MinuteStream(OptionsEarningsQuoteUpdateBarStream):
+class OptionsEarningsQuoteSnapshot5MinuteStream(OptionsEarningsQuoteSnapshotStream):
     """Options earnings quote update bars at 5-minute intervals."""
 
-    name = "options_earnings_quote_update_bars_5_minute"
+    name = "options_earnings_quote_snapshots_5_minute"
     _interval_seconds = 300
 
 
-class OptionsEarningsQuoteUpdateBar30MinuteStream(OptionsEarningsQuoteUpdateBarStream):
+class OptionsEarningsQuoteSnapshot30MinuteStream(OptionsEarningsQuoteSnapshotStream):
     """Options earnings quote update bars at 30-minute intervals."""
 
-    name = "options_earnings_quote_update_bars_30_minute"
+    name = "options_earnings_quote_snapshots_30_minute"
     _interval_seconds = 1800
 
 
-class OptionsEarningsQuoteUpdateBar1HourStream(OptionsEarningsQuoteUpdateBarStream):
+class OptionsEarningsQuoteSnapshot1HourStream(OptionsEarningsQuoteSnapshotStream):
     """Options earnings quote update bars at 1-hour intervals."""
 
-    name = "options_earnings_quote_update_bars_1_hour"
+    name = "options_earnings_quote_snapshots_1_hour"
     _interval_seconds = 3600
 
 
@@ -1028,4 +1029,4 @@ class EarningsFlatFilesStreamOptionQuotes(EarningsFlatFilesStream, FlatFilesStre
     SUBDIR = "us_options_opra/quotes"
     IS_OPTIONS = True
     primary_keys = ["file_date", "ticker", "sip_timestamp", "sequence_number"]
-    schema = _SIP_QUOTES_SCHEMA
+    schema = _OPTIONS_QUOTES_SCHEMA

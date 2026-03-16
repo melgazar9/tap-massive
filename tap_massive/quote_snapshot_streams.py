@@ -1,6 +1,6 @@
-"""Quote update bar stream classes for tap-massive.
+"""Quote snapshot stream classes for tap-massive.
 
-Interval-contained bid/ask bars at fixed boundaries.
+Interval-contained bid/ask snapshots at fixed boundaries.
 Only emits a row if there was a quote update in (T-interval, T].
 Uses a streaming merge-join for performance: fetches quotes ascending,
 samples at boundaries, falls back to per-boundary queries for dense data.
@@ -22,15 +22,15 @@ from tap_massive.base_streams import (
 from tap_massive.utils import safe_int
 
 
-class QuoteUpdateBarStream(_NanosecondIncrementalMixin, BaseTickerPartitionStream):
-    """Interval-contained quote update bar: last quote in (T-I, T] per boundary."""
+class QuoteSnapshotStream(_NanosecondIncrementalMixin, BaseTickerPartitionStream):
+    """Interval-contained quote update bar: last quote in (T-I, T] per asof_timestamp."""
 
     _interval_seconds: int | None = None  # Must be set by subclass
     _use_market_calendar = True  # NYSE hours only; override False for 24/7 markets
     _streaming_fetch_threshold = 300  # Use streaming for intervals <= this (seconds)
 
-    primary_keys = ["ticker", "window_start"]
-    replication_key = "window_start"
+    primary_keys = ["ticker", "asof_timestamp"]
+    replication_key = "asof_timestamp"
     replication_method = "INCREMENTAL"
     is_timestamp_replication_key = True
     is_sorted = True
@@ -61,7 +61,7 @@ class QuoteUpdateBarStream(_NanosecondIncrementalMixin, BaseTickerPartitionStrea
         th.Property("sip_timestamp", th.IntegerType),
         th.Property("tape", th.IntegerType),
         th.Property("trf_timestamp", th.IntegerType),
-        th.Property("window_start", th.IntegerType),
+        th.Property("asof_timestamp", th.IntegerType),
     ).to_dict()
 
     def get_url(self, context: Context):
@@ -88,7 +88,7 @@ class QuoteUpdateBarStream(_NanosecondIncrementalMixin, BaseTickerPartitionStrea
         end_ns: int,
         context: dict[str, t.Any] | None,
     ) -> t.Iterable[dict[str, t.Any]]:
-        """Compute windows and yield quote update bars for a time range."""
+        """Compute asof_timestamp boundaries and yield quote update bars for a time range."""
         if self._use_market_calendar:
             windows = self._tap.get_market_windows(
                 self._interval_seconds, start_ns, end_ns
@@ -123,9 +123,9 @@ class QuoteUpdateBarStream(_NanosecondIncrementalMixin, BaseTickerPartitionStrea
         ticker: str,
         row_context: dict,
     ) -> t.Iterable[dict[str, t.Any]]:
-        """Streaming merge-join: fetch quotes ascending, sample at boundaries.
+        """Streaming merge-join: fetch quotes ascending, sample at asof_timestamp boundaries.
 
-        Paginates through all quotes in the range. As quotes cross window
+        Paginates through all quotes in the range. As quotes cross asof_timestamp
         boundaries, emits the last quote seen if it falls within the interval.
         Falls back to per-boundary queries if data is too dense.
         """
@@ -216,11 +216,11 @@ class QuoteUpdateBarStream(_NanosecondIncrementalMixin, BaseTickerPartitionStrea
         ticker: str,
         row_context: dict,
     ) -> t.Iterable[dict[str, t.Any]]:
-        """Per-boundary queries: one API call per window with interval containment."""
-        for window_start_ns in windows:
+        """Per-boundary queries: one API call per asof_timestamp with interval containment."""
+        for asof_timestamp_ns in windows:
             params = {
-                "timestamp.lte": window_start_ns,
-                "timestamp.gt": window_start_ns - interval_ns,
+                "timestamp.lte": asof_timestamp_ns,
+                "timestamp.gt": asof_timestamp_ns - interval_ns,
                 "sort": "timestamp",
                 "order": "desc",
                 "limit": 1,
@@ -235,7 +235,7 @@ class QuoteUpdateBarStream(_NanosecondIncrementalMixin, BaseTickerPartitionStrea
             quote = results[0]
             if quote.get("sip_timestamp") is None:
                 continue
-            row = {**quote, "ticker": ticker, "window_start": window_start_ns}
+            row = {**quote, "ticker": ticker, "asof_timestamp": asof_timestamp_ns}
             processed = self.post_process(row, row_context)
             if processed is not None:
                 yield processed
@@ -249,15 +249,15 @@ class QuoteUpdateBarStream(_NanosecondIncrementalMixin, BaseTickerPartitionStrea
         ticker: str,
         row_context: dict,
     ) -> t.Iterable[dict[str, t.Any]]:
-        """Emit a record only if last_quote falls within (window - interval, window]."""
+        """Emit a record only if last_quote falls within (asof_timestamp - interval, asof_timestamp]."""
         if last_sip_ts is not None and last_sip_ts > window_ns - interval_ns:
-            row = {**last_quote, "ticker": ticker, "window_start": window_ns}
+            row = {**last_quote, "ticker": ticker, "asof_timestamp": window_ns}
             processed = self.post_process(row, row_context)
             if processed is not None:
                 yield processed
 
     def _compute_fixed_windows(self, start_ns: int, end_ns: int) -> list[int]:
-        """Return window boundaries at fixed intervals (24/7 markets)."""
+        """Return asof_timestamp boundaries at fixed intervals (24/7 markets)."""
         interval_ns = self._interval_seconds * 1_000_000_000
         windows: list[int] = []
         current_ns = start_ns
@@ -279,37 +279,37 @@ class QuoteUpdateBarStream(_NanosecondIncrementalMixin, BaseTickerPartitionStrea
         return row
 
 
-class QuoteUpdateBar1SecondStream(QuoteUpdateBarStream):
+class QuoteSnapshot1SecondStream(QuoteSnapshotStream):
     """Quote update bars at 1-second intervals."""
 
     _interval_seconds = 1
 
 
-class QuoteUpdateBar30SecondStream(QuoteUpdateBarStream):
+class QuoteSnapshot30SecondStream(QuoteSnapshotStream):
     """Quote update bars at 30-second intervals."""
 
     _interval_seconds = 30
 
 
-class QuoteUpdateBar1MinuteStream(QuoteUpdateBarStream):
+class QuoteSnapshot1MinuteStream(QuoteSnapshotStream):
     """Quote update bars at 1-minute intervals."""
 
     _interval_seconds = 60
 
 
-class QuoteUpdateBar5MinuteStream(QuoteUpdateBarStream):
+class QuoteSnapshot5MinuteStream(QuoteSnapshotStream):
     """Quote update bars at 5-minute intervals."""
 
     _interval_seconds = 300
 
 
-class QuoteUpdateBar30MinuteStream(QuoteUpdateBarStream):
+class QuoteSnapshot30MinuteStream(QuoteSnapshotStream):
     """Quote update bars at 30-minute intervals."""
 
     _interval_seconds = 1800
 
 
-class QuoteUpdateBar1HourStream(QuoteUpdateBarStream):
+class QuoteSnapshot1HourStream(QuoteSnapshotStream):
     """Quote update bars at 1-hour intervals."""
 
     _interval_seconds = 3600

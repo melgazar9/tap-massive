@@ -1,15 +1,15 @@
-"""Tests for QuoteUpdateBarFlatFilesStream download/cache/locking path."""
+"""Tests for QuoteSnapshotFlatFilesStream S3 download/cache/locking path."""
 
 from __future__ import annotations
 
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-from tap_massive.flat_files_streams import QuoteUpdateBarFlatFilesStream
+from tap_massive.flat_files_streams import QuoteSnapshotFlatFilesStream
 
 
 def _make_stream() -> MagicMock:
-    stream = MagicMock(spec=QuoteUpdateBarFlatFilesStream)
+    stream = MagicMock(spec=QuoteSnapshotFlatFilesStream)
     stream.config = {
         "flat_files_aws_key": "test-key",
         "flat_files_aws_secret": "test-secret",
@@ -18,8 +18,8 @@ def _make_stream() -> MagicMock:
     stream._S3_ENDPOINT = "https://files.massive.com"
     stream.SUBDIR = "us_options_opra/quotes_v1"
     stream._S3_BUCKET_TEMPLATE = "s3://flatfiles/{subdir}/{year}/{month}/{date}.csv.gz"
-    stream._s3_url = QuoteUpdateBarFlatFilesStream._s3_url.__get__(stream)
-    stream._download_file = QuoteUpdateBarFlatFilesStream._download_file.__get__(stream)
+    stream._s3_url = QuoteSnapshotFlatFilesStream._s3_url.__get__(stream)
+    stream._download_file = QuoteSnapshotFlatFilesStream._download_file.__get__(stream)
     return stream
 
 
@@ -104,17 +104,17 @@ class TestIterDatesForDownload:
     """Test _iter_dates_for_download date generation."""
 
     def test_generates_sequential_dates(self):
-        stream = MagicMock(spec=QuoteUpdateBarFlatFilesStream)
+        stream = MagicMock(spec=QuoteSnapshotFlatFilesStream)
         stream.config = {
-            "options_quote_update_bars_flat_files_1_minute": {
+            "options_quote_snapshots_flat_files_1_minute": {
                 "start_file_date": "2026-02-17",
                 "end_file_date": "2026-02-19",
             }
         }
-        stream.name = "options_quote_update_bars_flat_files_1_minute"
+        stream.name = "options_quote_snapshots_flat_files_1_minute"
         stream.get_starting_replication_key_value = MagicMock(return_value=None)
         stream._iter_dates_for_download = (
-            QuoteUpdateBarFlatFilesStream._iter_dates_for_download.__get__(stream)
+            QuoteSnapshotFlatFilesStream._iter_dates_for_download.__get__(stream)
         )
 
         dates = list(stream._iter_dates_for_download(None))
@@ -128,18 +128,18 @@ class TestIterDatesForDownload:
         assert all(d[1] is None for d in dates)
 
     def test_respects_bookmark(self):
-        stream = MagicMock(spec=QuoteUpdateBarFlatFilesStream)
+        stream = MagicMock(spec=QuoteSnapshotFlatFilesStream)
         stream.config = {
-            "options_quote_update_bars_flat_files_1_minute": {
+            "options_quote_snapshots_flat_files_1_minute": {
                 "start_file_date": "2026-02-17",
                 "end_file_date": "2026-02-19",
             }
         }
-        stream.name = "options_quote_update_bars_flat_files_1_minute"
+        stream.name = "options_quote_snapshots_flat_files_1_minute"
         # Bookmark at 02-18 means skip 02-17
         stream.get_starting_replication_key_value = MagicMock(return_value="2026-02-18")
         stream._iter_dates_for_download = (
-            QuoteUpdateBarFlatFilesStream._iter_dates_for_download.__get__(stream)
+            QuoteSnapshotFlatFilesStream._iter_dates_for_download.__get__(stream)
         )
 
         dates = [d[0] for d in stream._iter_dates_for_download(None)]
@@ -151,7 +151,7 @@ class TestCheckAwsCli:
     def test_raises_when_aws_missing(self):
         with patch("shutil.which", return_value=None):
             try:
-                QuoteUpdateBarFlatFilesStream._check_aws_cli()
+                QuoteSnapshotFlatFilesStream._check_aws_cli()
                 raised = False
             except RuntimeError as e:
                 raised = True
@@ -160,4 +160,4 @@ class TestCheckAwsCli:
 
     def test_passes_when_aws_present(self):
         with patch("shutil.which", return_value="/usr/local/bin/aws"):
-            QuoteUpdateBarFlatFilesStream._check_aws_cli()  # should not raise
+            QuoteSnapshotFlatFilesStream._check_aws_cli()  # should not raise

@@ -244,22 +244,22 @@ plugins:
       # --- Earnings-filtered quotes ---
       - stock_earnings_quotes.*
       - options_earnings_quotes.*
-#      - stock_earnings_quote_update_bars_1_second.*
-#      - stock_earnings_quote_update_bars_30_second.*
-      - stock_earnings_quote_update_bars_1_minute.*
-#      - stock_earnings_quote_update_bars_5_minute.*
-#      - stock_earnings_quote_update_bars_30_minute.*
-#      - stock_earnings_quote_update_bars_1_hour.*
-#      - options_earnings_quote_update_bars_1_second.*
-#      - options_earnings_quote_update_bars_30_second.*
-      - options_earnings_quote_update_bars_1_minute.*
-#      - options_earnings_quote_update_bars_5_minute.*
-#      - options_earnings_quote_update_bars_30_minute.*
-#      - options_earnings_quote_update_bars_1_hour.*
+#      - stock_earnings_quote_snapshots_1_second.*
+#      - stock_earnings_quote_snapshots_30_second.*
+      - stock_earnings_quote_snapshots_1_minute.*
+#      - stock_earnings_quote_snapshots_5_minute.*
+#      - stock_earnings_quote_snapshots_30_minute.*
+#      - stock_earnings_quote_snapshots_1_hour.*
+#      - options_earnings_quote_snapshots_1_second.*
+#      - options_earnings_quote_snapshots_30_second.*
+      - options_earnings_quote_snapshots_1_minute.*
+#      - options_earnings_quote_snapshots_5_minute.*
+#      - options_earnings_quote_snapshots_30_minute.*
+#      - options_earnings_quote_snapshots_1_hour.*
 
       # --- Options quote snapshots (non-earnings) ---
-      - options_quote_update_bars_5_minute.*
-      - options_quote_update_bars_1_hour.*
+      - options_quote_snapshots_5_minute.*
+      - options_quote_snapshots_1_hour.*
 
       # --- Flat file streams ---
       # Uncomment any flat file streams you want to sync.
@@ -292,11 +292,11 @@ plugins:
       # Requires: flat_files_aws_key, flat_files_aws_secret, AWS CLI on PATH.
       # Set flat_file_download_workers > 0 for parallel S3 downloads.
       # Files cached in flat_files_base_dir for reuse across intervals.
-#      - options_quote_update_bars_flat_files_1_second.*
-#      - options_quote_update_bars_flat_files_30_second.*
-#      - options_quote_update_bars_flat_files_1_minute.*
-#      - options_quote_update_bars_flat_files_5_minute.*
-#      - options_quote_update_bars_flat_files_30_minute.*
+#      - options_quote_snapshots_flat_files_1_second.*
+#      - options_quote_snapshots_flat_files_30_second.*
+#      - options_quote_snapshots_flat_files_1_minute.*
+#      - options_quote_snapshots_flat_files_5_minute.*
+#      - options_quote_snapshots_flat_files_30_minute.*
 
       # --- Earnings-filtered flat file streams ---
       # Like flat file streams, but only emit rows for tickers with earnings on the file date.
@@ -334,7 +334,7 @@ plugins:
       # flat_file_download_workers: parallel S3 downloads (0 = local files only)
       # s3_subdir: override S3 path (default: us_options_opra/quotes_v1)
       # Files cached in flat_files_base_dir for reuse across intervals.
-      # options_quote_update_bars_flat_files_1_minute:
+      # options_quote_snapshots_flat_files_1_minute:
       #   start_file_date: "2022-03-07"
       #   end_file_date: "2026-03-14"
       #   flat_file_download_workers: 5
@@ -393,7 +393,7 @@ plugins:
           limit: 50000
 
       # Earnings-filtered quote snapshot streams (sampled at fixed intervals)
-      stock_earnings_quote_update_bars_1_second:
+      stock_earnings_quote_snapshots_1_second:
         query_params:
           limit: 50000
         other_params:
@@ -404,7 +404,7 @@ plugins:
           earnings_start_date: "2026-02-18"
           earnings_end_date: "2026-02-18"
 
-      stock_earnings_quote_update_bars_30_second:
+      stock_earnings_quote_snapshots_30_second:
         query_params:
           limit: 50000
         other_params:
@@ -415,7 +415,7 @@ plugins:
           earnings_start_date: "2026-02-18"
           earnings_end_date: "2026-02-18"
 
-      stock_earnings_quote_update_bars_1_minute:
+      stock_earnings_quote_snapshots_1_minute:
         query_params:
           limit: 50000
         other_params:
@@ -426,7 +426,7 @@ plugins:
           earnings_start_date: "2026-02-18"
           earnings_end_date: "2026-02-18"
 
-      stock_earnings_quote_update_bars_5_minute:
+      stock_earnings_quote_snapshots_5_minute:
         query_params:
           limit: 50000
         other_params:
@@ -437,7 +437,7 @@ plugins:
           earnings_start_date: "2026-02-18"
           earnings_end_date: "2026-02-18"
 
-      stock_earnings_quote_update_bars_30_minute:
+      stock_earnings_quote_snapshots_30_minute:
         query_params:
           limit: 50000
         other_params:
@@ -448,7 +448,7 @@ plugins:
           earnings_start_date: "2026-02-18"
           earnings_end_date: "2026-02-18"
 
-      stock_earnings_quote_update_bars_1_hour:
+      stock_earnings_quote_snapshots_1_hour:
         query_params:
           limit: 50000
         other_params:
@@ -459,7 +459,7 @@ plugins:
           earnings_start_date: "2026-02-18"
           earnings_end_date: "2026-02-18"
 
-      options_earnings_quote_update_bars_1_second:
+      options_earnings_quote_snapshots_1_second:
         query_params:
           limit: 50000
         other_params:
@@ -470,7 +470,7 @@ plugins:
           earnings_start_date: "2026-02-18"
           earnings_end_date: "2026-02-18"
 
-      options_earnings_quote_update_bars_30_second:
+      options_earnings_quote_snapshots_30_second:
         query_params:
           limit: 50000
         other_params:
@@ -481,7 +481,7 @@ plugins:
           earnings_start_date: "2026-02-18"
           earnings_end_date: "2026-02-18"
 
-      options_earnings_quote_update_bars_1_minute:
+      options_earnings_quote_snapshots_1_minute:
         query_params:
           limit: 50000
         other_params:
@@ -492,7 +492,7 @@ plugins:
           earnings_start_date: "2026-02-18"
           earnings_end_date: "2026-02-18"
 
-      options_earnings_quote_update_bars_5_minute:
+      options_earnings_quote_snapshots_5_minute:
         query_params:
           limit: 50000
         other_params:
@@ -503,7 +503,7 @@ plugins:
           earnings_start_date: "2026-02-18"
           earnings_end_date: "2026-02-18"
 
-      options_earnings_quote_update_bars_30_minute:
+      options_earnings_quote_snapshots_30_minute:
         query_params:
           limit: 50000
         other_params:
@@ -514,7 +514,7 @@ plugins:
           earnings_start_date: "2026-02-18"
           earnings_end_date: "2026-02-18"
 
-      options_earnings_quote_update_bars_1_hour:
+      options_earnings_quote_snapshots_1_hour:
         query_params:
           limit: 50000
         other_params:
@@ -750,7 +750,7 @@ plugins:
           use_cached_tickers: true
 
       # Quote snapshot streams (sampled quote bars at fixed intervals)
-      stock_quote_update_bars_1_second:
+      stock_quote_snapshots_1_second:
         query_params:
           limit: 50000
         other_params:
@@ -759,7 +759,7 @@ plugins:
         select_tickers:
           - "DASH"
 
-      stock_quote_update_bars_30_second:
+      stock_quote_snapshots_30_second:
         query_params:
           limit: 50000
         other_params:
@@ -768,7 +768,7 @@ plugins:
         select_tickers:
           - "DASH"
 
-      stock_quote_update_bars_1_minute:
+      stock_quote_snapshots_1_minute:
         query_params:
           limit: 50000
         other_params:
@@ -777,7 +777,7 @@ plugins:
         select_tickers:
           - "DASH"
 
-      stock_quote_update_bars_5_minute:
+      stock_quote_snapshots_5_minute:
         query_params:
           limit: 50000
         other_params:
@@ -786,7 +786,7 @@ plugins:
         select_tickers:
           - "DASH"
 
-      stock_quote_update_bars_30_minute:
+      stock_quote_snapshots_30_minute:
         query_params:
           limit: 50000
         other_params:
@@ -795,7 +795,7 @@ plugins:
         select_tickers:
           - "DASH"
 
-      stock_quote_update_bars_1_hour:
+      stock_quote_snapshots_1_hour:
         query_params:
           limit: 50000
         other_params:
@@ -1235,7 +1235,7 @@ plugins:
           use_cached_tickers: true
 
       # Quote snapshot streams (sampled quote bars at fixed intervals)
-      options_quote_update_bars_1_second:
+      options_quote_snapshots_1_second:
         query_params:
           limit: 50000
         other_params:
@@ -1244,7 +1244,7 @@ plugins:
         select_tickers:
           - "AAPL"
 
-      options_quote_update_bars_30_second:
+      options_quote_snapshots_30_second:
         query_params:
           limit: 50000
         other_params:
@@ -1253,7 +1253,7 @@ plugins:
         select_tickers:
           - "AAPL"
 
-      options_quote_update_bars_1_minute:
+      options_quote_snapshots_1_minute:
         query_params:
           limit: 50000
         other_params:
@@ -1262,7 +1262,7 @@ plugins:
         select_tickers:
           - "AAPL"
 
-      options_quote_update_bars_5_minute:
+      options_quote_snapshots_5_minute:
         query_params:
           limit: 50000
         other_params:
@@ -1271,7 +1271,7 @@ plugins:
         select_tickers:
           - "DASH"
 
-      options_quote_update_bars_30_minute:
+      options_quote_snapshots_30_minute:
         query_params:
           limit: 50000
         other_params:
@@ -1280,7 +1280,7 @@ plugins:
         select_tickers:
           - "DASH"
 
-      options_quote_update_bars_1_hour:
+      options_quote_snapshots_1_hour:
         query_params:
           limit: 50000
         other_params:

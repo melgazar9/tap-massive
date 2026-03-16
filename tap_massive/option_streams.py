@@ -25,17 +25,17 @@ from tap_massive.base_streams import (
     _SnapshotNormalizationMixin,
 )
 from tap_massive.client import MassiveRestStream, OptionalTickerPartitionStream
-from tap_massive.quote_update_bar_streams import (
-    QuoteUpdateBar1HourStream,
-    QuoteUpdateBar1MinuteStream,
-    QuoteUpdateBar1SecondStream,
-    QuoteUpdateBar5MinuteStream,
-    QuoteUpdateBar30MinuteStream,
-    QuoteUpdateBar30SecondStream,
-    QuoteUpdateBarStream,
+from tap_massive.quote_snapshot_streams import (
+    QuoteSnapshot1HourStream,
+    QuoteSnapshot1MinuteStream,
+    QuoteSnapshot1SecondStream,
+    QuoteSnapshot5MinuteStream,
+    QuoteSnapshot30MinuteStream,
+    QuoteSnapshot30SecondStream,
+    QuoteSnapshotStream,
 )
 
-OPTIONS_QUOTE_UPDATE_BAR_SCHEMA = th.PropertiesList(
+OPTIONS_QUOTE_SNAPSHOT_SCHEMA = th.PropertiesList(
     th.Property("option_ticker", th.StringType),
     th.Property("underlying_ticker", th.StringType),
     th.Property("ask_exchange", th.IntegerType),
@@ -57,7 +57,7 @@ OPTIONS_QUOTE_UPDATE_BAR_SCHEMA = th.PropertiesList(
     th.Property("sip_timestamp", th.IntegerType),
     th.Property("tape", th.IntegerType),
     th.Property("trf_timestamp", th.IntegerType),
-    th.Property("window_start", th.IntegerType),
+    th.Property("asof_timestamp", th.IntegerType),
 ).to_dict()
 
 
@@ -903,16 +903,16 @@ class OptionsUnifiedSnapshotStream(_SnapshotNormalizationMixin, MassiveRestStrea
 # --- Quote Update Bars Streams ---
 
 
-class BaseOptionsQuoteUpdateBar(QuoteUpdateBarStream):
+class BaseOptionsQuoteSnapshot(QuoteSnapshotStream):
     """Options quote update bars partitioned by underlying stock ticker.
 
     Partitions by underlying (~7K tickers), loops over contracts per
     underlying inside get_records with state reset per contract.
     """
 
-    primary_keys = ["option_ticker", "window_start"]
+    primary_keys = ["option_ticker", "asof_timestamp"]
     ticker_selector_keys = ("option_tickers",)
-    schema = OPTIONS_QUOTE_UPDATE_BAR_SCHEMA
+    schema = OPTIONS_QUOTE_SNAPSHOT_SCHEMA
 
     @property
     def partitions(self) -> list[dict]:
@@ -951,37 +951,37 @@ class BaseOptionsQuoteUpdateBar(QuoteUpdateBarStream):
         return _rename_to_option_ticker(row, context)
 
 
-class OptionsQuoteUpdateBar1SecondStream(
-    BaseOptionsQuoteUpdateBar, QuoteUpdateBar1SecondStream
+class OptionsQuoteSnapshot1SecondStream(
+    BaseOptionsQuoteSnapshot, QuoteSnapshot1SecondStream
 ):
-    name = "options_quote_update_bars_1_second"
+    name = "options_quote_snapshots_1_second"
 
 
-class OptionsQuoteUpdateBar30SecondStream(
-    BaseOptionsQuoteUpdateBar, QuoteUpdateBar30SecondStream
+class OptionsQuoteSnapshot30SecondStream(
+    BaseOptionsQuoteSnapshot, QuoteSnapshot30SecondStream
 ):
-    name = "options_quote_update_bars_30_second"
+    name = "options_quote_snapshots_30_second"
 
 
-class OptionsQuoteUpdateBar1MinuteStream(
-    BaseOptionsQuoteUpdateBar, QuoteUpdateBar1MinuteStream
+class OptionsQuoteSnapshot1MinuteStream(
+    BaseOptionsQuoteSnapshot, QuoteSnapshot1MinuteStream
 ):
-    name = "options_quote_update_bars_1_minute"
+    name = "options_quote_snapshots_1_minute"
 
 
-class OptionsQuoteUpdateBar5MinuteStream(
-    BaseOptionsQuoteUpdateBar, QuoteUpdateBar5MinuteStream
+class OptionsQuoteSnapshot5MinuteStream(
+    BaseOptionsQuoteSnapshot, QuoteSnapshot5MinuteStream
 ):
-    name = "options_quote_update_bars_5_minute"
+    name = "options_quote_snapshots_5_minute"
 
 
-class OptionsQuoteUpdateBar30MinuteStream(
-    BaseOptionsQuoteUpdateBar, QuoteUpdateBar30MinuteStream
+class OptionsQuoteSnapshot30MinuteStream(
+    BaseOptionsQuoteSnapshot, QuoteSnapshot30MinuteStream
 ):
-    name = "options_quote_update_bars_30_minute"
+    name = "options_quote_snapshots_30_minute"
 
 
-class OptionsQuoteUpdateBar1HourStream(
-    BaseOptionsQuoteUpdateBar, QuoteUpdateBar1HourStream
+class OptionsQuoteSnapshot1HourStream(
+    BaseOptionsQuoteSnapshot, QuoteSnapshot1HourStream
 ):
-    name = "options_quote_update_bars_1_hour"
+    name = "options_quote_snapshots_1_hour"

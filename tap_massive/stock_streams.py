@@ -32,13 +32,13 @@ from tap_massive.base_streams import (
     _TodaysChangePercentMixin,
 )
 from tap_massive.client import MassiveRestStream, OptionalTickerPartitionStream
-from tap_massive.quote_update_bar_streams import (
-    QuoteUpdateBar1HourStream,
-    QuoteUpdateBar1MinuteStream,
-    QuoteUpdateBar1SecondStream,
-    QuoteUpdateBar5MinuteStream,
-    QuoteUpdateBar30MinuteStream,
-    QuoteUpdateBar30SecondStream,
+from tap_massive.quote_snapshot_streams import (
+    QuoteSnapshot1HourStream,
+    QuoteSnapshot1MinuteStream,
+    QuoteSnapshot1SecondStream,
+    QuoteSnapshot5MinuteStream,
+    QuoteSnapshot30MinuteStream,
+    QuoteSnapshot30SecondStream,
 )
 
 
@@ -807,37 +807,37 @@ class StockTickerEventsStream(StockTickerPartitionStream):
 # --- Quote Update Bars Streams (Sampled Quote Bars) ---
 
 
-class StockQuoteUpdateBar1SecondStream(
-    StockTickerPartitionStream, QuoteUpdateBar1SecondStream
+class StockQuoteSnapshot1SecondStream(
+    StockTickerPartitionStream, QuoteSnapshot1SecondStream
 ):
-    name = "stock_quote_update_bars_1_second"
+    name = "stock_quote_snapshots_1_second"
 
 
-class StockQuoteUpdateBar30SecondStream(
-    StockTickerPartitionStream, QuoteUpdateBar30SecondStream
+class StockQuoteSnapshot30SecondStream(
+    StockTickerPartitionStream, QuoteSnapshot30SecondStream
 ):
-    name = "stock_quote_update_bars_30_second"
+    name = "stock_quote_snapshots_30_second"
 
 
-class StockQuoteUpdateBar1MinuteStream(
-    StockTickerPartitionStream, QuoteUpdateBar1MinuteStream
+class StockQuoteSnapshot1MinuteStream(
+    StockTickerPartitionStream, QuoteSnapshot1MinuteStream
 ):
-    name = "stock_quote_update_bars_1_minute"
+    name = "stock_quote_snapshots_1_minute"
 
 
-class StockQuoteUpdateBar5MinuteStream(
-    StockTickerPartitionStream, QuoteUpdateBar5MinuteStream
+class StockQuoteSnapshot5MinuteStream(
+    StockTickerPartitionStream, QuoteSnapshot5MinuteStream
 ):
-    name = "stock_quote_update_bars_5_minute"
+    name = "stock_quote_snapshots_5_minute"
 
 
-class StockQuoteUpdateBar30MinuteStream(
-    StockTickerPartitionStream, QuoteUpdateBar30MinuteStream
+class StockQuoteSnapshot30MinuteStream(
+    StockTickerPartitionStream, QuoteSnapshot30MinuteStream
 ):
-    name = "stock_quote_update_bars_30_minute"
+    name = "stock_quote_snapshots_30_minute"
 
 
-class StockQuoteUpdateBar1HourStream(
-    StockTickerPartitionStream, QuoteUpdateBar1HourStream
+class StockQuoteSnapshot1HourStream(
+    StockTickerPartitionStream, QuoteSnapshot1HourStream
 ):
-    name = "stock_quote_update_bars_1_hour"
+    name = "stock_quote_snapshots_1_hour"

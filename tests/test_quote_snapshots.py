@@ -1,10 +1,10 @@
-"""Tests for QuoteUpdateBarStream interval-contained semantics and post_process."""
+"""Tests for QuoteSnapshotStream interval-contained semantics."""
 
 from __future__ import annotations
 
 from unittest.mock import MagicMock
 
-from tap_massive.quote_update_bar_streams import QuoteUpdateBarStream
+from tap_massive.quote_snapshot_streams import QuoteSnapshotStream
 
 _TICKER = "TEST"
 _INTERVAL_NS = 60_000_000_000  # 1 minute
@@ -21,10 +21,10 @@ def _make_stream(api_key: str = "test", interval_seconds: int = 60) -> MagicMock
     stream._streaming_fetch_threshold = 300
     # Bind real methods so yield from self.method() works on the mock
     stream._emit_if_in_interval = (
-        lambda *a, **kw: QuoteUpdateBarStream._emit_if_in_interval(stream, *a, **kw)
+        lambda *a, **kw: QuoteSnapshotStream._emit_if_in_interval(stream, *a, **kw)
     )
     stream._fetch_per_boundary = (
-        lambda *a, **kw: QuoteUpdateBarStream._fetch_per_boundary(stream, *a, **kw)
+        lambda *a, **kw: QuoteSnapshotStream._fetch_per_boundary(stream, *a, **kw)
     )
     return stream
 
@@ -48,7 +48,7 @@ class TestIntervalContainedSemantics:
         """A quote within (window - interval, window] should be yielded."""
         stream = _make_stream()
         result = list(
-            QuoteUpdateBarStream._emit_if_in_interval(
+            QuoteSnapshotStream._emit_if_in_interval(
                 stream,
                 {"sip_timestamp": 500, "bid_price": 1.0},
                 500,
@@ -59,13 +59,13 @@ class TestIntervalContainedSemantics:
             )
         )
         assert len(result) == 1
-        assert result[0]["window_start"] == 1000
+        assert result[0]["asof_timestamp"] == 1000
 
     def test_quote_outside_interval_is_skipped(self):
         """A quote older than (window - interval) should NOT be yielded."""
         stream = _make_stream()
         result = list(
-            QuoteUpdateBarStream._emit_if_in_interval(
+            QuoteSnapshotStream._emit_if_in_interval(
                 stream,
                 {"sip_timestamp": 100, "bid_price": 1.0},
                 100,
@@ -81,7 +81,7 @@ class TestIntervalContainedSemantics:
         """No last_quote should yield nothing."""
         stream = _make_stream()
         result = list(
-            QuoteUpdateBarStream._emit_if_in_interval(
+            QuoteSnapshotStream._emit_if_in_interval(
                 stream,
                 None,
                 None,
@@ -97,7 +97,7 @@ class TestIntervalContainedSemantics:
         """A quote at exactly T should be within (T-I, T]."""
         stream = _make_stream()
         result = list(
-            QuoteUpdateBarStream._emit_if_in_interval(
+            QuoteSnapshotStream._emit_if_in_interval(
                 stream,
                 {"sip_timestamp": 1000, "bid_price": 1.0},
                 1000,
@@ -124,7 +124,7 @@ class TestPerBoundaryFallback:
         stream.get_response.return_value = _make_response([quote])
 
         results = list(
-            QuoteUpdateBarStream._fetch_per_boundary(
+            QuoteSnapshotStream._fetch_per_boundary(
                 stream,
                 "http://x",
                 [window_ns],
@@ -149,7 +149,7 @@ class TestPerBoundaryFallback:
         stream.get_response.return_value = _make_response([])
 
         results = list(
-            QuoteUpdateBarStream._fetch_per_boundary(
+            QuoteSnapshotStream._fetch_per_boundary(
                 stream,
                 "http://x",
                 [1_000_000_000],
@@ -165,7 +165,7 @@ class TestPerBoundaryFallback:
         stream.get_response.return_value = None
 
         results = list(
-            QuoteUpdateBarStream._fetch_per_boundary(
+            QuoteSnapshotStream._fetch_per_boundary(
                 stream,
                 "http://x",
                 [1_000_000_000],
@@ -198,18 +198,18 @@ class TestStreamAndSample:
         stream.get_response.return_value = _make_response(quotes)
 
         results = list(
-            QuoteUpdateBarStream._stream_and_sample(
+            QuoteSnapshotStream._stream_and_sample(
                 stream, "http://x", windows, interval_ns, _TICKER, {"ticker": _TICKER}
             )
         )
 
         assert len(results) == 3
         assert results[0]["bid_price"] == 1.0
-        assert results[0]["window_start"] == 200
+        assert results[0]["asof_timestamp"] == 200
         assert results[1]["bid_price"] == 2.0
-        assert results[1]["window_start"] == 300
+        assert results[1]["asof_timestamp"] == 300
         assert results[2]["bid_price"] == 3.0
-        assert results[2]["window_start"] == 400
+        assert results[2]["asof_timestamp"] == 400
 
     def test_gap_windows_are_skipped(self):
         """Windows with no quote update in interval should produce no output."""
@@ -222,13 +222,13 @@ class TestStreamAndSample:
         stream.get_response.return_value = _make_response(quotes)
 
         results = list(
-            QuoteUpdateBarStream._stream_and_sample(
+            QuoteSnapshotStream._stream_and_sample(
                 stream, "http://x", windows, interval_ns, _TICKER, {"ticker": _TICKER}
             )
         )
 
         assert len(results) == 1
-        assert results[0]["window_start"] == 200
+        assert results[0]["asof_timestamp"] == 200
 
     def test_no_quotes_yields_nothing(self):
         """Empty API response means no bars."""
@@ -236,7 +236,7 @@ class TestStreamAndSample:
         stream.get_response.return_value = _make_response([])
 
         results = list(
-            QuoteUpdateBarStream._stream_and_sample(
+            QuoteSnapshotStream._stream_and_sample(
                 stream, "http://x", [100, 200], 100, _TICKER, {"ticker": _TICKER}
             )
         )
@@ -256,7 +256,7 @@ class TestStreamAndSample:
         stream.get_response.return_value = _make_response(quotes)
 
         results = list(
-            QuoteUpdateBarStream._stream_and_sample(
+            QuoteSnapshotStream._stream_and_sample(
                 stream, "http://x", windows, interval_ns, _TICKER, {"ticker": _TICKER}
             )
         )
