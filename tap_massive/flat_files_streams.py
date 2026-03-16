@@ -536,48 +536,69 @@ class FlatFilesStreamFutureQuotes(FlatFilesStream):
 # Quote update bars from flat files (DuckDB aggregation)
 # ---------------------------------------------------------------------------
 
-_QUOTE_SNAPSHOT_SQL = """
+_STOCK_QUOTE_SNAPSHOT_SQL = """
 SELECT
     ticker,
-    (((sip_timestamp - 1) // {interval_ns}) + 1) * {interval_ns} AS asof_timestamp,
-    last(sip_timestamp ORDER BY sip_timestamp, sequence_number) AS sip_timestamp,
-    last(participant_timestamp ORDER BY sip_timestamp, sequence_number) AS participant_timestamp,
-    last(trf_timestamp ORDER BY sip_timestamp, sequence_number) AS trf_timestamp,
-    last(sequence_number ORDER BY sip_timestamp, sequence_number) AS sequence_number,
-    last(ask_exchange ORDER BY sip_timestamp, sequence_number) AS ask_exchange,
-    last(ask_price ORDER BY sip_timestamp, sequence_number) AS ask_price,
-    last(ask_size ORDER BY sip_timestamp, sequence_number) AS ask_size,
-    last(bid_exchange ORDER BY sip_timestamp, sequence_number) AS bid_exchange,
-    last(bid_price ORDER BY sip_timestamp, sequence_number) AS bid_price,
-    last(bid_size ORDER BY sip_timestamp, sequence_number) AS bid_size,
-    last(conditions ORDER BY sip_timestamp, sequence_number) AS conditions,
-    last(indicators ORDER BY sip_timestamp, sequence_number) AS indicators,
-    last(tape ORDER BY sip_timestamp, sequence_number) AS tape
-FROM read_csv(
-    '{file_path}',
-    header=true,
-    columns={{
-        'ticker': 'VARCHAR',
-        'ask_exchange': 'INTEGER',
-        'ask_price': 'DOUBLE',
-        'ask_size': 'DOUBLE',
-        'bid_exchange': 'INTEGER',
-        'bid_price': 'DOUBLE',
-        'bid_size': 'DOUBLE',
-        'conditions': 'VARCHAR',
-        'indicators': 'VARCHAR',
-        'participant_timestamp': 'BIGINT',
-        'sequence_number': 'BIGINT',
-        'sip_timestamp': 'BIGINT',
-        'tape': 'INTEGER',
-        'trf_timestamp': 'BIGINT'
-    }}
+    asof_timestamp,
+    sip_timestamp,
+    participant_timestamp,
+    trf_timestamp,
+    sequence_number,
+    ask_exchange,
+    ask_price,
+    ask_size,
+    bid_exchange,
+    bid_price,
+    bid_size,
+    conditions,
+    indicators,
+    tape
+FROM (
+    SELECT
+        ticker,
+        (((sip_timestamp - 1) // {interval_ns}) + 1) * {interval_ns} AS asof_timestamp,
+        sip_timestamp,
+        participant_timestamp,
+        trf_timestamp,
+        sequence_number,
+        ask_exchange,
+        ask_price,
+        ask_size,
+        bid_exchange,
+        bid_price,
+        bid_size,
+        conditions,
+        indicators,
+        tape
+    FROM read_csv(
+        '{file_path}',
+        header=true,
+        columns={{
+            'ticker': 'VARCHAR',
+            'ask_exchange': 'INTEGER',
+            'ask_price': 'DOUBLE',
+            'ask_size': 'DOUBLE',
+            'bid_exchange': 'INTEGER',
+            'bid_price': 'DOUBLE',
+            'bid_size': 'DOUBLE',
+            'conditions': 'VARCHAR',
+            'indicators': 'VARCHAR',
+            'participant_timestamp': 'BIGINT',
+            'sequence_number': 'BIGINT',
+            'sip_timestamp': 'BIGINT',
+            'tape': 'INTEGER',
+            'trf_timestamp': 'BIGINT'
+        }}
+    )
 )
-GROUP BY ticker, asof_timestamp
+QUALIFY ROW_NUMBER() OVER (
+    PARTITION BY ticker, asof_timestamp
+    ORDER BY sip_timestamp DESC, sequence_number DESC
+) = 1
 ORDER BY ticker, asof_timestamp
 """
 
-_QUOTE_SNAPSHOT_FLAT_FILES_SCHEMA = th.PropertiesList(
+_STOCK_QUOTE_SNAPSHOT_FLAT_FILES_SCHEMA = th.PropertiesList(
     th.Property("file_date", th.StringType),
     th.Property("ticker", th.StringType),
     th.Property("asof_timestamp", th.IntegerType),
@@ -598,38 +619,54 @@ _QUOTE_SNAPSHOT_FLAT_FILES_SCHEMA = th.PropertiesList(
 
 # Options quote update bar SQL — options CSVs have no participant_timestamp,
 # trf_timestamp, conditions, indicators, or tape columns.
-_OPTIONS_QUOTE_SNAPSHOT_SQL = """
+_OPTIONS_STOCK_QUOTE_SNAPSHOT_SQL = """
 SELECT
     ticker,
-    (((sip_timestamp - 1) // {interval_ns}) + 1) * {interval_ns} AS asof_timestamp,
-    last(sip_timestamp ORDER BY sip_timestamp, sequence_number) AS sip_timestamp,
-    last(sequence_number ORDER BY sip_timestamp, sequence_number) AS sequence_number,
-    last(ask_exchange ORDER BY sip_timestamp, sequence_number) AS ask_exchange,
-    last(ask_price ORDER BY sip_timestamp, sequence_number) AS ask_price,
-    last(ask_size ORDER BY sip_timestamp, sequence_number) AS ask_size,
-    last(bid_exchange ORDER BY sip_timestamp, sequence_number) AS bid_exchange,
-    last(bid_price ORDER BY sip_timestamp, sequence_number) AS bid_price,
-    last(bid_size ORDER BY sip_timestamp, sequence_number) AS bid_size
-FROM read_csv(
-    '{file_path}',
-    header=true,
-    columns={{
-        'ticker': 'VARCHAR',
-        'ask_exchange': 'INTEGER',
-        'ask_price': 'DOUBLE',
-        'ask_size': 'DOUBLE',
-        'bid_exchange': 'INTEGER',
-        'bid_price': 'DOUBLE',
-        'bid_size': 'DOUBLE',
-        'sequence_number': 'BIGINT',
-        'sip_timestamp': 'BIGINT'
-    }}
+    asof_timestamp,
+    sip_timestamp,
+    sequence_number,
+    ask_exchange,
+    ask_price,
+    ask_size,
+    bid_exchange,
+    bid_price,
+    bid_size
+FROM (
+    SELECT
+        ticker,
+        (((sip_timestamp - 1) // {interval_ns}) + 1) * {interval_ns} AS asof_timestamp,
+        sip_timestamp,
+        sequence_number,
+        ask_exchange,
+        ask_price,
+        ask_size,
+        bid_exchange,
+        bid_price,
+        bid_size
+    FROM read_csv(
+        '{file_path}',
+        header=true,
+        columns={{
+            'ticker': 'VARCHAR',
+            'ask_exchange': 'INTEGER',
+            'ask_price': 'DOUBLE',
+            'ask_size': 'DOUBLE',
+            'bid_exchange': 'INTEGER',
+            'bid_price': 'DOUBLE',
+            'bid_size': 'DOUBLE',
+            'sequence_number': 'BIGINT',
+            'sip_timestamp': 'BIGINT'
+        }}
+    )
 )
-GROUP BY ticker, asof_timestamp
+QUALIFY ROW_NUMBER() OVER (
+    PARTITION BY ticker, asof_timestamp
+    ORDER BY sip_timestamp DESC, sequence_number DESC
+) = 1
 ORDER BY ticker, asof_timestamp
 """
 
-_OPTIONS_QUOTE_SNAPSHOT_FLAT_FILES_SCHEMA = th.PropertiesList(
+_OPTIONS_STOCK_QUOTE_SNAPSHOT_FLAT_FILES_SCHEMA = th.PropertiesList(
     th.Property("file_date", th.StringType),
     th.Property("ticker", th.StringType),
     th.Property("asof_timestamp", th.IntegerType),
@@ -655,11 +692,11 @@ class QuoteSnapshotFlatFilesStream(FlatFilesStream):
     """
 
     _interval_ns: int = 60_000_000_000  # 1 minute default
-    _RAW_SQL_TEMPLATE: str = _QUOTE_SNAPSHOT_SQL
+    _RAW_SQL_TEMPLATE: str = _STOCK_QUOTE_SNAPSHOT_SQL
     _S3_ENDPOINT = "https://files.massive.com"
     _S3_BUCKET_TEMPLATE = "s3://flatfiles/{subdir}/{year}/{month}/{date}.csv.gz"
 
-    schema = _QUOTE_SNAPSHOT_FLAT_FILES_SCHEMA
+    schema = _STOCK_QUOTE_SNAPSHOT_FLAT_FILES_SCHEMA
     primary_keys = ["file_date", "ticker", "asof_timestamp"]
 
     @property
@@ -947,8 +984,8 @@ class QuoteSnapshotFlatFilesStream(FlatFilesStream):
 class _OptionsQuoteSnapshotFlatFilesBase(QuoteSnapshotFlatFilesStream):
     # Massive docs use quotes_v1; override SUBDIR if your account uses "quotes"
     SUBDIR = "us_options_opra/quotes_v1"
-    _RAW_SQL_TEMPLATE = _OPTIONS_QUOTE_SNAPSHOT_SQL
-    schema = _OPTIONS_QUOTE_SNAPSHOT_FLAT_FILES_SCHEMA
+    _RAW_SQL_TEMPLATE = _OPTIONS_STOCK_QUOTE_SNAPSHOT_SQL
+    schema = _OPTIONS_STOCK_QUOTE_SNAPSHOT_FLAT_FILES_SCHEMA
 
 
 class OptionsQuoteSnapshotFlatFiles1SecondStream(_OptionsQuoteSnapshotFlatFilesBase):
