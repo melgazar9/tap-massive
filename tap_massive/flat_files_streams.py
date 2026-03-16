@@ -669,7 +669,7 @@ class QuoteUpdateBarFlatFilesStream(FlatFilesStream):
                     self._S3_ENDPOINT,
                 ],
                 env=env,
-                stderr=subprocess.PIPE,
+                capture_output=True,
             )
             if result.returncode != 0:
                 tmp_path.unlink(missing_ok=True)
