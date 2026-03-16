@@ -22,6 +22,8 @@ import shutil
 import subprocess
 import tempfile
 import typing as t
+from collections import deque
+from concurrent.futures import Future, ThreadPoolExecutor
 from pathlib import Path
 
 import duckdb
@@ -795,10 +797,6 @@ class QuoteUpdateBarFlatFilesStream(FlatFilesStream):
         Uses flat_files_base_dir as the download directory if configured,
         otherwise falls back to a temporary directory (cleaned up after).
         """
-        import tempfile  # noqa: PLC0415
-        from collections import deque  # noqa: PLC0415
-        from concurrent.futures import Future, ThreadPoolExecutor  # noqa: PLC0415
-
         # Use configured flat files dir if available, otherwise temp dir
         cache_dir = self._flat_files_dir
         use_temp = cache_dir is None

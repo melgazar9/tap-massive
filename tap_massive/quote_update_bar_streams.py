@@ -135,7 +135,7 @@ class QuoteUpdateBarStream(_NanosecondIncrementalMixin, BaseTickerPartitionStrea
             "timestamp.lte": windows[-1],
             "sort": "timestamp",
             "order": "asc",
-            "limit": 50000,
+            "limit": self.query_params.get("limit", 50000),
             "apiKey": self.config["api_key"],
         }
 
