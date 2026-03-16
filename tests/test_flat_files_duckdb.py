@@ -4,16 +4,16 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from tap_massive.flat_files_streams import _QUOTE_SNAPSHOT_SQL
+from tap_massive.flat_files_streams import _STOCK_QUOTE_SNAPSHOT_BATCH_SQL, _STOCK_QUOTE_SNAPSHOT_SQL
 
-from .duckdb_helpers import run_duckdb_bar_query
+from .duckdb_helpers import run_duckdb_bar_query, run_duckdb_batch_bar_query
 
 FIXTURE = Path(__file__).parent / "fixtures" / "test_quotes.csv.gz"
 INTERVAL_NS = 60_000_000_000  # 1 minute
 
 
 def _run_query(filepath: str, interval_ns: int = INTERVAL_NS) -> list[dict]:
-    return run_duckdb_bar_query(_QUOTE_SNAPSHOT_SQL, filepath, interval_ns)
+    return run_duckdb_bar_query(_STOCK_QUOTE_SNAPSHOT_SQL, filepath, interval_ns)
 
 
 class TestFlatFileBucketMath:
@@ -80,3 +80,52 @@ class TestFlatFileBucketMath:
         """4 raw quotes should produce 3 bars (2 call windows + 1 put window)."""
         rows = _run_query(str(FIXTURE))
         assert len(rows) == 3
+
+
+class TestBatchQueryProducesSameResults:
+    """Verify batch SQL template produces identical results to single-file template."""
+
+    def test_batch_with_single_file_matches_single_query(self):
+        """Batch query with one file should produce same rows as single-file query."""
+        single_rows = _run_query(str(FIXTURE))
+        batch_rows = run_duckdb_batch_bar_query(
+            _STOCK_QUOTE_SNAPSHOT_BATCH_SQL, [str(FIXTURE)], INTERVAL_NS
+        )
+        # Batch adds file_date column; strip it for comparison
+        for row in batch_rows:
+            row.pop("file_date")
+        assert batch_rows == single_rows
+
+    def test_batch_with_same_file_twice_deduplicates(self):
+        """Same file passed twice has identical filename/file_date, so QUALIFY deduplicates."""
+        batch_rows = run_duckdb_batch_bar_query(
+            _STOCK_QUOTE_SNAPSHOT_BATCH_SQL, [str(FIXTURE), str(FIXTURE)], INTERVAL_NS
+        )
+        assert len(batch_rows) == 3
+
+    def test_batch_file_date_extracted_from_filename(self):
+        """file_date column should be extracted from the filename via regex."""
+        batch_rows = run_duckdb_batch_bar_query(
+            _STOCK_QUOTE_SNAPSHOT_BATCH_SQL, [str(FIXTURE)], INTERVAL_NS
+        )
+        assert all("file_date" in row for row in batch_rows)
+
+    def test_batch_results_ordered_by_file_date_first(self):
+        """Results must be ordered by file_date, then ticker, then asof_timestamp."""
+        batch_rows = run_duckdb_batch_bar_query(
+            _STOCK_QUOTE_SNAPSHOT_BATCH_SQL, [str(FIXTURE)], INTERVAL_NS
+        )
+        sort_keys = [(r["file_date"], r["ticker"], r["asof_timestamp"]) for r in batch_rows]
+        assert sort_keys == sorted(sort_keys)
+
+    def test_batch_dedup_within_file(self):
+        """Last-quote-wins dedup should still work within each file in a batch."""
+        batch_rows = run_duckdb_batch_bar_query(
+            _STOCK_QUOTE_SNAPSHOT_BATCH_SQL, [str(FIXTURE)], INTERVAL_NS
+        )
+        call_120 = [
+            r for r in batch_rows
+            if r["ticker"] == "O:TEST260320C00100000" and r["asof_timestamp"] == 120_000_000_000
+        ]
+        assert len(call_120) == 1
+        assert call_120[0]["sip_timestamp"] == 100_000_000_000

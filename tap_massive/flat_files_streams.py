@@ -24,6 +24,8 @@ import tempfile
 import typing as t
 from collections import deque
 from concurrent.futures import Future, ThreadPoolExecutor
+from datetime import date as date_cls
+from datetime import timedelta
 from pathlib import Path
 
 import duckdb
@@ -619,7 +621,7 @@ _STOCK_QUOTE_SNAPSHOT_FLAT_FILES_SCHEMA = th.PropertiesList(
 
 # Options quote update bar SQL — options CSVs have no participant_timestamp,
 # trf_timestamp, conditions, indicators, or tape columns.
-_OPTIONS_STOCK_QUOTE_SNAPSHOT_SQL = """
+_OPTIONS_QUOTE_SNAPSHOT_SQL = """
 SELECT
     ticker,
     asof_timestamp,
@@ -666,7 +668,122 @@ QUALIFY ROW_NUMBER() OVER (
 ORDER BY ticker, asof_timestamp
 """
 
-_OPTIONS_STOCK_QUOTE_SNAPSHOT_FLAT_FILES_SCHEMA = th.PropertiesList(
+_STOCK_QUOTE_SNAPSHOT_BATCH_SQL = """
+SELECT
+    file_date,
+    ticker,
+    asof_timestamp,
+    sip_timestamp,
+    participant_timestamp,
+    trf_timestamp,
+    sequence_number,
+    ask_exchange,
+    ask_price,
+    ask_size,
+    bid_exchange,
+    bid_price,
+    bid_size,
+    conditions,
+    indicators,
+    tape
+FROM (
+    SELECT
+        regexp_extract(filename, '(\\d{{4}}-\\d{{2}}-\\d{{2}})', 1) AS file_date,
+        ticker,
+        (((sip_timestamp - 1) // {interval_ns}) + 1) * {interval_ns} AS asof_timestamp,
+        sip_timestamp,
+        participant_timestamp,
+        trf_timestamp,
+        sequence_number,
+        ask_exchange,
+        ask_price,
+        ask_size,
+        bid_exchange,
+        bid_price,
+        bid_size,
+        conditions,
+        indicators,
+        tape
+    FROM read_csv(
+        {file_list},
+        filename=true,
+        header=true,
+        columns={{
+            'ticker': 'VARCHAR',
+            'ask_exchange': 'INTEGER',
+            'ask_price': 'DOUBLE',
+            'ask_size': 'DOUBLE',
+            'bid_exchange': 'INTEGER',
+            'bid_price': 'DOUBLE',
+            'bid_size': 'DOUBLE',
+            'conditions': 'VARCHAR',
+            'indicators': 'VARCHAR',
+            'participant_timestamp': 'BIGINT',
+            'sequence_number': 'BIGINT',
+            'sip_timestamp': 'BIGINT',
+            'tape': 'INTEGER',
+            'trf_timestamp': 'BIGINT'
+        }}
+    )
+)
+QUALIFY ROW_NUMBER() OVER (
+    PARTITION BY file_date, ticker, asof_timestamp
+    ORDER BY sip_timestamp DESC, sequence_number DESC
+) = 1
+ORDER BY file_date, ticker, asof_timestamp
+"""
+
+_OPTIONS_QUOTE_SNAPSHOT_BATCH_SQL = """
+SELECT
+    file_date,
+    ticker,
+    asof_timestamp,
+    sip_timestamp,
+    sequence_number,
+    ask_exchange,
+    ask_price,
+    ask_size,
+    bid_exchange,
+    bid_price,
+    bid_size
+FROM (
+    SELECT
+        regexp_extract(filename, '(\\d{{4}}-\\d{{2}}-\\d{{2}})', 1) AS file_date,
+        ticker,
+        (((sip_timestamp - 1) // {interval_ns}) + 1) * {interval_ns} AS asof_timestamp,
+        sip_timestamp,
+        sequence_number,
+        ask_exchange,
+        ask_price,
+        ask_size,
+        bid_exchange,
+        bid_price,
+        bid_size
+    FROM read_csv(
+        {file_list},
+        filename=true,
+        header=true,
+        columns={{
+            'ticker': 'VARCHAR',
+            'ask_exchange': 'INTEGER',
+            'ask_price': 'DOUBLE',
+            'ask_size': 'DOUBLE',
+            'bid_exchange': 'INTEGER',
+            'bid_price': 'DOUBLE',
+            'bid_size': 'DOUBLE',
+            'sequence_number': 'BIGINT',
+            'sip_timestamp': 'BIGINT'
+        }}
+    )
+)
+QUALIFY ROW_NUMBER() OVER (
+    PARTITION BY file_date, ticker, asof_timestamp
+    ORDER BY sip_timestamp DESC, sequence_number DESC
+) = 1
+ORDER BY file_date, ticker, asof_timestamp
+"""
+
+_OPTIONS_QUOTE_SNAPSHOT_FLAT_FILES_SCHEMA = th.PropertiesList(
     th.Property("file_date", th.StringType),
     th.Property("ticker", th.StringType),
     th.Property("asof_timestamp", th.IntegerType),
@@ -693,6 +810,7 @@ class QuoteSnapshotFlatFilesStream(FlatFilesStream):
 
     _interval_ns: int = 60_000_000_000  # 1 minute default
     _RAW_SQL_TEMPLATE: str = _STOCK_QUOTE_SNAPSHOT_SQL
+    _RAW_BATCH_SQL_TEMPLATE: str = _STOCK_QUOTE_SNAPSHOT_BATCH_SQL
     _S3_ENDPOINT = "https://files.massive.com"
     _S3_BUCKET_TEMPLATE = "s3://flatfiles/{subdir}/{year}/{month}/{date}.csv.gz"
 
@@ -800,9 +918,6 @@ class QuoteSnapshotFlatFilesStream(FlatFilesStream):
         Unlike _iter_files_in_bounds which requires local files,
         this generates dates from start_file_date/end_file_date config.
         """
-        from datetime import date as date_cls  # noqa: PLC0415
-        from datetime import timedelta  # noqa: PLC0415
-
         stream_cfg = self.config.get(self.name)
         cfg_start = (
             stream_cfg.get("start_file_date") if isinstance(stream_cfg, dict) else None
@@ -843,12 +958,9 @@ class QuoteSnapshotFlatFilesStream(FlatFilesStream):
             else 0
         )
 
-        sql_template = self._RAW_SQL_TEMPLATE.format(
-            interval_ns=self._interval_ns,
-            file_path="{file_path}",
-        )
         conn = duckdb.connect()
-        duckdb_params = self.config.get("duckdb_params") or {}
+        duckdb_params = dict(self.config.get("duckdb_params") or {})
+        duckdb_batch_size = int(duckdb_params.pop("duckdb_batch_size", 1))
         for param, value in duckdb_params.items():
             if isinstance(value, bool):
                 conn.execute(f"SET {param}={str(value).lower()}")
@@ -857,6 +969,17 @@ class QuoteSnapshotFlatFilesStream(FlatFilesStream):
             else:
                 value = os.path.expanduser(str(value))
                 conn.execute(f"SET {param}='{value}'")
+
+        if duckdb_batch_size > 1:
+            sql_template = self._RAW_BATCH_SQL_TEMPLATE.format(
+                interval_ns=self._interval_ns,
+                file_list="{file_list}",
+            )
+        else:
+            sql_template = self._RAW_SQL_TEMPLATE.format(
+                interval_ns=self._interval_ns,
+                file_path="{file_path}",
+            )
 
         try:
             if workers > 0:
@@ -870,6 +993,7 @@ class QuoteSnapshotFlatFilesStream(FlatFilesStream):
                     sql_template,
                     files_to_process,
                     workers,
+                    duckdb_batch_size,
                 )
             else:
                 # Local mode: requires flat_files_base_dir with pre-downloaded files
@@ -877,6 +1001,7 @@ class QuoteSnapshotFlatFilesStream(FlatFilesStream):
                     conn,
                     sql_template,
                     self._iter_files_in_bounds(context),
+                    duckdb_batch_size,
                 )
         finally:
             conn.close()
@@ -886,13 +1011,25 @@ class QuoteSnapshotFlatFilesStream(FlatFilesStream):
         conn,  # noqa: ANN001
         sql_template: str,
         files: t.Iterable[tuple[str, Path]],
+        duckdb_batch_size: int = 1,
     ) -> t.Iterable[dict[str, t.Any]]:
-        """Process local files sequentially with DuckDB."""
+        """Process local files with DuckDB, optionally batching multiple files."""
+        if duckdb_batch_size <= 1:
+            for file_date, filepath in files:
+                self.logger.info("Processing %s via DuckDB (date=%s)", filepath, file_date)
+                yield from self._run_duckdb_query(
+                    conn, sql_template, str(filepath), file_date
+                )
+            return
+
+        batch: list[tuple[str, Path]] = []
         for file_date, filepath in files:
-            self.logger.info("Processing %s via DuckDB (date=%s)", filepath, file_date)
-            yield from self._run_duckdb_query(
-                conn, sql_template, str(filepath), file_date
-            )
+            batch.append((file_date, filepath))
+            if len(batch) >= duckdb_batch_size:
+                yield from self._process_file_batch(conn, sql_template, batch)
+                batch.clear()
+        if batch:
+            yield from self._process_file_batch(conn, sql_template, batch)
 
     def _process_with_prefetch(
         self,
@@ -900,8 +1037,12 @@ class QuoteSnapshotFlatFilesStream(FlatFilesStream):
         sql_template: str,
         files: list[tuple[str, Path]],
         workers: int,
+        duckdb_batch_size: int = 1,
     ) -> t.Iterable[dict[str, t.Any]]:
-        """Download files in parallel, process each sequentially after download.
+        """Download files in parallel, process with DuckDB.
+
+        When duckdb_batch_size > 1, accumulates downloaded files into batches
+        and processes each batch in a single DuckDB query for better throughput.
 
         Uses flat_files_base_dir as the download directory if configured,
         otherwise falls back to a temporary directory (cleaned up after).
@@ -933,35 +1074,66 @@ class QuoteSnapshotFlatFilesStream(FlatFilesStream):
             return True
 
         try:
-            # Fill prefetch buffer
-            for _ in range(workers):
+            # Fill prefetch buffer — enough to fill a batch
+            prefetch_count = max(workers, duckdb_batch_size) if duckdb_batch_size > 1 else workers
+            for _ in range(prefetch_count):
                 if not _submit_next():
                     break
 
-            while pending:
-                file_date, fut = pending.popleft()
-                local_path = fut.result()
-                if local_path is None:
-                    # File doesn't exist on S3 (weekend/holiday) — skip
+            if duckdb_batch_size <= 1:
+                # Single-file mode: existing behavior
+                while pending:
+                    file_date, fut = pending.popleft()
+                    local_path = fut.result()
+                    if local_path is None:
+                        _submit_next()
+                        continue
+                    self.logger.info(
+                        "Processing %s via DuckDB (date=%s)", local_path, file_date
+                    )
+                    yield from self._run_duckdb_query(
+                        conn, sql_template, str(local_path), file_date,
+                    )
+                    if use_temp:
+                        local_path.unlink(missing_ok=True)
                     _submit_next()
-                    continue
-                self.logger.info(
-                    "Processing %s via DuckDB (date=%s)", local_path, file_date
-                )
-                yield from self._run_duckdb_query(
-                    conn,
-                    sql_template,
-                    str(local_path),
-                    file_date,
-                )
-                # Delete temp files after processing to free disk
-                if use_temp:
-                    local_path.unlink(missing_ok=True)
-                _submit_next()
+            else:
+                # Batch mode: accumulate files, process in batches
+                ready_batch: list[tuple[str, Path]] = []
+
+                while pending:
+                    file_date, fut = pending.popleft()
+                    local_path = fut.result()
+                    if local_path is None:
+                        _submit_next()
+                        continue
+
+                    ready_batch.append((file_date, local_path))
+                    _submit_next()
+
+                    if len(ready_batch) >= duckdb_batch_size:
+                        yield from self._process_file_batch(
+                            conn, sql_template, ready_batch, use_temp,
+                        )
+                        ready_batch.clear()
+
+                # Flush remaining
+                if ready_batch:
+                    yield from self._process_file_batch(
+                        conn, sql_template, ready_batch, use_temp,
+                    )
         finally:
             pool.shutdown(wait=True)
             if tmp_ctx:
                 tmp_ctx.cleanup()
+
+    @staticmethod
+    def _iter_duckdb_result(result) -> t.Iterable[dict[str, t.Any]]:  # noqa: ANN001
+        """Yield dicts from a DuckDB query result, fetching in 10k-row batches."""
+        columns = [desc[0] for desc in result.description]
+        while batch := result.fetchmany(10000):
+            for row_tuple in batch:
+                yield dict(zip(columns, row_tuple))
 
     def _run_duckdb_query(
         self,
@@ -970,22 +1142,54 @@ class QuoteSnapshotFlatFilesStream(FlatFilesStream):
         source: str,
         file_date: str,
     ) -> t.Iterable[dict[str, t.Any]]:
-        """Execute the aggregation query and yield rows."""
+        """Execute the aggregation query for a single file and yield rows."""
         query = sql_template.replace("{file_path}", source)
         result = conn.execute(query)
-        columns = [desc[0] for desc in result.description]
-        while batch := result.fetchmany(10000):
-            for row_tuple in batch:
-                row = dict(zip(columns, row_tuple))
-                row["file_date"] = file_date
-                yield row
+        for row in self._iter_duckdb_result(result):
+            row["file_date"] = file_date
+            yield row
+
+    def _run_duckdb_batch_query(
+        self,
+        conn,  # noqa: ANN001
+        sql_template: str,
+        file_paths: list[str],
+    ) -> t.Iterable[dict[str, t.Any]]:
+        """Execute batch aggregation query across multiple files and yield rows.
+
+        Unlike _run_duckdb_query, file_date is extracted from filenames by
+        DuckDB via regexp_extract(filename, ...) and returned as a column.
+        """
+        file_list_literal = "[" + ", ".join(f"'{p}'" for p in file_paths) + "]"
+        query = sql_template.replace("{file_list}", file_list_literal)
+        yield from self._iter_duckdb_result(conn.execute(query))
+
+    def _process_file_batch(
+        self,
+        conn,  # noqa: ANN001
+        sql_template: str,
+        ready_batch: list[tuple[str, Path]],
+        use_temp: bool = False,
+    ) -> t.Iterable[dict[str, t.Any]]:
+        """Log, execute a batch DuckDB query, and clean up temp files."""
+        self.logger.info(
+            "Processing batch of %d files via DuckDB (%s to %s)",
+            len(ready_batch), ready_batch[0][0], ready_batch[-1][0],
+        )
+        yield from self._run_duckdb_batch_query(
+            conn, sql_template, [str(p) for _, p in ready_batch]
+        )
+        if use_temp:
+            for _, p in ready_batch:
+                p.unlink(missing_ok=True)
 
 
 class _OptionsQuoteSnapshotFlatFilesBase(QuoteSnapshotFlatFilesStream):
     # Massive docs use quotes_v1; override SUBDIR if your account uses "quotes"
     SUBDIR = "us_options_opra/quotes_v1"
-    _RAW_SQL_TEMPLATE = _OPTIONS_STOCK_QUOTE_SNAPSHOT_SQL
-    schema = _OPTIONS_STOCK_QUOTE_SNAPSHOT_FLAT_FILES_SCHEMA
+    _RAW_SQL_TEMPLATE = _OPTIONS_QUOTE_SNAPSHOT_SQL
+    _RAW_BATCH_SQL_TEMPLATE = _OPTIONS_QUOTE_SNAPSHOT_BATCH_SQL
+    schema = _OPTIONS_QUOTE_SNAPSHOT_FLAT_FILES_SCHEMA
 
 
 class OptionsQuoteSnapshotFlatFiles1SecondStream(_OptionsQuoteSnapshotFlatFilesBase):

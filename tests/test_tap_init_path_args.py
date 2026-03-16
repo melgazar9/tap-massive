@@ -2,6 +2,7 @@
 
 import json
 import warnings
+from unittest.mock import patch
 
 from tap_massive.tap import TapMassive
 
@@ -15,11 +16,12 @@ def test_catalog_and_state_path_args_do_not_emit_sdk_deprecation(tmp_path):
 
     with warnings.catch_warnings(record=True) as caught:
         warnings.simplefilter("always")
-        TapMassive(
-            config={"api_key": "test_key"},
-            catalog=str(catalog_path),
-            state=str(state_path),
-        )
+        with patch.object(TapMassive, "discover_streams", return_value=[]):
+            TapMassive(
+                config={"api_key": "test_key"},
+                catalog=str(catalog_path),
+                state=str(state_path),
+            )
 
     warning_messages = [str(warning.message) for warning in caught]
     assert not any(

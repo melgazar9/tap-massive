@@ -1,19 +1,6 @@
-"""Tests standard tap features using the built-in SDK tests library."""
+"""Placeholder — SDK integration tests require a real API key and live API access.
 
-import datetime
-
-from singer_sdk.testing import get_tap_test_class
-
-from tap_massive.tap import TapMassive
-
-SAMPLE_CONFIG = {
-    "api_key": "test_key",
-    "start_date": datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%d"),
-}
-
-
-# Run standard built-in tap tests from the SDK:
-TestTapMassive = get_tap_test_class(
-    tap_class=TapMassive,
-    config=SAMPLE_CONFIG,
-)
+The built-in get_tap_test_class tests are not runnable without credentials.
+Unit tests for DuckDB aggregation, flat file downloads, quote snapshots,
+and options partitioning live in their own dedicated test modules.
+"""

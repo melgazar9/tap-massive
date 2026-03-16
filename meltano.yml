@@ -40,7 +40,7 @@ plugins:
     - name: duckdb_params
       kind: object
       label: DuckDB Parameters
-      description: DuckDB connection parameters (threads, memory_limit, temp_directory, preserve_insertion_order)
+      description: DuckDB connection parameters (threads, memory_limit, temp_directory, preserve_insertion_order, duckdb_batch_size)
 
     select:
       # --- Stocks ---

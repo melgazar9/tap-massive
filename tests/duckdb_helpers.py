@@ -2,25 +2,11 @@
 
 from __future__ import annotations
 
+import duckdb
 
-def run_duckdb_bar_query(
-    sql_template_raw: str,
-    filepath: str,
-    interval_ns: int,
-) -> list[dict]:
-    """Format and execute a quote update bar SQL template against a CSV fixture.
 
-    Mirrors the two-step substitution used in production:
-    1. .format() substitutes interval_ns (and preserves {file_path} placeholder)
-    2. .replace() injects the actual file path
-    """
-    import duckdb
-
-    sql_template = sql_template_raw.format(
-        interval_ns=interval_ns,
-        file_path="{file_path}",
-    )
-    sql = sql_template.replace("{file_path}", filepath)
+def _execute_duckdb_sql(sql: str) -> list[dict]:
+    """Execute SQL against an in-memory DuckDB and return rows as dicts."""
     conn = duckdb.connect()
     try:
         result = conn.execute(sql)
@@ -28,3 +14,30 @@ def run_duckdb_bar_query(
         return [dict(zip(columns, row)) for row in result.fetchall()]
     finally:
         conn.close()
+
+
+def run_duckdb_bar_query(
+    sql_template_raw: str,
+    filepath: str,
+    interval_ns: int,
+) -> list[dict]:
+    """Format and execute a single-file quote bar SQL template against a CSV fixture."""
+    sql = sql_template_raw.format(
+        interval_ns=interval_ns,
+        file_path="{file_path}",
+    ).replace("{file_path}", filepath)
+    return _execute_duckdb_sql(sql)
+
+
+def run_duckdb_batch_bar_query(
+    sql_template_raw: str,
+    filepaths: list[str],
+    interval_ns: int,
+) -> list[dict]:
+    """Format and execute a batch quote bar SQL template against multiple CSV fixtures."""
+    file_list_literal = "[" + ", ".join(f"'{p}'" for p in filepaths) + "]"
+    sql = sql_template_raw.format(
+        interval_ns=interval_ns,
+        file_list="{file_list}",
+    ).replace("{file_list}", file_list_literal)
+    return _execute_duckdb_sql(sql)

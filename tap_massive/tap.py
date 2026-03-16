@@ -311,6 +311,7 @@ class TapMassive(Tap):
                 th.Property("memory_limit", th.StringType),
                 th.Property("temp_directory", th.StringType),
                 th.Property("preserve_insertion_order", th.BooleanType),
+                th.Property("duckdb_batch_size", th.IntegerType),
             ),
         ),
     ).to_dict()
