@@ -5,31 +5,14 @@ from __future__ import annotations
 import logging
 import typing as t
 from datetime import datetime
-from decimal import Decimal, InvalidOperation
+from decimal import Decimal
 
 import requests
 from singer_sdk import typing as th
 from singer_sdk.helpers.types import Context, Record
 
 from tap_massive.client import MassiveRestStream
-
-
-def safe_decimal(x):
-    try:
-        if x is None or x == "":
-            return None
-        return Decimal(str(x))
-    except (ValueError, TypeError, InvalidOperation):
-        return None
-
-
-def safe_int(x):
-    try:
-        if x is None or x == "":
-            return None
-        return int(Decimal(str(x)))
-    except (ValueError, TypeError, InvalidOperation):
-        return None
+from tap_massive.utils import safe_decimal, safe_int
 
 
 class BaseTickerStream(MassiveRestStream):

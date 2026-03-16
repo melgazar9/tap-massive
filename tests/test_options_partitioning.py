@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import threading
+from collections import OrderedDict
 from unittest.mock import MagicMock, PropertyMock
 
 import pytest
@@ -34,9 +36,14 @@ def mock_tap(tap_config):
     tap.get_option_tickers_stream = MagicMock(
         return_value=tap._mock_option_tickers_stream
     )
+    tap._option_contracts_cache = OrderedDict()
+    tap._option_contracts_lock = threading.Lock()
+    tap._option_contracts_cache_max = 20
+    tap._disk_cache = None
     tap.get_option_contracts_for_underlying = (
         TapMassive.get_option_contracts_for_underlying.__get__(tap)
     )
+    tap._fetch_option_contracts = TapMassive._fetch_option_contracts.__get__(tap)
     tap._paginate_option_contracts = TapMassive._paginate_option_contracts.__get__(tap)
     return tap
 
@@ -272,53 +279,63 @@ class TestOptionsContractsTickerSelection:
 
 
 class TestOptionsContractsBothMode:
-    def test_loops_expired_true_false_per_selected_ticker(self, both_tap_config):
+    def test_yields_contracts_per_underlying_via_cache(self, both_tap_config):
+        """OptionsContractsStream delegates to get_option_contracts_for_underlying."""
         from tap_massive.option_streams import OptionsContractsStream
 
         cfg = dict(both_tap_config)
         cfg["option_tickers"] = dict(cfg["option_tickers"])
         cfg["option_tickers"]["select_tickers"] = ["AAPL", "META"]
 
+        mock_tap = MagicMock()
+        mock_tap.get_option_contracts_for_underlying.side_effect = [
+            [{"ticker": "O:AAPL1"}, {"ticker": "O:AAPL2"}],
+            [{"ticker": "O:META1"}],
+        ]
+
         stream = OptionsContractsStream.__new__(OptionsContractsStream)
-        stream.query_params = {"sort": "ticker", "expired": True}
-        stream.paginate_records = MagicMock(return_value=iter([]))
+        stream._tap = mock_tap
         type(stream).config = PropertyMock(return_value=cfg)
 
-        list(stream.get_records(None))
+        records = list(stream.get_records(None))
 
-        calls = stream.paginate_records.call_args_list
-        assert len(calls) == 4
-        params = [c.args[0]["query_params"] for c in calls]
-        assert params[0]["underlying_ticker"] == "AAPL"
-        assert params[0]["expired"] is True
-        assert params[1]["underlying_ticker"] == "AAPL"
-        assert params[1]["expired"] is False
-        assert params[2]["underlying_ticker"] == "META"
-        assert params[2]["expired"] is True
-        assert params[3]["underlying_ticker"] == "META"
-        assert params[3]["expired"] is False
+        assert len(records) == 3
+        assert records[0]["ticker"] == "O:AAPL1"
+        assert records[1]["ticker"] == "O:AAPL2"
+        assert records[2]["ticker"] == "O:META1"
 
-    def test_loops_expired_true_false_without_ticker_filter(self, both_tap_config):
+        # Verify it called the shared per-underlying cache path
+        calls = mock_tap.get_option_contracts_for_underlying.call_args_list
+        assert len(calls) == 2
+        assert calls[0].args[0] == "AAPL"
+        assert calls[1].args[0] == "META"
+
+    def test_falls_back_to_stock_tickers_when_no_selection(self, both_tap_config):
+        """Wildcard resolves underlyings from cached stock tickers."""
         from tap_massive.option_streams import OptionsContractsStream
 
         cfg = dict(both_tap_config)
         cfg["option_tickers"] = dict(cfg["option_tickers"])
         cfg["option_tickers"].pop("select_tickers", None)
 
+        mock_tap = MagicMock()
+        mock_tap.get_cached_stock_tickers.return_value = [
+            {"ticker": "GOOG"},
+        ]
+        mock_tap.get_option_contracts_for_underlying.return_value = [
+            {"ticker": "O:GOOG1"},
+        ]
+
         stream = OptionsContractsStream.__new__(OptionsContractsStream)
-        stream.query_params = {"sort": "ticker", "expired": True}
-        stream.paginate_records = MagicMock(return_value=iter([]))
+        stream._tap = mock_tap
         type(stream).config = PropertyMock(return_value=cfg)
 
-        list(stream.get_records(None))
+        records = list(stream.get_records(None))
 
-        calls = stream.paginate_records.call_args_list
-        assert len(calls) == 2
-        params = [c.args[0]["query_params"] for c in calls]
-        assert params[0]["expired"] is True
-        assert params[1]["expired"] is False
-        assert "underlying_ticker" not in params[0]
-        assert "underlying_ticker" not in params[1]
+        assert len(records) == 1
+        assert records[0]["ticker"] == "O:GOOG1"
+        mock_tap.get_cached_stock_tickers.assert_called_once()
+        mock_tap.get_option_contracts_for_underlying.assert_called_once_with("GOOG")
 
 
 @pytest.fixture()
@@ -347,9 +364,14 @@ def mock_both_tap(both_tap_config):
     tap.get_option_tickers_stream = MagicMock(
         return_value=tap._mock_option_tickers_stream
     )
+    tap._option_contracts_cache = OrderedDict()
+    tap._option_contracts_lock = threading.Lock()
+    tap._option_contracts_cache_max = 20
+    tap._disk_cache = None
     tap.get_option_contracts_for_underlying = (
         TapMassive.get_option_contracts_for_underlying.__get__(tap)
     )
+    tap._fetch_option_contracts = TapMassive._fetch_option_contracts.__get__(tap)
     tap._paginate_option_contracts = TapMassive._paginate_option_contracts.__get__(tap)
     return tap
 

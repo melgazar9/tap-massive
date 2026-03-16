@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import copy
 import json
 import logging
 import typing as t
@@ -24,6 +25,52 @@ from tap_massive.base_streams import (
     _SnapshotNormalizationMixin,
 )
 from tap_massive.client import MassiveRestStream, OptionalTickerPartitionStream
+from tap_massive.quote_update_bar_streams import (
+    QuoteUpdateBar1HourStream,
+    QuoteUpdateBar1MinuteStream,
+    QuoteUpdateBar1SecondStream,
+    QuoteUpdateBar5MinuteStream,
+    QuoteUpdateBar30MinuteStream,
+    QuoteUpdateBar30SecondStream,
+    QuoteUpdateBarStream,
+)
+
+OPTIONS_QUOTE_UPDATE_BAR_SCHEMA = th.PropertiesList(
+    th.Property("option_ticker", th.StringType),
+    th.Property("underlying_ticker", th.StringType),
+    th.Property("ask_exchange", th.IntegerType),
+    th.Property("ask_price", th.NumberType),
+    th.Property("ask_size", th.NumberType),
+    th.Property("bid_exchange", th.IntegerType),
+    th.Property("bid_price", th.NumberType),
+    th.Property("bid_size", th.NumberType),
+    th.Property("conditions", th.ArrayType(th.IntegerType)),
+    th.Property("indicators", th.ArrayType(th.IntegerType)),
+    th.Property("participant_timestamp", th.IntegerType),
+    th.Property(
+        "sequence_number",
+        th.IntegerType(
+            minimum=0,
+            maximum=9_223_372_036_854_775_807,
+        ),
+    ),
+    th.Property("sip_timestamp", th.IntegerType),
+    th.Property("tape", th.IntegerType),
+    th.Property("trf_timestamp", th.IntegerType),
+    th.Property("window_start", th.IntegerType),
+).to_dict()
+
+
+def _rename_to_option_ticker(row: dict, context: dict | None) -> dict:
+    """Rename ticker -> option_ticker and add underlying_ticker from context."""
+    if row:
+        row["option_ticker"] = row.pop("ticker", None)
+        row["underlying_ticker"] = (
+            context.get("underlying") or context.get("underlying_ticker")
+            if context
+            else None
+        )
+    return row
 
 
 class OptionsContractsStream(BaseTickerStream):
@@ -73,6 +120,24 @@ class OptionsContractsStream(BaseTickerStream):
     def get_url(self, context: Context = None) -> str:
         return f"{self.url_base}/v3/reference/options/contracts"
 
+    def get_records(
+        self, context: dict[str, t.Any] | None
+    ) -> t.Iterable[dict[str, t.Any]]:
+        """Yield contracts per underlying via the shared per-underlying cache.
+
+        Uses get_option_contracts_for_underlying() so running this stream
+        naturally warms the same L1/L2 cache that downstream streams
+        (bars, snapshots, trades) read from.
+        """
+        underlyings = self.get_ticker_list()
+        if underlyings is None:
+            underlyings = [t["ticker"] for t in self._tap.get_cached_stock_tickers()]
+
+        for underlying in underlyings:
+            contracts = self._tap.get_option_contracts_for_underlying(underlying)
+            for contract in contracts:
+                yield contract
+
 
 class OptionsTickerPartitionStream(BaseTickerPartitionStream):
     """Partitions by underlying stock ticker, fetching filtered contracts per underlying.
@@ -81,10 +146,34 @@ class OptionsTickerPartitionStream(BaseTickerPartitionStream):
     this partitions by underlying stock ticker (~7000) and fetches filtered contracts
     per underlying inside get_records(). Moneyness and DTE filters are applied via
     option_tickers.other_params config.
+
+    All subclasses automatically get option_ticker + underlying_ticker instead of ticker
+    in their schemas, primary_keys, and output records via __init_subclass__ + post_process.
     """
 
-    state_partitioning_keys = ["underlying"]
     ticker_selector_keys = ("option_tickers",)
+
+    def __init_subclass__(cls, **kwargs):
+        super().__init_subclass__(**kwargs)
+        schema = cls.__dict__.get("schema")
+        if schema is None:
+            parent_schema = getattr(cls, "schema", None)
+            if parent_schema and isinstance(parent_schema, dict):
+                schema = copy.deepcopy(parent_schema)
+                cls.schema = schema
+        if schema and isinstance(schema, dict):
+            props = schema.get("properties", {})
+            if "ticker" in props and "option_ticker" not in props:
+                props["option_ticker"] = props.pop("ticker")
+                if "underlying_ticker" not in props:
+                    props["underlying_ticker"] = {"type": ["string", "null"]}
+        pks = getattr(cls, "primary_keys", None)
+        if pks and "ticker" in pks:
+            cls.primary_keys = ["option_ticker" if k == "ticker" else k for k in pks]
+
+    def post_process(self, row, context=None):
+        row = super().post_process(row, context)
+        return _rename_to_option_ticker(row, context)
 
     @property
     def partitions(self) -> list[dict[str, t.Any]]:
@@ -384,9 +473,11 @@ class OptionsTradeStream(OptionsTickerPartitionStream, BaseTradeStream):
     """Stream for retrieving options trade data."""
 
     name = "options_trades"
+    primary_keys = ["option_ticker", "exchange", "id"]
 
     schema = th.PropertiesList(
-        th.Property("ticker", th.StringType),
+        th.Property("option_ticker", th.StringType),
+        th.Property("underlying_ticker", th.StringType),
         th.Property("conditions", th.ArrayType(th.IntegerType)),
         th.Property("correction", th.IntegerType),
         th.Property("exchange", th.IntegerType),
@@ -399,7 +490,8 @@ class OptionsTradeStream(OptionsTickerPartitionStream, BaseTradeStream):
     def post_process(self, row, context: Context | None = None):
         row = super().post_process(row, context)
         allowed = {
-            "ticker",
+            "option_ticker",
+            "underlying_ticker",
             "conditions",
             "correction",
             "exchange",
@@ -408,7 +500,6 @@ class OptionsTradeStream(OptionsTickerPartitionStream, BaseTradeStream):
             "sip_timestamp",
             "size",
         }
-        row["ticker"] = row.get("ticker") or context.get(self._ticker_param)
         return {k: row.get(k) for k in allowed if k in row}
 
 
@@ -416,9 +507,11 @@ class OptionsQuoteStream(OptionsTickerPartitionStream, BaseQuoteStream):
     """Stream for retrieving options quote data."""
 
     name = "options_quotes"
+    primary_keys = ["option_ticker", "sip_timestamp", "sequence_number"]
 
     schema = th.PropertiesList(
-        th.Property("ticker", th.StringType),
+        th.Property("option_ticker", th.StringType),
+        th.Property("underlying_ticker", th.StringType),
         th.Property("ask_exchange", th.IntegerType),
         th.Property("ask_price", th.NumberType),
         th.Property("ask_size", th.NumberType),
@@ -438,7 +531,8 @@ class OptionsQuoteStream(OptionsTickerPartitionStream, BaseQuoteStream):
     def post_process(self, row, context: Context | None = None):
         row = super().post_process(row, context)
         allowed = {
-            "ticker",
+            "option_ticker",
+            "underlying_ticker",
             "ask_exchange",
             "ask_price",
             "ask_size",
@@ -798,3 +892,90 @@ class OptionsUnifiedSnapshotStream(_SnapshotNormalizationMixin, MassiveRestStrea
         if isinstance(details, dict):
             details.pop("ticker", None)
         return row
+
+
+# --- Quote Update Bars Streams ---
+
+
+class BaseOptionsQuoteUpdateBar(QuoteUpdateBarStream):
+    """Options quote update bars partitioned by underlying stock ticker.
+
+    Partitions by underlying (~7K tickers), loops over contracts per
+    underlying inside get_records with state reset per contract.
+    """
+
+    primary_keys = ["option_ticker", "window_start"]
+    ticker_selector_keys = ("option_tickers",)
+    schema = OPTIONS_QUOTE_UPDATE_BAR_SCHEMA
+
+    @property
+    def partitions(self) -> list[dict]:
+        """Build underlying-level partitions."""
+        selected = self.resolve_select_tickers(selector_keys=self.ticker_selector_keys)
+        underlyings = selected or [
+            t["ticker"] for t in self._tap.get_cached_stock_tickers()
+        ]
+        return [{"underlying": u} for u in underlyings]
+
+    def get_records(
+        self, context: dict[str, t.Any] | None
+    ) -> t.Iterable[dict[str, t.Any]]:
+        """Fetch update bars for all contracts under an underlying."""
+        underlying = (context or {}).get("underlying")
+        if not underlying:
+            return
+
+        contracts = self._tap.get_option_contracts_for_underlying(underlying)
+        if not contracts:
+            return
+
+        state = self.get_context_state(context)
+        initial_bookmark = state.copy() if state else {}
+
+        for contract in contracts:
+            if state is not None:
+                state.clear()
+                state.update(initial_bookmark)
+
+            contract_ctx = {**context, self._ticker_param: contract["ticker"]}
+            yield from super().get_records(contract_ctx)
+
+    def post_process(self, row, context=None):
+        row = super().post_process(row, context)
+        return _rename_to_option_ticker(row, context)
+
+
+class OptionsQuoteUpdateBar1SecondStream(
+    BaseOptionsQuoteUpdateBar, QuoteUpdateBar1SecondStream
+):
+    name = "options_quote_update_bars_1_second"
+
+
+class OptionsQuoteUpdateBar30SecondStream(
+    BaseOptionsQuoteUpdateBar, QuoteUpdateBar30SecondStream
+):
+    name = "options_quote_update_bars_30_second"
+
+
+class OptionsQuoteUpdateBar1MinuteStream(
+    BaseOptionsQuoteUpdateBar, QuoteUpdateBar1MinuteStream
+):
+    name = "options_quote_update_bars_1_minute"
+
+
+class OptionsQuoteUpdateBar5MinuteStream(
+    BaseOptionsQuoteUpdateBar, QuoteUpdateBar5MinuteStream
+):
+    name = "options_quote_update_bars_5_minute"
+
+
+class OptionsQuoteUpdateBar30MinuteStream(
+    BaseOptionsQuoteUpdateBar, QuoteUpdateBar30MinuteStream
+):
+    name = "options_quote_update_bars_30_minute"
+
+
+class OptionsQuoteUpdateBar1HourStream(
+    BaseOptionsQuoteUpdateBar, QuoteUpdateBar1HourStream
+):
+    name = "options_quote_update_bars_1_hour"

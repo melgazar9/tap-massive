@@ -19,7 +19,9 @@ import pandas_market_calendars as mcal
 from singer_sdk import typing as th
 from singer_sdk.helpers.types import Context
 
-from tap_massive.base_streams import _NanosecondIncrementalMixin, safe_int
+from tap_massive.base_streams import (
+    _NanosecondIncrementalMixin,
+)
 from tap_massive.client import MassiveRestStream
 from tap_massive.flat_files_streams import (
     _BARS_SCHEMA,
@@ -27,6 +29,12 @@ from tap_massive.flat_files_streams import (
     _SIP_TRADES_SCHEMA,
     FlatFilesStream,
 )
+from tap_massive.option_streams import (
+    OPTIONS_QUOTE_UPDATE_BAR_SCHEMA,
+    _rename_to_option_ticker,
+)
+from tap_massive.quote_update_bar_streams import QuoteUpdateBarStream
+from tap_massive.utils import safe_int
 
 # ---------------------------------------------------------------------------
 # EarningsCalendar — query earnings dates and resolve NYSE trading days
@@ -103,14 +111,14 @@ class EarningsCalendar:
         self._nyse_trading_days = self._build_nyse_trading_days()
         self._trading_days_set = frozenset(self._nyse_trading_days)
 
-        self._ticker_to_quote_dates: dict[str, list[date]] = self._compute_quote_dates(
-            raw_earnings
+        self._ticker_to_snapshot_dates: dict[str, list[date]] = (
+            self._compute_snapshot_dates(raw_earnings)
         )
         self._date_to_tickers: dict[date, frozenset[str]] | None = None
 
-        total_partitions = sum(len(v) for v in self._ticker_to_quote_dates.values())
+        total_partitions = sum(len(v) for v in self._ticker_to_snapshot_dates.values())
         logging.info(
-            f"EarningsCalendar: {len(self._ticker_to_quote_dates)} tickers, "
+            f"EarningsCalendar: {len(self._ticker_to_snapshot_dates)} tickers, "
             f"{total_partitions} total (ticker, date) partitions."
         )
 
@@ -156,10 +164,10 @@ class EarningsCalendar:
 
     # -- Compute quote dates per ticker ------------------------------------
 
-    def _compute_quote_dates(
+    def _compute_snapshot_dates(
         self, raw_earnings: list[tuple[str, date]]
     ) -> dict[str, list[date]]:
-        """For each (ticker, earnings_date), compute unique quote dates."""
+        """For each (ticker, earnings_date), compute unique snapshot dates."""
         ticker_dates: dict[str, set[date]] = {}
         for ticker, earnings_date in raw_earnings:
             if not ticker:
@@ -178,26 +186,26 @@ class EarningsCalendar:
     # -- Public accessors --------------------------------------------------
 
     def get_stock_partitions(self) -> list[dict[str, str]]:
-        """Return [{"ticker": "AAPL", "quote_date": "2025-06-17"}, ...]."""
+        """Return [{"ticker": "AAPL", "snapshot_date": "2025-06-17"}, ...]."""
         partitions = []
-        for ticker, quote_dates in self._ticker_to_quote_dates.items():
-            for qd in quote_dates:
-                partitions.append({"ticker": ticker, "quote_date": qd.isoformat()})
+        for ticker, snap_dates in self._ticker_to_snapshot_dates.items():
+            for sd in snap_dates:
+                partitions.append({"ticker": ticker, "snapshot_date": sd.isoformat()})
         return partitions
 
-    def get_earnings_underlyings(self) -> list[str]:
+    def get_earnings_snapshot_underlyings(self) -> list[str]:
         """Return sorted unique underlying tickers."""
-        return sorted(self._ticker_to_quote_dates.keys())
+        return sorted(self._ticker_to_snapshot_dates.keys())
 
-    def get_quote_dates_for_underlying(self, underlying: str) -> list[date]:
+    def get_snapshot_dates_for_underlying(self, underlying: str) -> list[date]:
         """Return quote dates for a given underlying ticker."""
-        return self._ticker_to_quote_dates.get(underlying, [])
+        return self._ticker_to_snapshot_dates.get(underlying, [])
 
     def get_tickers_for_earnings_date(self, query_date: date) -> frozenset[str]:
         """Return tickers that have earnings activity on the given date."""
         if self._date_to_tickers is None:
             mapping: dict[date, set[str]] = {}
-            for ticker, dates in self._ticker_to_quote_dates.items():
+            for ticker, dates in self._ticker_to_snapshot_dates.items():
                 for d in dates:
                     mapping.setdefault(d, set()).add(ticker)
             self._date_to_tickers = {d: frozenset(t) for d, t in mapping.items()}
@@ -353,7 +361,7 @@ class EarningsCalendar:
 # ---------------------------------------------------------------------------
 
 
-class _EarningsQuoteStreamBase(_NanosecondIncrementalMixin, MassiveRestStream):
+class BaseEarningsQuoteStream(_NanosecondIncrementalMixin, MassiveRestStream):
     """Common logic for earnings-filtered quote streams."""
 
     replication_key = "sip_timestamp"
@@ -371,7 +379,7 @@ class _EarningsQuoteStreamBase(_NanosecondIncrementalMixin, MassiveRestStream):
         """Only use state for incremental recovery; ignore global start_date.
 
         The timestamp range for these streams is fully controlled by
-        the partition's quote_date, so the global start_date config
+        the partition's snapshot_date, so the global start_date config
         must not influence which records are accepted.
         """
         if self.replication_method != "INCREMENTAL" or not self.replication_key:
@@ -381,8 +389,8 @@ class _EarningsQuoteStreamBase(_NanosecondIncrementalMixin, MassiveRestStream):
             val = state.get(
                 "replication_key_value", state.get("starting_replication_value")
             )
-            if val is not None:
-                return int(val) if isinstance(val, (int, float)) else val
+            if val is not None and isinstance(val, (int, float)):
+                return int(val)
         return None
 
     def _get_earnings_calendar(self) -> EarningsCalendar:
@@ -411,10 +419,45 @@ class _EarningsQuoteStreamBase(_NanosecondIncrementalMixin, MassiveRestStream):
             earnings_data_source=earnings_data_source,
         )
 
+    def _build_options_contract_partitions(self) -> list[dict]:
+        """Contract-level partitions bounded by the earnings calendar.
+
+        Filters out contracts that expired before the earliest earnings
+        snapshot date — they have no quote activity in the date range.
+        """
+        calendar = self._get_earnings_calendar()
+        underlyings = calendar.get_earnings_snapshot_underlyings()
+        allowed = self.resolve_select_tickers(selector_keys=("option_tickers",))
+        if allowed:
+            allowed_set = set(allowed)
+            underlyings = [u for u in underlyings if u in allowed_set]
+
+        # Collect snapshot dates per underlying for expiration filtering
+        underlying_dates: dict[str, list[date]] = {}
+        for underlying in underlyings:
+            dates = calendar.get_snapshot_dates_for_underlying(underlying)
+            if dates:
+                underlying_dates[underlying] = dates
+
+        parts = []
+        for underlying, snap_dates in underlying_dates.items():
+            earliest = snap_dates[0]
+            for contract in self._tap.get_option_contracts_for_underlying(underlying):
+                exp = contract.get("expiration_date")
+                if exp and date.fromisoformat(exp) < earliest:
+                    continue
+                parts.append(
+                    {
+                        "option_ticker": contract["ticker"],
+                        "underlying_ticker": underlying,
+                    }
+                )
+        return parts
+
     @staticmethod
-    def _date_to_ns_range(quote_date_str: str) -> tuple[int, int]:
+    def _date_to_ns_range(snapshot_date_str: str) -> tuple[int, int]:
         """Convert a date string to (start_ns, end_ns) covering the full UTC day."""
-        d = date.fromisoformat(quote_date_str)
+        d = date.fromisoformat(snapshot_date_str)
         day_start = datetime(d.year, d.month, d.day, tzinfo=timezone.utc)
         day_end = day_start + timedelta(days=1)
         start_ns = int(day_start.timestamp() * 1_000_000_000)
@@ -427,12 +470,12 @@ class _EarningsQuoteStreamBase(_NanosecondIncrementalMixin, MassiveRestStream):
 # ---------------------------------------------------------------------------
 
 
-class StockEarningsQuotesStream(_EarningsQuoteStreamBase):
+class StockEarningsQuotesStream(BaseEarningsQuoteStream):
     """Tick-level stock quotes for tickers around earnings dates."""
 
     name = "stock_earnings_quotes"
     primary_keys = ["ticker", "sip_timestamp", "sequence_number"]
-    state_partitioning_keys = ["ticker", "quote_date"]
+    state_partitioning_keys = ["ticker", "snapshot_date"]
 
     schema = th.PropertiesList(
         th.Property("ticker", th.StringType),
@@ -471,11 +514,11 @@ class StockEarningsQuotesStream(_EarningsQuoteStreamBase):
         if not context:
             return
 
-        quote_date_str = context.get("quote_date")
-        if not quote_date_str:
+        snapshot_date_str = context.get("snapshot_date")
+        if not snapshot_date_str:
             return
 
-        start_ns, end_ns = self._date_to_ns_range(quote_date_str)
+        start_ns, end_ns = self._date_to_ns_range(snapshot_date_str)
 
         _, base_query_params, base_path_params = self._prepare_context_and_params(
             dict(context)
@@ -485,7 +528,7 @@ class StockEarningsQuotesStream(_EarningsQuoteStreamBase):
 
         ctx: dict[str, t.Any] = {
             "ticker": context["ticker"],
-            "quote_date": quote_date_str,
+            "snapshot_date": snapshot_date_str,
             "query_params": base_query_params,
             "path_params": base_path_params,
         }
@@ -503,7 +546,8 @@ class StockEarningsQuotesStream(_EarningsQuoteStreamBase):
 
 _OPTIONS_QUOTE_FIELDS = frozenset(
     {
-        "ticker",
+        "option_ticker",
+        "underlying_ticker",
         "ask_exchange",
         "ask_price",
         "ask_size",
@@ -516,15 +560,15 @@ _OPTIONS_QUOTE_FIELDS = frozenset(
 )
 
 
-class OptionsEarningsQuotesStream(_EarningsQuoteStreamBase):
+class OptionsEarningsQuotesStream(BaseEarningsQuoteStream):
     """Tick-level options quotes for contracts of earnings-window underlyings."""
 
     name = "options_earnings_quotes"
-    primary_keys = ["ticker", "sip_timestamp", "sequence_number"]
-    state_partitioning_keys = ["underlying"]
+    primary_keys = ["option_ticker", "sip_timestamp", "sequence_number"]
 
     schema = th.PropertiesList(
-        th.Property("ticker", th.StringType),
+        th.Property("option_ticker", th.StringType),
+        th.Property("underlying_ticker", th.StringType),
         th.Property("ask_exchange", th.IntegerType),
         th.Property("ask_price", th.NumberType),
         th.Property("ask_size", th.NumberType),
@@ -542,71 +586,249 @@ class OptionsEarningsQuotesStream(_EarningsQuoteStreamBase):
     ).to_dict()
 
     @property
-    def partitions(self) -> list[dict[str, str]]:
-        underlyings = self._get_earnings_calendar().get_earnings_underlyings()
-        allowed = self.resolve_select_tickers(selector_keys=("option_tickers",))
-        if allowed:
-            allowed_set = set(allowed)
-            underlyings = [u for u in underlyings if u in allowed_set]
-        return [{"underlying": u} for u in underlyings]
+    def partitions(self) -> list[dict]:
+        return self._build_options_contract_partitions()
 
     def get_url(self, context: Context) -> str:
-        ticker = context.get("ticker")
+        ticker = context.get("option_ticker") or context.get("ticker")
         return f"{self.url_base}/v3/quotes/{ticker}"
 
     def get_records(
         self, context: dict[str, t.Any] | None
     ) -> t.Iterable[dict[str, t.Any]]:
-        underlying = (context or {}).get("underlying")
-        if not underlying:
+        """Fetch tick-level quotes for a single contract across its earnings dates."""
+        if not context:
             return
 
-        contracts = self._tap.get_option_contracts_for_underlying(underlying)
-        if not contracts:
-            logging.info(
-                f"No option contracts for {underlying} in {self.name}, skipping."
-            )
+        option_ticker = context.get("option_ticker")
+        underlying = context.get("underlying_ticker")
+        if not option_ticker or not underlying:
             return
 
         calendar = self._get_earnings_calendar()
-        quote_dates = calendar.get_quote_dates_for_underlying(underlying)
-        if not quote_dates:
-            return
-
-        state = self.get_context_state(context)
-        initial_bookmark = state.copy() if state else {}
+        snapshot_dates = calendar.get_snapshot_dates_for_underlying(underlying)
 
         _, base_query_params, base_path_params = self._prepare_context_and_params(
             dict(context)
         )
 
-        for contract in contracts:
-            exp = contract.get("expiration_date")
-            exp_date = date.fromisoformat(exp) if exp else None
-            for qd in quote_dates:
-                if exp_date and qd > exp_date:
-                    continue
-                if state is not None:
-                    state.clear()
-                    state.update(initial_bookmark)
+        for sd in snapshot_dates or []:
 
-                start_ns, end_ns = self._date_to_ns_range(qd.isoformat())
-                qp = base_query_params.copy()
-                qp["timestamp.gte"] = start_ns
-                qp["timestamp.lte"] = end_ns
+            start_ns, end_ns = self._date_to_ns_range(sd.isoformat())
+            qp = base_query_params.copy()
+            qp["timestamp.gte"] = start_ns
+            qp["timestamp.lte"] = end_ns
 
-                contract_ctx: dict[str, t.Any] = {
-                    "ticker": contract["ticker"],
-                    "underlying": underlying,
-                    "query_params": qp,
-                    "path_params": base_path_params.copy(),
-                }
-                yield from self.paginate_records(contract_ctx)
+            contract_ctx: dict[str, t.Any] = {
+                "ticker": option_ticker,
+                "underlying_ticker": underlying,
+                "query_params": qp,
+                "path_params": base_path_params.copy(),
+            }
+            yield from self.paginate_records(contract_ctx)
 
     def post_process(self, row: dict, context: Context | None = None) -> dict | None:
-        row["ticker"] = context.get("ticker")
+        _rename_to_option_ticker(row, context)
         row[self.replication_key] = safe_int(row.get(self.replication_key))
         return {k: row.get(k) for k in _OPTIONS_QUOTE_FIELDS if k in row}
+
+
+# ---------------------------------------------------------------------------
+# Earnings-filtered quote update bar streams (sampled at fixed intervals)
+# ---------------------------------------------------------------------------
+
+
+class BaseEarningsQuoteUpdateBarStream(BaseEarningsQuoteStream, QuoteUpdateBarStream):
+    """Earnings-filtered point-in-time quote update bars.
+
+    Inherits update bar logic (schema, post_process, _yield_update_bars)
+    from QuoteUpdateBarStream. Earnings calendar and partitions
+    come from BaseEarningsQuoteStream and concrete subclasses.
+    """
+
+    _interval_seconds: int | None = None  # Must be set by subclass
+
+    # Override MRO: BaseEarningsQuoteStream sets replication_key="sip_timestamp"
+    # and is_sorted=False. Update bars use window_start and are sorted.
+    primary_keys = ["ticker", "window_start"]
+    replication_key = "window_start"
+    is_sorted = True
+
+    def _bookmark_adjusted_range(
+        self,
+        start_ns: int,
+        end_ns: int,
+        bookmark_ns: int | None,
+    ) -> tuple[int, int] | None:
+        """Adjust a date range for bookmark. Returns (start_ns, end_ns) or None if fully consumed."""
+        if bookmark_ns is not None:
+            if end_ns <= bookmark_ns:
+                return None
+            interval_ns = self._interval_seconds * 1_000_000_000
+            start_ns = max(start_ns, bookmark_ns + interval_ns)
+            if start_ns >= end_ns:
+                return None
+        return start_ns, end_ns
+
+
+class StockEarningsQuoteUpdateBarStream(BaseEarningsQuoteUpdateBarStream):
+    """Point-in-time quote update bars for stocks near earnings.
+
+    Partitions by (ticker, snapshot_date). The SDK handles iteration
+    and per-partition state/bookmarks automatically.
+    """
+
+    @property
+    def partitions(self) -> list[dict[str, str]]:
+        return self._get_earnings_calendar().get_stock_partitions()
+
+    def get_records(
+        self, context: dict[str, t.Any] | None
+    ) -> t.Iterable[dict[str, t.Any]]:
+        """Fetch update bars for a single ticker on a single date."""
+        if not context:
+            return
+
+        ticker = context.get("ticker")
+        snapshot_date_str = context.get("snapshot_date")
+        if not ticker or not snapshot_date_str:
+            return
+
+        bookmark_ns = self.get_starting_replication_key_value(context)
+        adjusted = self._bookmark_adjusted_range(
+            *self._date_to_ns_range(snapshot_date_str), bookmark_ns
+        )
+        if adjusted is None:
+            return
+
+        yield from self._yield_update_bars(ticker, *adjusted, context)
+
+
+class StockEarningsQuoteUpdateBar1SecondStream(StockEarningsQuoteUpdateBarStream):
+    """Stock earnings quote update bars at 1-second intervals."""
+
+    name = "stock_earnings_quote_update_bars_1_second"
+    _interval_seconds = 1
+
+
+class StockEarningsQuoteUpdateBar30SecondStream(StockEarningsQuoteUpdateBarStream):
+    """Stock earnings quote update bars at 30-second intervals."""
+
+    name = "stock_earnings_quote_update_bars_30_second"
+    _interval_seconds = 30
+
+
+class StockEarningsQuoteUpdateBar1MinuteStream(StockEarningsQuoteUpdateBarStream):
+    """Stock earnings quote update bars at 1-minute intervals."""
+
+    name = "stock_earnings_quote_update_bars_1_minute"
+    _interval_seconds = 60
+
+
+class StockEarningsQuoteUpdateBar5MinuteStream(StockEarningsQuoteUpdateBarStream):
+    """Stock earnings quote update bars at 5-minute intervals."""
+
+    name = "stock_earnings_quote_update_bars_5_minute"
+    _interval_seconds = 300
+
+
+class StockEarningsQuoteUpdateBar30MinuteStream(StockEarningsQuoteUpdateBarStream):
+    """Stock earnings quote update bars at 30-minute intervals."""
+
+    name = "stock_earnings_quote_update_bars_30_minute"
+    _interval_seconds = 1800
+
+
+class StockEarningsQuoteUpdateBar1HourStream(StockEarningsQuoteUpdateBarStream):
+    """Stock earnings quote update bars at 1-hour intervals."""
+
+    name = "stock_earnings_quote_update_bars_1_hour"
+    _interval_seconds = 3600
+
+
+class OptionsEarningsQuoteUpdateBarStream(BaseEarningsQuoteUpdateBarStream):
+    """Point-in-time quote update bars for options contracts near earnings.
+
+    Contract-level SDK partitions via _build_options_contract_partitions.
+    State tracked per option_ticker automatically by the SDK.
+    """
+
+    primary_keys = ["option_ticker", "window_start"]
+    schema = OPTIONS_QUOTE_UPDATE_BAR_SCHEMA
+
+    @property
+    def partitions(self) -> list[dict]:
+        return self._build_options_contract_partitions()
+
+    def get_records(
+        self, context: dict[str, t.Any] | None
+    ) -> t.Iterable[dict[str, t.Any]]:
+        """Fetch update bars for a single contract across its earnings dates."""
+        if not context:
+            return
+
+        option_ticker = context.get("option_ticker")
+        underlying = context.get("underlying_ticker")
+        if not option_ticker or not underlying:
+            return
+
+        calendar = self._get_earnings_calendar()
+        snapshot_dates = calendar.get_snapshot_dates_for_underlying(underlying)
+        bookmark_ns = self.get_starting_replication_key_value(context)
+
+        for sd in snapshot_dates or []:
+            adjusted = self._bookmark_adjusted_range(
+                *self._date_to_ns_range(sd.isoformat()), bookmark_ns
+            )
+            if adjusted is None:
+                continue
+            yield from self._yield_update_bars(option_ticker, *adjusted, context)
+
+    def post_process(self, row, context=None):
+        row = super().post_process(row, context)
+        return _rename_to_option_ticker(row, context)
+
+
+class OptionsEarningsQuoteUpdateBar1SecondStream(OptionsEarningsQuoteUpdateBarStream):
+    """Options earnings quote update bars at 1-second intervals."""
+
+    name = "options_earnings_quote_update_bars_1_second"
+    _interval_seconds = 1
+
+
+class OptionsEarningsQuoteUpdateBar30SecondStream(OptionsEarningsQuoteUpdateBarStream):
+    """Options earnings quote update bars at 30-second intervals."""
+
+    name = "options_earnings_quote_update_bars_30_second"
+    _interval_seconds = 30
+
+
+class OptionsEarningsQuoteUpdateBar1MinuteStream(OptionsEarningsQuoteUpdateBarStream):
+    """Options earnings quote update bars at 1-minute intervals."""
+
+    name = "options_earnings_quote_update_bars_1_minute"
+    _interval_seconds = 60
+
+
+class OptionsEarningsQuoteUpdateBar5MinuteStream(OptionsEarningsQuoteUpdateBarStream):
+    """Options earnings quote update bars at 5-minute intervals."""
+
+    name = "options_earnings_quote_update_bars_5_minute"
+    _interval_seconds = 300
+
+
+class OptionsEarningsQuoteUpdateBar30MinuteStream(OptionsEarningsQuoteUpdateBarStream):
+    """Options earnings quote update bars at 30-minute intervals."""
+
+    name = "options_earnings_quote_update_bars_30_minute"
+    _interval_seconds = 1800
+
+
+class OptionsEarningsQuoteUpdateBar1HourStream(OptionsEarningsQuoteUpdateBarStream):
+    """Options earnings quote update bars at 1-hour intervals."""
+
+    name = "options_earnings_quote_update_bars_1_hour"
+    _interval_seconds = 3600
 
 
 # ---------------------------------------------------------------------------

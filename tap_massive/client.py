@@ -220,19 +220,19 @@ class MassiveRestStream(RESTStream):
             cfg = self.config.get(section, {})
             if not isinstance(cfg, dict):
                 continue
-            raw = cfg.get("select_tickers")
-            if not raw or raw in ("*", ["*"]):
+            configured_tickers = cfg.get("select_tickers")
+            if not configured_tickers or configured_tickers in ("*", ["*"]):
                 continue
-            if isinstance(raw, str):
+            if isinstance(configured_tickers, str):
                 resolved = [
                     self._canonicalize_ticker(t, market)
-                    for t in raw.split(",")
+                    for t in configured_tickers.split(",")
                     if t.strip()
                 ]
-            elif isinstance(raw, list):
+            elif isinstance(configured_tickers, list):
                 resolved = [
                     self._canonicalize_ticker(str(t), market)
-                    for t in raw
+                    for t in configured_tickers
                     if str(t).strip()
                 ]
             else:

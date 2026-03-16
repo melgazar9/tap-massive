@@ -31,6 +31,12 @@ plugins:
       label: Start Date
       description: Initial date to start extracting data from
 
+    - name: disk_cache_ttl_hours
+      kind: integer
+      label: Disk Cache TTL Hours
+      value: 36
+      description: TTL in hours for the shared disk cache (option contracts, tickers). Defaults to ~/.cache; override with MELTANO_SHARED_CACHE_DIR env var.
+
     select:
       # --- Stocks ---
       - stock_tickers.*
@@ -107,7 +113,7 @@ plugins:
       - options_contract_overview.*
 #      - options_bars_1_second.*
 #      - options_bars_30_second.*
-#      - options_bars_1_minute.*
+      - options_bars_1_minute.*
 #      - options_bars_5_minute.*
 #      - options_bars_30_minute.*
 #      - options_bars_1_hour.*
@@ -237,6 +243,22 @@ plugins:
       # --- Earnings-filtered quotes ---
       - stock_earnings_quotes.*
       - options_earnings_quotes.*
+#      - stock_earnings_quote_update_bars_1_second.*
+#      - stock_earnings_quote_update_bars_30_second.*
+      - stock_earnings_quote_update_bars_1_minute.*
+#      - stock_earnings_quote_update_bars_5_minute.*
+#      - stock_earnings_quote_update_bars_30_minute.*
+#      - stock_earnings_quote_update_bars_1_hour.*
+#      - options_earnings_quote_update_bars_1_second.*
+#      - options_earnings_quote_update_bars_30_second.*
+      - options_earnings_quote_update_bars_1_minute.*
+#      - options_earnings_quote_update_bars_5_minute.*
+#      - options_earnings_quote_update_bars_30_minute.*
+#      - options_earnings_quote_update_bars_1_hour.*
+
+      # --- Options quote snapshots (non-earnings) ---
+      - options_quote_update_bars_5_minute.*
+      - options_quote_update_bars_1_hour.*
 
       # --- Flat file streams ---
       # Uncomment any flat file streams you want to sync.
@@ -263,6 +285,17 @@ plugins:
 #      - futures_flat_files_1m.*
 #      - futures_flat_files_trades.*
 #      - futures_flat_files_quotes.*
+
+      # --- Quote update bars from flat files (DuckDB aggregation) ---
+      # Downloads daily CSV.gz from S3, aggregates to interval bars via DuckDB.
+      # Requires: flat_files_aws_key, flat_files_aws_secret, AWS CLI on PATH.
+      # Set flat_file_download_workers > 0 for parallel S3 downloads.
+      # Files cached in flat_files_base_dir for reuse across intervals.
+#      - options_quote_update_bars_flat_files_1_second.*
+#      - options_quote_update_bars_flat_files_30_second.*
+#      - options_quote_update_bars_flat_files_1_minute.*
+#      - options_quote_update_bars_flat_files_5_minute.*
+#      - options_quote_update_bars_flat_files_30_minute.*
 
       # --- Earnings-filtered flat file streams ---
       # Like flat file streams, but only emit rows for tickers with earnings on the file date.
@@ -293,7 +326,18 @@ plugins:
       # --- Flat file stream date ranges (example) ---
       # stocks_flat_files_1m:
       #   start_file_date: "2026-02-18"
-      #   end_file_date: "2026-02-24"
+      #   end_file_date: "2026-02-23"
+
+      # --- Quote update bars from flat files (DuckDB aggregation) ---
+      # Downloads daily quotes CSV.gz from S3, aggregates to interval bars.
+      # flat_file_download_workers: parallel S3 downloads (0 = local files only)
+      # s3_subdir: override S3 path (default: us_options_opra/quotes_v1)
+      # Files cached in flat_files_base_dir for reuse across intervals.
+      # options_quote_update_bars_flat_files_1_minute:
+      #   start_file_date: "2022-03-07"
+      #   end_file_date: "2026-03-14"
+      #   flat_file_download_workers: 5
+      #   s3_subdir: "us_options_opra/quotes_v1"
 
       # --- Earnings-filtered flat file stream config (example) ---
       # Each earnings flat file stream needs its own config block with
@@ -303,15 +347,18 @@ plugins:
       #   earnings_data_source: both
       #   us_only: true
       #   earnings_db_schema: tap_massive_production
-      #   earnings_start_date: "2026-02-17"
-      #   earnings_end_date: "2026-02-24"
-      #   end_file_date: "2026-02-24"
+      #   earnings_start_date: "2026-02-18"
+      #   earnings_end_date: "2026-02-23"
+      #   end_file_date: "2026-02-23"
 
       postgres_host: ${MELTANO_TAP_MASSIVE_POSTGRES_HOST}
       postgres_port: ${MELTANO_TAP_MASSIVE_POSTGRES_PORT}
       postgres_database: ${MELTANO_TAP_MASSIVE_POSTGRES_DATABASE}
-      postgres_user: ${MELTANO_TAP_MASSIVE_POSTGRES_PRODUCTION_USER}
-      postgres_password: ${MELTANO_TAP_MASSIVE_POSTGRES_PRODUCTION_PASSWORD}
+      postgres_user: ${POSTGRES_USER}
+      postgres_password: ${POSTGRES_PASSWORD}
+
+      flat_files_aws_key: ${MASSIVE_FLAT_FILE_AWS_KEY}
+      flat_files_aws_secret: ${MASSIVE_FLAT_FILE_AWS_SECRET_KEY}
 
       # --- Earnings-filtered quotes ---
       # earnings_source: "postgres" (default) or "api" (hit Massive API endpoints)
@@ -320,12 +367,12 @@ plugins:
       # earnings_db_schema: postgres schema where benzinga_earnings & tmx_corporate_events live
       stock_earnings_quotes:
         other_params:
-          earnings_source: api
-          earnings_data_source: both
+          earnings_source: postgres
+          earnings_data_source: benzinga
           us_only: true
           earnings_db_schema: tap_massive_production
-          earnings_start_date: "2026-02-17"
-          earnings_end_date: "2026-02-19"
+          earnings_start_date: "2026-02-18"
+          earnings_end_date: "2026-02-18"
         query_params:
           sort: timestamp
           order: asc
@@ -333,16 +380,125 @@ plugins:
 
       options_earnings_quotes:
         other_params:
-          earnings_source: api
-          earnings_data_source: both
+          earnings_source: postgres
+          earnings_data_source: benzinga
           us_only: true
           earnings_db_schema: tap_massive_production
-          earnings_start_date: "2026-02-17"
-          earnings_end_date: "2026-02-19"
+          earnings_start_date: "2026-02-18"
+          earnings_end_date: "2026-02-18"
         query_params:
           sort: timestamp
           order: asc
           limit: 50000
+
+      # Earnings-filtered quote snapshot streams (sampled at fixed intervals)
+      stock_earnings_quote_update_bars_1_second:
+        other_params:
+          earnings_source: postgres
+          earnings_data_source: benzinga
+          us_only: true
+          earnings_db_schema: tap_massive_production
+          earnings_start_date: "2026-02-18"
+          earnings_end_date: "2026-02-18"
+
+      stock_earnings_quote_update_bars_30_second:
+        other_params:
+          earnings_source: postgres
+          earnings_data_source: benzinga
+          us_only: true
+          earnings_db_schema: tap_massive_production
+          earnings_start_date: "2026-02-18"
+          earnings_end_date: "2026-02-18"
+
+      stock_earnings_quote_update_bars_1_minute:
+        other_params:
+          earnings_source: postgres
+          earnings_data_source: benzinga
+          us_only: true
+          earnings_db_schema: tap_massive_production
+          earnings_start_date: "2026-02-18"
+          earnings_end_date: "2026-02-18"
+
+      stock_earnings_quote_update_bars_5_minute:
+        other_params:
+          earnings_source: postgres
+          earnings_data_source: benzinga
+          us_only: true
+          earnings_db_schema: tap_massive_production
+          earnings_start_date: "2026-02-18"
+          earnings_end_date: "2026-02-18"
+
+      stock_earnings_quote_update_bars_30_minute:
+        other_params:
+          earnings_source: postgres
+          earnings_data_source: benzinga
+          us_only: true
+          earnings_db_schema: tap_massive_production
+          earnings_start_date: "2026-02-18"
+          earnings_end_date: "2026-02-18"
+
+      stock_earnings_quote_update_bars_1_hour:
+        other_params:
+          earnings_source: postgres
+          earnings_data_source: benzinga
+          us_only: true
+          earnings_db_schema: tap_massive_production
+          earnings_start_date: "2026-02-18"
+          earnings_end_date: "2026-02-18"
+
+      options_earnings_quote_update_bars_1_second:
+        other_params:
+          earnings_source: postgres
+          earnings_data_source: benzinga
+          us_only: true
+          earnings_db_schema: tap_massive_production
+          earnings_start_date: "2026-02-18"
+          earnings_end_date: "2026-02-18"
+
+      options_earnings_quote_update_bars_30_second:
+        other_params:
+          earnings_source: postgres
+          earnings_data_source: benzinga
+          us_only: true
+          earnings_db_schema: tap_massive_production
+          earnings_start_date: "2026-02-18"
+          earnings_end_date: "2026-02-18"
+
+      options_earnings_quote_update_bars_1_minute:
+        other_params:
+          earnings_source: postgres
+          earnings_data_source: benzinga
+          us_only: true
+          earnings_db_schema: tap_massive_production
+          earnings_start_date: "2026-02-18"
+          earnings_end_date: "2026-02-18"
+
+      options_earnings_quote_update_bars_5_minute:
+        other_params:
+          earnings_source: postgres
+          earnings_data_source: benzinga
+          us_only: true
+          earnings_db_schema: tap_massive_production
+          earnings_start_date: "2026-02-18"
+          earnings_end_date: "2026-02-18"
+
+      options_earnings_quote_update_bars_30_minute:
+        other_params:
+          earnings_source: postgres
+          earnings_data_source: benzinga
+          us_only: true
+          earnings_db_schema: tap_massive_production
+          earnings_start_date: "2026-02-18"
+          earnings_end_date: "2026-02-18"
+
+      options_earnings_quote_update_bars_1_hour:
+        other_params:
+          earnings_source: postgres
+          earnings_data_source: benzinga
+          us_only: true
+          earnings_db_schema: tap_massive_production
+          earnings_start_date: "2026-02-17"
+          earnings_end_date: "2026-02-19"
 
       # --- Stocks ---
       # The tickers that are set here persist across all streams that require a single stock ticker as input.
@@ -447,7 +603,7 @@ plugins:
           multiplier: 1
           timespan: "hour"
           from: "2025-01-20"
-          to: "2025-01-24"
+          to: "2025-01-23"
         query_params:
           adjusted: false
           sort: "asc"
@@ -568,6 +724,49 @@ plugins:
         other_params:
           use_cached_tickers: true
 
+      # Quote snapshot streams (sampled quote bars at fixed intervals)
+      stock_quote_update_bars_1_second:
+        other_params:
+          start_date: "2026-02-18"
+          end_date: "2026-02-18"
+        select_tickers:
+          - "DASH"
+
+      stock_quote_update_bars_30_second:
+        other_params:
+          start_date: "2026-02-18"
+          end_date: "2026-02-18"
+        select_tickers:
+          - "DASH"
+
+      stock_quote_update_bars_1_minute:
+        other_params:
+          start_date: "2026-02-18"
+          end_date: "2026-02-18"
+        select_tickers:
+          - "DASH"
+
+      stock_quote_update_bars_5_minute:
+        other_params:
+          start_date: "2026-02-18"
+          end_date: "2026-02-18"
+        select_tickers:
+          - "DASH"
+
+      stock_quote_update_bars_30_minute:
+        other_params:
+          start_date: "2026-02-18"
+          end_date: "2026-02-18"
+        select_tickers:
+          - "DASH"
+
+      stock_quote_update_bars_1_hour:
+        other_params:
+          start_date: "2026-02-18"
+          end_date: "2026-02-18"
+        select_tickers:
+          - "DASH"
+
       # Technical indicators - 1 month for meaningful window calculations (20-day SMA, etc.)
       stock_sma:
         query_params:
@@ -624,34 +823,34 @@ plugins:
       # Event streams - wider date range for sparse events (1 year to find some data)
       stock_ipos:
         query_params:
-          listing_date__gte: "2024-01-01"
+          listing_date__gte: "2023-01-01"
           listing_date__lte: "2025-02-01"
           limit: 1000
 
       stock_splits_deprecated:
         query_params:
-          execution_date__gte: "2024-01-01"
+          execution_date__gte: "2023-01-01"
           execution_date__lte: "2025-02-01"
           limit: 1000
           order: asc
 
       stock_splits:
         query_params:
-          execution_date__gte: "2024-01-01"
+          execution_date__gte: "2023-01-01"
           execution_date__lte: "2025-02-01"
           limit: 5000
           order: asc
 
       stock_dividends_deprecated:
         query_params:
-          ex_dividend_date__gte: "2024-01-01"
+          ex_dividend_date__gte: "2023-01-01"
           ex_dividend_date__lte: "2025-02-01"
           order: asc
           limit: 1000
 
       stock_dividends:
         query_params:
-          ex_dividend_date__gte: "2024-01-01"
+          ex_dividend_date__gte: "2023-01-01"
           ex_dividend_date__lte: "2025-02-01"
           order: asc
           limit: 5000
@@ -763,7 +962,7 @@ plugins:
 
       stock_filings_index:
         query_params:
-          filing_date__gte: "1999-05-24"
+          filing_date__gte: "1999-05-23"
           limit: 50000
         other_params:
           use_cached_tickers: true
@@ -772,7 +971,7 @@ plugins:
         query_params:
           filing_date__gte: "2025-01-05"
           filing_date__lte: "2025-01-07"
-          limit: 49999
+          limit: 39999
         other_params:
           use_cached_tickers: true
 
@@ -798,7 +997,7 @@ plugins:
           date__lte: "2025-01-31"
           limit: 50000
 
-      # earliest start date is 1947-01-01 per documentation
+      # earliest start date is 1937-01-01 per documentation
       inflation:
         query_params:
           date__gte: "2025-01-01"
@@ -812,7 +1011,7 @@ plugins:
           date__lte: "2025-01-31"
           limit: 50000
 
-      # earliest start date is 1948-01-01 per documentation
+      # earliest start date is 1938-01-01 per documentation
       labor_market:
         query_params:
           date__gte: "2025-01-01"
@@ -826,12 +1025,10 @@ plugins:
       option_tickers:
         query_params:
           sort: ticker
-          expiration_date__gte: "2025-01-01"  # Match the bars date range so contracts have data
         other_params:
-          expired: "both"  # Fetch both expired and active contracts
+          expired: "both"
         select_tickers:
-          - "AAPL"
-          - "META"
+          - "DASH"
 
       options_contract_overview:
         query_params: {}
@@ -917,7 +1114,7 @@ plugins:
           multiplier: 1
           timespan: "hour"
           from: "2025-01-20"
-          to: "2025-01-24"
+          to: "2025-01-23"
         query_params:
           adjusted: false
           sort: "asc"
@@ -992,6 +1189,49 @@ plugins:
       options_last_trade:
         other_params:
           use_cached_tickers: true
+
+      # Quote snapshot streams (sampled quote bars at fixed intervals)
+      options_quote_update_bars_1_second:
+        other_params:
+          start_date: "2026-03-10"
+          end_date: "2026-03-11"
+        select_tickers:
+          - "AAPL"
+
+      options_quote_update_bars_30_second:
+        other_params:
+          start_date: "2026-03-10"
+          end_date: "2026-03-11"
+        select_tickers:
+          - "AAPL"
+
+      options_quote_update_bars_1_minute:
+        other_params:
+          start_date: "2026-03-10"
+          end_date: "2026-03-11"
+        select_tickers:
+          - "AAPL"
+
+      options_quote_update_bars_5_minute:
+        other_params:
+          start_date: "2026-03-10"
+          end_date: "2026-03-11"
+        select_tickers:
+          - "DASH"
+
+      options_quote_update_bars_30_minute:
+        other_params:
+          start_date: "2026-03-10"
+          end_date: "2026-03-11"
+        select_tickers:
+          - "DASH"
+
+      options_quote_update_bars_1_hour:
+        other_params:
+          start_date: "2026-03-10"
+          end_date: "2026-03-11"
+        select_tickers:
+          - "DASH"
 
       options_contract_snapshot:
         other_params:
@@ -1112,7 +1352,7 @@ plugins:
           multiplier: 1
           timespan: "hour"
           from: "2025-01-20"
-          to: "2025-01-24"
+          to: "2025-01-23"
         query_params:
           adjusted: false
           sort: "asc"
@@ -1314,7 +1554,7 @@ plugins:
           multiplier: 1
           timespan: "hour"
           from: "2025-01-20"
-          to: "2025-01-24"
+          to: "2025-01-23"
         query_params:
           adjusted: false
           sort: "asc"
@@ -1519,7 +1759,7 @@ plugins:
           multiplier: 1
           timespan: "hour"
           from: "2025-01-20"
-          to: "2025-01-24"
+          to: "2025-01-23"
         query_params:
           adjusted: false
           sort: "asc"
@@ -1680,7 +1920,7 @@ plugins:
       futures_bars_1_second:
         query_params:
           resolution: "1sec"
-          window_start__gte: "2025-02-24"
+          window_start__gte: "2025-02-23"
           window_start__lte: "2025-02-28"
           limit: 50000
           sort: "window_start.asc"
@@ -1690,7 +1930,7 @@ plugins:
       futures_bars_1_minute:
         query_params:
           resolution: "1min"
-          window_start__gte: "2025-02-24"
+          window_start__gte: "2025-02-23"
           window_start__lte: "2025-02-28"
           limit: 50000
           sort: "window_start.asc"
@@ -1700,7 +1940,7 @@ plugins:
       futures_bars_5_minute:
         query_params:
           resolution: "5mins"
-          window_start__gte: "2025-02-24"
+          window_start__gte: "2025-02-23"
           window_start__lte: "2025-02-28"
           limit: 50000
           sort: "window_start.asc"
@@ -1710,7 +1950,7 @@ plugins:
       futures_bars_1_hour:
         query_params:
           resolution: "1hour"
-          window_start__gte: "2025-02-24"
+          window_start__gte: "2025-02-23"
           window_start__lte: "2025-02-28"
           limit: 50000
           sort: "window_start.asc"
@@ -1720,7 +1960,7 @@ plugins:
       futures_bars_1_day:
         query_params:
           resolution: "1day"
-          window_start__gte: "2025-02-24"
+          window_start__gte: "2025-02-23"
           window_start__lte: "2025-02-28"
           limit: 50000
           sort: "window_start.asc"
@@ -1730,7 +1970,7 @@ plugins:
       futures_bars_1_week:
         query_params:
           resolution: "1week"
-          window_start__gte: "2025-02-24"
+          window_start__gte: "2025-02-23"
           window_start__lte: "2025-02-28"
           limit: 50000
           sort: "window_start.asc"
@@ -1740,7 +1980,7 @@ plugins:
       futures_bars_1_month:
         query_params:
           resolution: "1month"
-          window_start__gte: "2025-02-24"
+          window_start__gte: "2025-02-23"
           window_start__lte: "2025-02-28"
           limit: 50000
           sort: "window_start.asc"
@@ -1750,7 +1990,7 @@ plugins:
       futures_trades:
         query_params:
           sort: "timestamp.asc"
-          timestamp__gte: "2025-02-24T00:00:00Z"
+          timestamp__gte: "2025-02-23T00:00:00Z"
           timestamp__lte: "2025-02-25T23:59:59Z"
           limit: 50000
         other_params:
@@ -1759,7 +1999,7 @@ plugins:
       futures_quotes:
         query_params:
           sort: "timestamp.asc"
-          timestamp__gte: "2025-02-24T00:00:00Z"
+          timestamp__gte: "2025-02-23T00:00:00Z"
           timestamp__lte: "2025-02-25T23:59:59Z"
           limit: 50000
         other_params:
@@ -1838,25 +2078,25 @@ plugins:
       # --- ETF Global ---
       etf_global_constituents:
         query_params:
-          processed_date__gte: "2017-04-03"
+          processed_date__gte: "2017-03-03"
           sort: processed_date.asc
           limit: 5000
 
       etf_global_fund_flows:
         query_params:
-          processed_date__gte: "2017-04-03"
+          processed_date__gte: "2017-03-03"
           sort: processed_date.asc
           limit: 5000
 
       etf_global_analytics:
         query_params:
-          processed_date__gte: "2017-04-05"
+          processed_date__gte: "2017-03-05"
           sort: processed_date.asc
           limit: 5000
 
       etf_global_profiles:
         query_params:
-          processed_date__gte: "2017-04-03"
+          processed_date__gte: "2017-03-03"
           sort: processed_date.asc
           limit: 5000
 

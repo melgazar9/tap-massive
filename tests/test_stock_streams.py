@@ -42,7 +42,7 @@ class TestStockTickerEventsStream:
 
     def test_parse_response_preserves_api_fields(self):
         stream = StockTickerEventsStream.__new__(StockTickerEventsStream)
-        raw = {
+        api_response = {
             "name": "Meta Platforms, Inc. Class A Common Stock",
             "events": [
                 {
@@ -58,7 +58,7 @@ class TestStockTickerEventsStream:
             ],
         }
 
-        records = list(stream.parse_response(raw, context={}))
+        records = list(stream.parse_response(api_response, context={}))
 
         assert records == [
             {

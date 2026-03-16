@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import logging
+import os
 import threading
 import typing as t
+from collections import OrderedDict
 from pathlib import PurePath
 
 from singer_sdk import Tap
@@ -52,6 +54,7 @@ from tap_massive.crypto_streams import (
     CryptoTopMarketMoversStream,
     CryptoTradeStream,
 )
+from tap_massive.disk_cache import DiskCache, compute_fingerprint
 from tap_massive.earnings_subset import (
     EarningsCalendar,
     EarningsFlatFilesStreamOption1m,
@@ -63,7 +66,19 @@ from tap_massive.earnings_subset import (
     EarningsFlatFilesStreamStockQuotes,
     EarningsFlatFilesStreamStockTrades,
     OptionsEarningsQuotesStream,
+    OptionsEarningsQuoteUpdateBar1HourStream,
+    OptionsEarningsQuoteUpdateBar1MinuteStream,
+    OptionsEarningsQuoteUpdateBar1SecondStream,
+    OptionsEarningsQuoteUpdateBar5MinuteStream,
+    OptionsEarningsQuoteUpdateBar30MinuteStream,
+    OptionsEarningsQuoteUpdateBar30SecondStream,
     StockEarningsQuotesStream,
+    StockEarningsQuoteUpdateBar1HourStream,
+    StockEarningsQuoteUpdateBar1MinuteStream,
+    StockEarningsQuoteUpdateBar1SecondStream,
+    StockEarningsQuoteUpdateBar5MinuteStream,
+    StockEarningsQuoteUpdateBar30MinuteStream,
+    StockEarningsQuoteUpdateBar30SecondStream,
 )
 from tap_massive.economy_streams import (
     InflationExpectationsStream,
@@ -100,6 +115,11 @@ from tap_massive.flat_files_streams import (
     FlatFilesStreamStockEod,
     FlatFilesStreamStockQuotes,
     FlatFilesStreamStockTrades,
+    OptionsQuoteUpdateBarFlatFiles1MinuteStream,
+    OptionsQuoteUpdateBarFlatFiles1SecondStream,
+    OptionsQuoteUpdateBarFlatFiles5MinuteStream,
+    OptionsQuoteUpdateBarFlatFiles30MinuteStream,
+    OptionsQuoteUpdateBarFlatFiles30SecondStream,
 )
 from tap_massive.forex_streams import (
     ForexBars1DayStream,
@@ -197,6 +217,12 @@ from tap_massive.option_streams import (
     OptionsMACDStream,
     OptionsPreviousDayBarStream,
     OptionsQuoteStream,
+    OptionsQuoteUpdateBar1HourStream,
+    OptionsQuoteUpdateBar1MinuteStream,
+    OptionsQuoteUpdateBar1SecondStream,
+    OptionsQuoteUpdateBar5MinuteStream,
+    OptionsQuoteUpdateBar30MinuteStream,
+    OptionsQuoteUpdateBar30SecondStream,
     OptionsRSIStream,
     OptionsSmaStream,
     OptionsTradeStream,
@@ -231,6 +257,12 @@ from tap_massive.stock_streams import (
     StockLastTradeStream,
     StockPreviousDayBarSummaryStream,
     StockQuoteStream,
+    StockQuoteUpdateBar1HourStream,
+    StockQuoteUpdateBar1MinuteStream,
+    StockQuoteUpdateBar1SecondStream,
+    StockQuoteUpdateBar5MinuteStream,
+    StockQuoteUpdateBar30MinuteStream,
+    StockQuoteUpdateBar30SecondStream,
     StockRelatedTickersStream,
     StockSplitsDeprecatedStream,
     StockSplitsStream,
@@ -244,6 +276,7 @@ from tap_massive.stock_streams import (
     StockUnifiedSnapshotStream,
 )
 from tap_massive.tmx_streams import TmxCorporateEventsStream
+from tap_massive.utils import compute_nyse_market_windows, compute_nyse_session_opens
 
 
 class TapMassive(Tap):
@@ -267,6 +300,9 @@ class TapMassive(Tap):
         th.Property("postgres_user", th.StringType),
         th.Property("postgres_password", th.StringType, secret=True),
         th.Property("flat_files_base_dir", th.StringType),
+        th.Property("flat_files_aws_key", th.StringType, secret=True),
+        th.Property("flat_files_aws_secret", th.StringType, secret=True),
+        th.Property("disk_cache_ttl_hours", th.NumberType, default=36),
     ).to_dict()
 
     # Ticker caching: one registry instead of 6 copy-pasted blocks.
@@ -288,6 +324,13 @@ class TapMassive(Tap):
         }
         self._earnings_calendar_cache: dict[str, EarningsCalendar] = {}
         self._earnings_calendar_lock = threading.Lock()
+        self._market_windows_cache: dict[str, list[int]] = {}
+        self._market_windows_lock = threading.Lock()
+        self._nyse_sessions_cache: dict[str, list[tuple[int, int]]] = {}
+        self._nyse_sessions_lock = threading.Lock()
+        self._option_contracts_cache: OrderedDict[str, list[dict]] = OrderedDict()
+        self._option_contracts_lock = threading.Lock()
+        self._option_contracts_cache_max = 20  # LRU: keep last N underlyings
         catalog_arg = kwargs.get("catalog")
         if isinstance(catalog_arg, (str, PurePath)):
             kwargs["catalog"] = read_json_file(catalog_arg)
@@ -295,6 +338,21 @@ class TapMassive(Tap):
         if isinstance(state_arg, (str, PurePath)):
             kwargs["state"] = read_json_file(state_arg)
         super().__init__(*args, **kwargs)
+
+        shared_cache_dir = os.environ.get(
+            "MELTANO_SHARED_CACHE_DIR",
+            os.path.join(
+                os.environ.get(
+                    "XDG_CACHE_HOME",
+                    os.path.join(os.path.expanduser("~"), ".cache"),
+                ),
+            ),
+        )
+        self._disk_cache: DiskCache | None = DiskCache(
+            cache_dir=shared_cache_dir,
+            namespace="tap_massive",
+            ttl_hours=float(self.config.get("disk_cache_ttl_hours", 36)),
+        )
 
     def _get_ticker_stream(self, asset: str) -> MassiveRestStream:
         """Get or create the ticker stream instance for an asset class."""
@@ -304,6 +362,50 @@ class TapMassive(Tap):
             self._ticker_streams[asset] = cls(self)
         return self._ticker_streams[asset]
 
+    _DISK_CACHEABLE_ASSETS = frozenset(
+        {"stock", "forex", "crypto", "indices", "futures"}
+    )
+
+    def _build_cache_fingerprint(
+        self,
+        *,
+        query_params: dict[str, t.Any],
+        other_params: dict[str, t.Any] | None = None,
+        exclude_qp_keys: frozenset[str] = frozenset({"apiKey"}),
+        extra_canonical: dict[str, t.Any] | None = None,
+        boolean_flag_key: str = "",
+    ) -> str:
+        """Build a config-aware cache fingerprint from effective stream params.
+
+        Uses the stream's already-parsed query_params and other_params (set by
+        parse_config_params() in __init__), not raw config sections. This ensures
+        the fingerprint captures the effective config regardless of which config
+        section it originated from (e.g., futures_contracts vs futures_tickers).
+        """
+        other = other_params or {}
+        normalized_qp = {
+            k.replace("__", "."): str(v)
+            for k, v in sorted(query_params.items())
+            if k not in exclude_qp_keys
+        }
+        canonical: dict[str, t.Any] = {
+            "base_url": self.config.get("base_url", ""),
+            "query_params": normalized_qp,
+            "boolean_flag_mode": (
+                other.get(boolean_flag_key) if boolean_flag_key else None
+            ),
+        }
+        if extra_canonical:
+            canonical.update(extra_canonical)
+        return compute_fingerprint(canonical)
+
+    @staticmethod
+    def _fetch_and_sort_tickers(stream: MassiveRestStream) -> list[dict]:
+        """Fetch all tickers from a stream and sort by ticker field."""
+        tickers = list(stream.get_records(context=None))
+        tickers.sort(key=lambda rec: rec.get("ticker", ""))
+        return tickers
+
     def _get_cached_tickers(self, asset: str) -> list[dict]:
         """Thread-safe cached ticker fetch for any asset class."""
         if self._ticker_caches.get(asset) is None:
@@ -311,9 +413,34 @@ class TapMassive(Tap):
                 if self._ticker_caches.get(asset) is None:
                     self.logger.info(f"Fetching and caching {asset} tickers...")
                     stream = self._get_ticker_stream(asset)
-                    tickers = list(stream.get_records(context=None))
-                    tickers.sort(key=lambda t: t.get("ticker", ""))
-                    self._ticker_caches[asset] = tickers
+
+                    if (
+                        asset in self._DISK_CACHEABLE_ASSETS
+                        and self._disk_cache is not None
+                    ):
+                        select_tickers = stream.get_ticker_list()
+                        fingerprint = self._build_cache_fingerprint(
+                            query_params=stream.query_params,
+                            other_params=stream.other_params,
+                            boolean_flag_key=getattr(stream, "_boolean_flag_key", ""),
+                            extra_canonical={
+                                "asset": asset,
+                                "select_tickers": (
+                                    select_tickers
+                                    if select_tickers is not None
+                                    else "*"
+                                ),
+                            },
+                        )
+                        cache_key = f"tickers/{asset}/{fingerprint}"
+                        self._ticker_caches[asset] = self._disk_cache.get_or_fetch(
+                            cache_key, lambda s=stream: self._fetch_and_sort_tickers(s)
+                        )
+                    else:
+                        self._ticker_caches[asset] = self._fetch_and_sort_tickers(
+                            stream
+                        )
+
                     self.logger.info(
                         f"Cached {len(self._ticker_caches[asset])} {asset} tickers."
                     )
@@ -343,7 +470,7 @@ class TapMassive(Tap):
         query_params.setdefault("sort", "ticker")
 
         # Normalize __ separators to . for API
-        query_params = {k.replace("__", "."): v for k, v in query_params.items()}
+        query_params = MassiveRestStream._normalize_cfg_param_keys(query_params)
 
         base_url = self.config.get("base_url", "https://api.massive.com")
         url: str | None = f"{base_url}/v3/reference/options/contracts"
@@ -362,15 +489,87 @@ class TapMassive(Tap):
 
         return contracts
 
+    _OPTION_CONTRACTS_EXCLUDE_QP = frozenset(
+        {"apiKey", "underlying_ticker", "limit", "sort"}
+    )
+    _option_contracts_fingerprint_cache: str | None = None
+
+    def _option_contracts_fingerprint(
+        self, query_params: dict, other_params: dict
+    ) -> str:
+        """Compute and cache the disk-cache fingerprint for option contracts.
+
+        The fingerprint depends only on config (not on the underlying ticker),
+        so it's the same for every call and can be cached.
+        """
+        if self._option_contracts_fingerprint_cache is None:
+            self._option_contracts_fingerprint_cache = self._build_cache_fingerprint(
+                query_params=query_params,
+                other_params=other_params,
+                exclude_qp_keys=self._OPTION_CONTRACTS_EXCLUDE_QP,
+                extra_canonical={
+                    "expired_mode": other_params.get("expired"),
+                    "version": "v1",
+                },
+            )
+        return self._option_contracts_fingerprint_cache
+
     def get_option_contracts_for_underlying(self, underlying: str) -> list[dict]:
-        """Fetch all option contracts for a single underlying ticker.
+        """Thread-safe LRU-cached fetch of option contracts for a single underlying.
 
         Supports ``option_tickers.other_params.expired: "both"`` to fetch
         expired and active contracts in two passes and union by ticker.
+        Caches last N underlyings (LRU) to bound memory for full-universe runs.
+        L2 disk cache (when MELTANO_SHARED_CACHE_DIR is set) shares contract data
+        across parallel Meltano subprocesses.
         """
+        # Double-checked locking: fast path without lock for cache hits
+        if underlying in self._option_contracts_cache:
+            with self._option_contracts_lock:
+                if underlying in self._option_contracts_cache:
+                    self._option_contracts_cache.move_to_end(underlying)
+                    return self._option_contracts_cache[underlying]
+
+        # Cache miss: fetch outside lock, then store under lock
         option_cfg = self.config.get("option_tickers", {})
-        query_params = option_cfg.get("query_params", {}).copy()
-        other_params = option_cfg.get("other_params", {})
+        option_qp = option_cfg.get("query_params", {})
+        option_other = option_cfg.get("other_params", {})
+
+        if self._disk_cache is not None:
+            fingerprint = self._option_contracts_fingerprint(option_qp, option_other)
+            disk_key = f"options_contracts/v1/{underlying}/{fingerprint}"
+            contracts = self._disk_cache.get_or_fetch(
+                disk_key,
+                lambda u=underlying, qp=option_qp, op=option_other: self._fetch_option_contracts(
+                    u, qp, op
+                ),
+            )
+        else:
+            contracts = self._fetch_option_contracts(
+                underlying, option_qp, option_other
+            )
+
+        with self._option_contracts_lock:
+            # Evict oldest if at capacity
+            while len(self._option_contracts_cache) >= self._option_contracts_cache_max:
+                evicted = self._option_contracts_cache.popitem(last=False)
+                logging.debug(f"Evicted contract cache for {evicted[0]}.")
+            self._option_contracts_cache[underlying] = contracts
+
+        return contracts
+
+    def _fetch_option_contracts(
+        self,
+        underlying: str,
+        query_params: dict[str, t.Any] | None = None,
+        other_params: dict[str, t.Any] | None = None,
+    ) -> list[dict]:
+        """Fetch and deduplicate option contracts for a single underlying."""
+        if query_params is None or other_params is None:
+            option_cfg = self.config.get("option_tickers", {})
+            query_params = query_params or option_cfg.get("query_params", {})
+            other_params = other_params or option_cfg.get("other_params", {})
+        query_params = query_params.copy()
         expired_mode = other_params.get("expired")
         query_variants = BaseTickerStream.boolean_query_variants(
             query_params, "expired", expired_mode
@@ -385,11 +584,15 @@ class TapMassive(Tap):
                 contracts.append(contract)
 
         if len(query_variants) > 1:
-            # Dedupe by ticker for expired+active union and keep deterministic ordering.
+            # Dedupe by ticker for expired+active union.
             seen: dict[str, dict] = {}
             for contract in contracts:
                 seen.setdefault(contract["ticker"], contract)
-            contracts = sorted(seen.values(), key=lambda c: c["ticker"])
+            contracts = list(seen.values())
+
+        # Unconditional sort ensures deterministic ordering for disk caching
+        # regardless of API sort param.
+        contracts.sort(key=lambda c: c["ticker"])
 
         logging.info(f"Fetched {len(contracts)} option contracts for {underlying}.")
         return contracts
@@ -448,6 +651,34 @@ class TapMassive(Tap):
                     )
         return self._earnings_calendar_cache[cache_key]
 
+    def get_market_windows(
+        self, interval_seconds: int, start_ns: int, end_ns: int
+    ) -> list[int]:
+        """Thread-safe cached market window computation for quote snapshot streams.
+
+        Returns sorted list of window_start nanosecond timestamps during NYSE hours
+        for the given interval and time range.
+        """
+        cache_key = f"{interval_seconds}:{start_ns}:{end_ns}"
+        if cache_key not in self._market_windows_cache:
+            with self._market_windows_lock:
+                if cache_key not in self._market_windows_cache:
+                    self._market_windows_cache[cache_key] = compute_nyse_market_windows(
+                        interval_seconds, start_ns, end_ns
+                    )
+        return self._market_windows_cache[cache_key]
+
+    def get_nyse_sessions(self, start_ns: int, end_ns: int) -> list[tuple[int, int]]:
+        """Thread-safe cached NYSE session boundaries for freshness checks."""
+        cache_key = f"{start_ns}:{end_ns}"
+        if cache_key not in self._nyse_sessions_cache:
+            with self._nyse_sessions_lock:
+                if cache_key not in self._nyse_sessions_cache:
+                    self._nyse_sessions_cache[cache_key] = compute_nyse_session_opens(
+                        start_ns, end_ns
+                    )
+        return self._nyse_sessions_cache[cache_key]
+
     def discover_streams(self) -> list[MassiveRestStream]:
         stock_tickers_stream = self.get_stock_tickers_stream()
 
@@ -468,6 +699,12 @@ class TapMassive(Tap):
             StockLastTradeStream(self),
             StockQuoteStream(self),
             StockLastQuoteStream(self),
+            StockQuoteUpdateBar1SecondStream(self),
+            StockQuoteUpdateBar30SecondStream(self),
+            StockQuoteUpdateBar1MinuteStream(self),
+            StockQuoteUpdateBar5MinuteStream(self),
+            StockQuoteUpdateBar30MinuteStream(self),
+            StockQuoteUpdateBar1HourStream(self),
             SmaStream(self),
             EmaStream(self),
             MACDStream(self),
@@ -529,6 +766,12 @@ class TapMassive(Tap):
             OptionsTradeStream(self),
             OptionsLastTradeStream(self),
             OptionsQuoteStream(self),
+            OptionsQuoteUpdateBar1SecondStream(self),
+            OptionsQuoteUpdateBar30SecondStream(self),
+            OptionsQuoteUpdateBar1MinuteStream(self),
+            OptionsQuoteUpdateBar5MinuteStream(self),
+            OptionsQuoteUpdateBar30MinuteStream(self),
+            OptionsQuoteUpdateBar1HourStream(self),
             OptionsContractSnapshotStream(self),
             OptionsChainSnapshotStream(self),
             OptionsUnifiedSnapshotStream(self),
@@ -639,6 +882,19 @@ class TapMassive(Tap):
             # Earnings-filtered quote streams
             StockEarningsQuotesStream(self),
             OptionsEarningsQuotesStream(self),
+            # Earnings-filtered quote update bar streams
+            StockEarningsQuoteUpdateBar1SecondStream(self),
+            StockEarningsQuoteUpdateBar30SecondStream(self),
+            StockEarningsQuoteUpdateBar1MinuteStream(self),
+            StockEarningsQuoteUpdateBar5MinuteStream(self),
+            StockEarningsQuoteUpdateBar30MinuteStream(self),
+            StockEarningsQuoteUpdateBar1HourStream(self),
+            OptionsEarningsQuoteUpdateBar1SecondStream(self),
+            OptionsEarningsQuoteUpdateBar30SecondStream(self),
+            OptionsEarningsQuoteUpdateBar1MinuteStream(self),
+            OptionsEarningsQuoteUpdateBar5MinuteStream(self),
+            OptionsEarningsQuoteUpdateBar30MinuteStream(self),
+            OptionsEarningsQuoteUpdateBar1HourStream(self),
             # Flat file streams
             FlatFilesStreamStockEod(self),
             FlatFilesStreamStock1m(self),
@@ -648,6 +904,11 @@ class TapMassive(Tap):
             FlatFilesStreamOption1m(self),
             FlatFilesStreamOptionTrades(self),
             FlatFilesStreamOptionQuotes(self),
+            OptionsQuoteUpdateBarFlatFiles1SecondStream(self),
+            OptionsQuoteUpdateBarFlatFiles30SecondStream(self),
+            OptionsQuoteUpdateBarFlatFiles1MinuteStream(self),
+            OptionsQuoteUpdateBarFlatFiles5MinuteStream(self),
+            OptionsQuoteUpdateBarFlatFiles30MinuteStream(self),
             FlatFilesStreamIndexEod(self),
             FlatFilesStreamIndex1m(self),
             FlatFilesStreamIndexValues(self),

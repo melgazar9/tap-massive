@@ -32,6 +32,14 @@ from tap_massive.base_streams import (
     _TodaysChangePercentMixin,
 )
 from tap_massive.client import MassiveRestStream, OptionalTickerPartitionStream
+from tap_massive.quote_update_bar_streams import (
+    QuoteUpdateBar1HourStream,
+    QuoteUpdateBar1MinuteStream,
+    QuoteUpdateBar1SecondStream,
+    QuoteUpdateBar5MinuteStream,
+    QuoteUpdateBar30MinuteStream,
+    QuoteUpdateBar30SecondStream,
+)
 
 
 class StockTickerStream(BaseTickerStream):
@@ -794,3 +802,42 @@ class StockTickerEventsStream(StockTickerPartitionStream):
         if row and context:
             row["ticker"] = context.get(self._ticker_param)
         return row
+
+
+# --- Quote Update Bars Streams (Sampled Quote Bars) ---
+
+
+class StockQuoteUpdateBar1SecondStream(
+    StockTickerPartitionStream, QuoteUpdateBar1SecondStream
+):
+    name = "stock_quote_update_bars_1_second"
+
+
+class StockQuoteUpdateBar30SecondStream(
+    StockTickerPartitionStream, QuoteUpdateBar30SecondStream
+):
+    name = "stock_quote_update_bars_30_second"
+
+
+class StockQuoteUpdateBar1MinuteStream(
+    StockTickerPartitionStream, QuoteUpdateBar1MinuteStream
+):
+    name = "stock_quote_update_bars_1_minute"
+
+
+class StockQuoteUpdateBar5MinuteStream(
+    StockTickerPartitionStream, QuoteUpdateBar5MinuteStream
+):
+    name = "stock_quote_update_bars_5_minute"
+
+
+class StockQuoteUpdateBar30MinuteStream(
+    StockTickerPartitionStream, QuoteUpdateBar30MinuteStream
+):
+    name = "stock_quote_update_bars_30_minute"
+
+
+class StockQuoteUpdateBar1HourStream(
+    StockTickerPartitionStream, QuoteUpdateBar1HourStream
+):
+    name = "stock_quote_update_bars_1_hour"

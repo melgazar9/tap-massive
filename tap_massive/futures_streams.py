@@ -13,10 +13,9 @@ from tap_massive.base_streams import (
     BaseCustomBarsStream,
     BaseTickerPartitionStream,
     _NanosecondIncrementalMixin,
-    safe_decimal,
-    safe_int,
 )
 from tap_massive.client import MassiveRestStream
+from tap_massive.utils import safe_decimal, safe_int
 
 # ---------------------------------------------------------------------------
 # Reference data streams
