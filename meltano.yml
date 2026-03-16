@@ -110,6 +110,7 @@ plugins:
 
       # --- Options ---
       - options_contracts.*
+      - active_options_contracts.*
       - options_contract_overview.*
 #      - options_bars_1_second.*
 #      - options_bars_30_second.*
@@ -1046,6 +1047,13 @@ plugins:
       options_contracts:
         query_params:
           expired: true    # Include expired contracts for complete historical coverage
+          sort: ticker
+          order: asc
+          limit: 1000
+
+      active_options_contracts:
+        query_params:
+          expired: false   # Active (non-expired) contracts only
           sort: ticker
           order: asc
           limit: 1000

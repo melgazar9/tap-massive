@@ -139,6 +139,12 @@ class OptionsContractsStream(BaseTickerStream):
                 yield contract
 
 
+class ActiveOptionsContractsStream(OptionsContractsStream):
+    """Stream for retrieving only active (non-expired) options contracts."""
+
+    name = "active_options_contracts"
+
+
 class OptionsTickerPartitionStream(BaseTickerPartitionStream):
     """Partitions by underlying stock ticker, fetching filtered contracts per underlying.
 

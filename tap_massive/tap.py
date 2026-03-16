@@ -196,6 +196,7 @@ from tap_massive.indices_streams import (
     IndicesTickerStream,
 )
 from tap_massive.option_streams import (
+    ActiveOptionsContractsStream,
     OptionsBars1DayStream,
     OptionsBars1HourStream,
     OptionsBars1MinuteStream,
@@ -749,6 +750,7 @@ class TapMassive(Tap):
             StockBars1MonthStream(self),
             # Options streams
             OptionsContractsStream(self),
+            ActiveOptionsContractsStream(self),
             OptionsContractOverviewStream(self),
             OptionsExchangesStream(self),
             OptionsConditionCodesStream(self),

@@ -19,9 +19,7 @@ import pandas_market_calendars as mcal
 from singer_sdk import typing as th
 from singer_sdk.helpers.types import Context
 
-from tap_massive.base_streams import (
-    _NanosecondIncrementalMixin,
-)
+from tap_massive.base_streams import _NanosecondIncrementalMixin
 from tap_massive.client import MassiveRestStream
 from tap_massive.flat_files_streams import (
     _BARS_SCHEMA,
