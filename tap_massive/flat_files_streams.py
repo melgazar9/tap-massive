@@ -229,7 +229,7 @@ class FlatFilesStream(Stream):
         if isinstance(stream_config, dict):
             override = stream_config.get("flat_files_dir")
             if override:
-                return Path(override)
+                return Path(override).expanduser()
         base = self.config.get("flat_files_base_dir", "")
         if not base:
             return None
