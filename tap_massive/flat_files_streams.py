@@ -32,6 +32,7 @@ import duckdb
 from singer_sdk import Stream
 from singer_sdk import typing as th
 
+from tap_massive.disk_cache import resolve_home
 from tap_massive.utils import safe_int
 
 try:
@@ -229,11 +230,11 @@ class FlatFilesStream(Stream):
         if isinstance(stream_config, dict):
             override = stream_config.get("flat_files_dir")
             if override:
-                return Path(override).expanduser()
+                return resolve_home(Path(override))
         base = self.config.get("flat_files_base_dir", "")
         if not base:
             return None
-        return Path(base) / self.SUBDIR
+        return resolve_home(Path(base)) / self.SUBDIR
 
     def _list_files(self) -> list[tuple[str, Path]]:
         """Return ``(date_str, path)`` pairs sorted ascending by date."""
@@ -968,7 +969,7 @@ class QuoteSnapshotFlatFilesStream(FlatFilesStream):
             elif isinstance(value, int):
                 conn.execute(f"SET {param}={value}")
             else:
-                value = os.path.expanduser(str(value))
+                value = str(resolve_home(Path(str(value))))
                 conn.execute(f"SET {param}='{value}'")
 
         if duckdb_batch_size > 1:
@@ -1017,7 +1018,9 @@ class QuoteSnapshotFlatFilesStream(FlatFilesStream):
         """Process local files with DuckDB, optionally batching multiple files."""
         if duckdb_batch_size <= 1:
             for file_date, filepath in files:
-                self.logger.info("Processing %s via DuckDB (date=%s)", filepath, file_date)
+                self.logger.info(
+                    "Processing %s via DuckDB (date=%s)", filepath, file_date
+                )
                 yield from self._run_duckdb_query(
                     conn, sql_template, str(filepath), file_date
                 )
@@ -1076,7 +1079,9 @@ class QuoteSnapshotFlatFilesStream(FlatFilesStream):
 
         try:
             # Fill prefetch buffer — enough to fill a batch
-            prefetch_count = max(workers, duckdb_batch_size) if duckdb_batch_size > 1 else workers
+            prefetch_count = (
+                max(workers, duckdb_batch_size) if duckdb_batch_size > 1 else workers
+            )
             for _ in range(prefetch_count):
                 if not _submit_next():
                     break
@@ -1093,7 +1098,10 @@ class QuoteSnapshotFlatFilesStream(FlatFilesStream):
                         "Processing %s via DuckDB (date=%s)", local_path, file_date
                     )
                     yield from self._run_duckdb_query(
-                        conn, sql_template, str(local_path), file_date,
+                        conn,
+                        sql_template,
+                        str(local_path),
+                        file_date,
                     )
                     if use_temp:
                         local_path.unlink(missing_ok=True)
@@ -1114,14 +1122,20 @@ class QuoteSnapshotFlatFilesStream(FlatFilesStream):
 
                     if len(ready_batch) >= duckdb_batch_size:
                         yield from self._process_file_batch(
-                            conn, sql_template, ready_batch, use_temp,
+                            conn,
+                            sql_template,
+                            ready_batch,
+                            use_temp,
                         )
                         ready_batch.clear()
 
                 # Flush remaining
                 if ready_batch:
                     yield from self._process_file_batch(
-                        conn, sql_template, ready_batch, use_temp,
+                        conn,
+                        sql_template,
+                        ready_batch,
+                        use_temp,
                     )
         finally:
             pool.shutdown(wait=True)
@@ -1175,7 +1189,9 @@ class QuoteSnapshotFlatFilesStream(FlatFilesStream):
         """Log, execute a batch DuckDB query, and clean up temp files."""
         self.logger.info(
             "Processing batch of %d files via DuckDB (%s to %s)",
-            len(ready_batch), ready_batch[0][0], ready_batch[-1][0],
+            len(ready_batch),
+            ready_batch[0][0],
+            ready_batch[-1][0],
         )
         yield from self._run_duckdb_batch_query(
             conn, sql_template, [str(p) for _, p in ready_batch]

@@ -1,4 +1,4 @@
-"""Cross-process disk cache for sharing discovery data across parallel Meltano subprocesses.
+"""Cross-process disk cache and path resolution for parallel Meltano subprocesses.
 
 Each Meltano subprocess gets its own Python process and in-memory state. This module
 provides a file-backed cache so that parallel subprocesses of the same tap can share
@@ -18,12 +18,47 @@ import hashlib
 import json
 import logging
 import os
+import pwd
 import re
 import tempfile
 import typing as t
 from datetime import datetime, timezone
+from pathlib import Path
 
 logger = logging.getLogger(__name__)
+
+
+# ---------------------------------------------------------------------------
+# Path resolution — single source of truth for tilde expansion in Docker.
+# Meltano strips HOME from plugin environments, so stdlib expanduser() breaks.
+# ---------------------------------------------------------------------------
+
+
+def resolve_home(path: Path) -> Path:
+    """Expand ~ reliably, even when HOME is stripped from the environment."""
+    s = str(path)
+    if s == "~/.cache" or s.startswith("~/.cache/"):
+        xdg_cache_home = os.environ.get("XDG_CACHE_HOME")
+        if xdg_cache_home:
+            suffix = s.removeprefix("~/.cache").lstrip("/")
+            return Path(xdg_cache_home) / suffix if suffix else Path(xdg_cache_home)
+
+    if s != "~" and not s.startswith("~/"):
+        return path
+
+    home = os.environ.get("HOME") or os.environ.get("APP_HOME") or ""
+    if not home or home == "/":
+        try:
+            home = pwd.getpwuid(os.getuid()).pw_dir
+        except KeyError:
+            home = ""
+    if not home or home == "/":
+        raise RuntimeError(
+            f"Cannot resolve '~' in path '{s}': HOME is not set and no passwd entry for UID {os.getuid()}. "
+            f"Set HOME in the environment or use an absolute path in meltano.yml."
+        )
+    return Path(s.replace("~", home, 1))
+
 
 _SCHEMA_VERSION = "v1"
 _UNSAFE_PATH_RE = re.compile(r"[/\\\x00]|\.\.")

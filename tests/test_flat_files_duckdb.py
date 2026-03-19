@@ -4,7 +4,10 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from tap_massive.flat_files_streams import _STOCK_QUOTE_SNAPSHOT_BATCH_SQL, _STOCK_QUOTE_SNAPSHOT_SQL
+from tap_massive.flat_files_streams import (
+    _STOCK_QUOTE_SNAPSHOT_BATCH_SQL,
+    _STOCK_QUOTE_SNAPSHOT_SQL,
+)
 
 from .duckdb_helpers import run_duckdb_bar_query, run_duckdb_batch_bar_query
 
@@ -115,7 +118,9 @@ class TestBatchQueryProducesSameResults:
         batch_rows = run_duckdb_batch_bar_query(
             _STOCK_QUOTE_SNAPSHOT_BATCH_SQL, [str(FIXTURE)], INTERVAL_NS
         )
-        sort_keys = [(r["file_date"], r["ticker"], r["asof_timestamp"]) for r in batch_rows]
+        sort_keys = [
+            (r["file_date"], r["ticker"], r["asof_timestamp"]) for r in batch_rows
+        ]
         assert sort_keys == sorted(sort_keys)
 
     def test_batch_dedup_within_file(self):
@@ -124,8 +129,10 @@ class TestBatchQueryProducesSameResults:
             _STOCK_QUOTE_SNAPSHOT_BATCH_SQL, [str(FIXTURE)], INTERVAL_NS
         )
         call_120 = [
-            r for r in batch_rows
-            if r["ticker"] == "O:TEST260320C00100000" and r["asof_timestamp"] == 120_000_000_000
+            r
+            for r in batch_rows
+            if r["ticker"] == "O:TEST260320C00100000"
+            and r["asof_timestamp"] == 120_000_000_000
         ]
         assert len(call_120) == 1
         assert call_120[0]["sip_timestamp"] == 100_000_000_000

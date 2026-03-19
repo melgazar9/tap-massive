@@ -7,7 +7,7 @@ import os
 import threading
 import typing as t
 from collections import OrderedDict
-from pathlib import PurePath
+from pathlib import Path, PurePath
 
 from singer_sdk import Tap
 from singer_sdk import typing as th
@@ -54,7 +54,7 @@ from tap_massive.crypto_streams import (
     CryptoTopMarketMoversStream,
     CryptoTradeStream,
 )
-from tap_massive.disk_cache import DiskCache, compute_fingerprint
+from tap_massive.disk_cache import DiskCache, compute_fingerprint, resolve_home
 from tap_massive.earnings_subset import (
     EarningsCalendar,
     EarningsFlatFilesStreamOption1m,
@@ -352,12 +352,7 @@ class TapMassive(Tap):
 
         shared_cache_dir = os.environ.get(
             "MELTANO_SHARED_CACHE_DIR",
-            os.path.join(
-                os.environ.get(
-                    "XDG_CACHE_HOME",
-                    os.path.join(os.path.expanduser("~"), ".cache"),
-                ),
-            ),
+            str(resolve_home(Path("~/.cache"))),
         )
         self._disk_cache: DiskCache | None = DiskCache(
             cache_dir=shared_cache_dir,
