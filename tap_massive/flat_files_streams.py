@@ -813,6 +813,7 @@ class QuoteSnapshotFlatFilesStream(FlatFilesStream):
     _RAW_BATCH_SQL_TEMPLATE: str = _STOCK_QUOTE_SNAPSHOT_BATCH_SQL
     _S3_ENDPOINT = "https://files.massive.com"
     _S3_BUCKET_TEMPLATE = "s3://flatfiles/{subdir}/{year}/{month}/{date}.csv.gz"
+    FILE_PREFIX: str = "stock_quotes"
 
     schema = _STOCK_QUOTE_SNAPSHOT_FLAT_FILES_SCHEMA
     primary_keys = ["file_date", "ticker", "asof_timestamp"]
@@ -855,12 +856,12 @@ class QuoteSnapshotFlatFilesStream(FlatFilesStream):
         """
 
         s3_url = self._s3_url(file_date)
-        local_path = dest_dir / f"{file_date}.csv.gz"
+        local_path = dest_dir / f"{self.FILE_PREFIX}_{file_date}.csv.gz"
         if local_path.exists():
             return local_path
 
         # Cross-process lock: other workers wait instead of downloading in parallel
-        lock_path = dest_dir / f".{file_date}.lock"
+        lock_path = dest_dir / f".{self.FILE_PREFIX}_{file_date}.lock"
         lock_path.parent.mkdir(parents=True, exist_ok=True)
         with lock_path.open("w") as lock_fh:
             fcntl.flock(lock_fh, fcntl.LOCK_EX)
@@ -876,7 +877,7 @@ class QuoteSnapshotFlatFilesStream(FlatFilesStream):
                 "AWS_SECRET_ACCESS_KEY": aws_secret,
             }
             # Download to temp file, rename atomically on success
-            tmp_path = dest_dir / f".{file_date}.tmp.csv.gz"
+            tmp_path = dest_dir / f".{self.FILE_PREFIX}_{file_date}.tmp.csv.gz"
             self.logger.info("Downloading %s → %s", s3_url, local_path)
             result = subprocess.run(  # noqa: S603
                 [
@@ -1187,6 +1188,7 @@ class QuoteSnapshotFlatFilesStream(FlatFilesStream):
 class _OptionsQuoteSnapshotFlatFilesBase(QuoteSnapshotFlatFilesStream):
     # Massive docs use quotes_v1; override SUBDIR if your account uses "quotes"
     SUBDIR = "us_options_opra/quotes_v1"
+    FILE_PREFIX = "options_quotes"
     _RAW_SQL_TEMPLATE = _OPTIONS_QUOTE_SNAPSHOT_SQL
     _RAW_BATCH_SQL_TEMPLATE = _OPTIONS_QUOTE_SNAPSHOT_BATCH_SQL
     schema = _OPTIONS_QUOTE_SNAPSHOT_FLAT_FILES_SCHEMA
