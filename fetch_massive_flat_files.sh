@@ -18,13 +18,14 @@ fi
 ENDPOINT="--endpoint-url https://files.massive.com"
 
 usage() {
-  echo "Usage: $0 --trades|--quotes|--bars-1m|--days|--values|--all [--exclude TYPE,...] --start-date YYYY-MM-DD --end-date YYYY-MM-DD --asset-class ASSET_CLASS"
+  echo "Usage: $0 --trades|--quotes|--bars-1m|--days|--values|--all [--exclude TYPE,...] [--destination DIR] --start-date YYYY-MM-DD --end-date YYYY-MM-DD --asset-class ASSET_CLASS"
   echo ""
   echo "Asset class examples:"
   echo "  us_stocks_sip, us_options_opra, us_indices"
   echo "  global_forex, global_crypto"
   echo ""
   echo "Options:"
+  echo "  --destination DIR   Base directory for downloads (default: \$HOME/massive_data)"
   echo "  --exclude TYPE,...  Exclude dataset types when using --all."
   echo "                      Valid types: trades, quotes, bars-1m, days, values"
   echo "                      Example: --all --exclude quotes,trades"
@@ -45,6 +46,7 @@ ASSET_CLASS=""
 ALL_DATASETS="false"
 EXCLUDE_TYPES=""
 ASSET_FILENAME_PREFIX=""
+DESTINATION="$HOME/massive_data"
 
 OS_NAME="$(uname -s)"
 DATE_STYLE="gnu"
@@ -125,6 +127,10 @@ while [[ $# -gt 0 ]]; do
       DATA_TYPE="values_v1"
       PREFIX="values"
       shift
+      ;;
+    --destination)
+      DESTINATION="$2"
+      shift 2
       ;;
     --exclude)
       EXCLUDE_TYPES="$2"
@@ -283,7 +289,7 @@ fi
 
 for dataset in "${datasets[@]}"; do
   IFS=":" read -r data_type prefix <<< "$dataset"
-  output_dir="$HOME/massive_data/${ASSET_CLASS}/${prefix}"
+  output_dir="${DESTINATION}/${ASSET_CLASS}/${prefix}"
   mkdir -p "$output_dir"
 
   current_sec=$start_sec
