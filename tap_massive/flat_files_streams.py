@@ -47,6 +47,66 @@ logger = logging.getLogger(__name__)
 
 _FILE_DATE_RE = re.compile(r"(\d{4}-\d{2}-\d{2})")
 
+# ---------------------------------------------------------------------------
+# DuckDB configuration
+# ---------------------------------------------------------------------------
+
+_ALLOWED_DUCKDB_PARAMS = frozenset({
+    "threads",
+    "memory_limit",
+    "temp_directory",
+    "max_temp_directory_size",
+    "preserve_insertion_order",
+})
+
+INTERVAL_NS_MAP = {
+    "1_second": 1_000_000_000,
+    "30_second": 30_000_000_000,
+    "1_minute": 60_000_000_000,
+    "5_minute": 300_000_000_000,
+    "30_minute": 1_800_000_000_000,
+}
+
+
+def configure_duckdb_connection(
+    conn,  # noqa: ANN001
+    params: dict,
+    resolve_paths: bool = False,
+) -> int:
+    """Apply validated DuckDB SET parameters to a connection.
+
+    Returns the duckdb_batch_size value (popped from params), defaults to 1.
+    """
+    params = dict(params)
+    batch_size = int(params.pop("duckdb_batch_size", 1))
+
+    for param, value in params.items():
+        if param not in _ALLOWED_DUCKDB_PARAMS:
+            msg = f"DuckDB param '{param}' is not in the allowlist: {sorted(_ALLOWED_DUCKDB_PARAMS)}"
+            raise ValueError(msg)
+
+        if isinstance(value, bool):
+            conn.execute(f"SET {param}={str(value).lower()}")
+        elif isinstance(value, int):
+            conn.execute(f"SET {param}={value}")
+        else:
+            str_value = str(value)
+            if resolve_paths:
+                str_value = str(Path(str_value).expanduser())
+            str_value = str_value.replace("'", "''")
+            conn.execute(f"SET {param}='{str_value}'")
+
+    return batch_size
+
+
+def resolve_interval_ns(stream_name: str) -> int:
+    """Extract interval_ns from a stream name suffix."""
+    for suffix, ns in INTERVAL_NS_MAP.items():
+        if stream_name.endswith(suffix):
+            return ns
+    msg = f"Cannot determine interval_ns from stream name: {stream_name}"
+    raise ValueError(msg)
+
 
 # ---------------------------------------------------------------------------
 # Type coercion helpers (CSV string → Python)
@@ -1055,15 +1115,7 @@ class QuoteSnapshotFlatFilesStream(FlatFilesStream):
 
         conn = duckdb.connect()
         duckdb_params = dict(self.config.get("duckdb_params") or {})
-        duckdb_batch_size = int(duckdb_params.pop("duckdb_batch_size", 1))
-        for param, value in duckdb_params.items():
-            if isinstance(value, bool):
-                conn.execute(f"SET {param}={str(value).lower()}")
-            elif isinstance(value, int):
-                conn.execute(f"SET {param}={value}")
-            else:
-                value = str(resolve_home(Path(str(value))))
-                conn.execute(f"SET {param}='{value}'")
+        duckdb_batch_size = configure_duckdb_connection(conn, duckdb_params, resolve_paths=True)
 
         if duckdb_batch_size > 1:
             sql_template = self._RAW_BATCH_SQL_TEMPLATE.format(
@@ -1246,7 +1298,7 @@ class QuoteSnapshotFlatFilesStream(FlatFilesStream):
     ) -> t.Iterable[dict[str, t.Any]]:
         """Yield dicts from a DuckDB result with per-file perf timing.
 
-        Uses Arrow-based fetch_record_batch for zero-copy transfer from
+        Uses Arrow-based to_arrow_reader for zero-copy transfer from
         DuckDB, then batch.to_pylist() converts to list[dict] in C.
         Tracks fetch time separately from target overhead to isolate
         DuckDB vs Postgres bottlenecks.
