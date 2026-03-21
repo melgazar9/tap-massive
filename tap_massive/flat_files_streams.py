@@ -1251,7 +1251,7 @@ class QuoteSnapshotFlatFilesStream(FlatFilesStream):
         Tracks fetch time separately from target overhead to isolate
         DuckDB vs Postgres bottlenecks.
         """
-        reader = result.fetch_record_batch(rows_per_batch=self._FETCH_BATCH_SIZE)
+        reader = result.to_arrow_reader(rows_per_batch=self._FETCH_BATCH_SIZE)
         row_count = 0
         fetch_elapsed = 0.0
         wall_start = time.perf_counter()
