@@ -21,6 +21,7 @@ import re
 import shutil
 import subprocess
 import tempfile
+import time
 import typing as t
 from collections import deque
 from concurrent.futures import Future, ThreadPoolExecutor
@@ -541,6 +542,7 @@ class FlatFilesStreamFutureQuotes(FlatFilesStream):
 
 _STOCK_QUOTE_SNAPSHOT_SQL = """
 SELECT
+    '{file_date}' AS file_date,
     ticker,
     asof_timestamp,
     sip_timestamp,
@@ -624,6 +626,7 @@ _STOCK_QUOTE_SNAPSHOT_FLAT_FILES_SCHEMA = th.PropertiesList(
 # trf_timestamp, conditions, indicators, or tape columns.
 _OPTIONS_QUOTE_SNAPSHOT_SQL = """
 SELECT
+    '{file_date}' AS file_date,
     ticker,
     asof_timestamp,
     sip_timestamp,
@@ -981,6 +984,7 @@ class QuoteSnapshotFlatFilesStream(FlatFilesStream):
             sql_template = self._RAW_SQL_TEMPLATE.format(
                 interval_ns=self._interval_ns,
                 file_path="{file_path}",
+                file_date="{file_date}",
             )
 
         try:
@@ -1142,13 +1146,52 @@ class QuoteSnapshotFlatFilesStream(FlatFilesStream):
             if tmp_ctx:
                 tmp_ctx.cleanup()
 
-    @staticmethod
-    def _iter_duckdb_result(result) -> t.Iterable[dict[str, t.Any]]:  # noqa: ANN001
-        """Yield dicts from a DuckDB query result, fetching in 10k-row batches."""
-        columns = [desc[0] for desc in result.description]
-        while batch := result.fetchmany(10000):
-            for row_tuple in batch:
-                yield dict(zip(columns, row_tuple))
+    _FETCH_BATCH_SIZE = 1_000_000
+
+    def _iter_duckdb_result(
+        self,
+        result,  # noqa: ANN001
+        execute_elapsed: float,
+        label: str,
+    ) -> t.Iterable[dict[str, t.Any]]:
+        """Yield dicts from a DuckDB result with per-file perf timing.
+
+        Uses Arrow-based fetch_record_batch for zero-copy transfer from
+        DuckDB, then batch.to_pylist() converts to list[dict] in C.
+        Tracks fetch time separately from target overhead to isolate
+        DuckDB vs Postgres bottlenecks.
+        """
+        reader = result.fetch_record_batch(rows_per_batch=self._FETCH_BATCH_SIZE)
+        row_count = 0
+        fetch_elapsed = 0.0
+        wall_start = time.perf_counter()
+
+        while True:
+            ft0 = time.perf_counter()
+            try:
+                batch = reader.read_next_batch()
+            except StopIteration:
+                fetch_elapsed += time.perf_counter() - ft0
+                break
+            rows = batch.to_pylist()
+            fetch_elapsed += time.perf_counter() - ft0
+
+            row_count += len(rows)
+            yield from rows
+
+        wall_elapsed = time.perf_counter() - wall_start
+        target_overhead = wall_elapsed - fetch_elapsed
+        total = execute_elapsed + wall_elapsed
+        self.logger.info(
+            "PERF duckdb_complete %s rows=%d execute=%.2fs fetch=%.2fs "
+            "target_overhead=%.2fs total=%.2fs",
+            label,
+            row_count,
+            execute_elapsed,
+            fetch_elapsed,
+            target_overhead,
+            total,
+        )
 
     def _run_duckdb_query(
         self,
@@ -1158,11 +1201,14 @@ class QuoteSnapshotFlatFilesStream(FlatFilesStream):
         file_date: str,
     ) -> t.Iterable[dict[str, t.Any]]:
         """Execute the aggregation query for a single file and yield rows."""
-        query = sql_template.replace("{file_path}", source)
+        query = sql_template.replace("{file_path}", source).replace("{file_date}", file_date)
+
+        t0 = time.perf_counter()
         result = conn.execute(query)
-        for row in self._iter_duckdb_result(result):
-            row["file_date"] = file_date
-            yield row
+        execute_elapsed = time.perf_counter() - t0
+        self.logger.info("PERF duckdb_execute file=%s elapsed=%.2fs", file_date, execute_elapsed)
+
+        yield from self._iter_duckdb_result(result, execute_elapsed, f"file={file_date}")
 
     def _run_duckdb_batch_query(
         self,
@@ -1177,7 +1223,13 @@ class QuoteSnapshotFlatFilesStream(FlatFilesStream):
         """
         file_list_literal = "[" + ", ".join(f"'{p}'" for p in file_paths) + "]"
         query = sql_template.replace("{file_list}", file_list_literal)
-        yield from self._iter_duckdb_result(conn.execute(query))
+
+        t0 = time.perf_counter()
+        result = conn.execute(query)
+        execute_elapsed = time.perf_counter() - t0
+        self.logger.info("PERF duckdb_execute files=%d elapsed=%.2fs", len(file_paths), execute_elapsed)
+
+        yield from self._iter_duckdb_result(result, execute_elapsed, f"files={len(file_paths)}")
 
     def _process_file_batch(
         self,

@@ -15,6 +15,9 @@ if [[ -z "$MASSIVE_FLAT_FILE_AWS_KEY" || -z "$MASSIVE_FLAT_FILE_AWS_SECRET_KEY" 
   exit 1
 fi
 
+export AWS_ACCESS_KEY_ID="$MASSIVE_FLAT_FILE_AWS_KEY"
+export AWS_SECRET_ACCESS_KEY="$MASSIVE_FLAT_FILE_AWS_SECRET_KEY"
+
 ENDPOINT="--endpoint-url https://files.massive.com"
 
 usage() {
