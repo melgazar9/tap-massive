@@ -329,6 +329,14 @@ plugins:
       base_url: https://api.massive.com
       flat_files_base_dir: ${MASSIVE_FLAT_FILES_BASE_DIR}
 
+      duckdb_params:
+        threads: 6
+        memory_limit: "16GB"
+        temp_directory: "~/.cache/duckdb_spill"
+        max_temp_directory_size: "50GB"
+        preserve_insertion_order: false
+        duckdb_batch_size: 1
+
       # --- Flat file stream date ranges (example) ---
       # stocks_flat_files_1m:
       #   start_file_date: "2026-02-18"

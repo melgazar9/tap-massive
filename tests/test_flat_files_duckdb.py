@@ -94,13 +94,15 @@ class TestBatchQueryProducesSameResults:
         batch_rows = run_duckdb_batch_bar_query(
             _STOCK_QUOTE_SNAPSHOT_BATCH_SQL, [str(FIXTURE)], INTERVAL_NS
         )
-        # Batch adds file_date column; strip it for comparison
+        # Strip file_date from both — single uses a test literal, batch extracts from filename
+        for row in single_rows:
+            row.pop("file_date", None)
         for row in batch_rows:
-            row.pop("file_date")
+            row.pop("file_date", None)
         assert batch_rows == single_rows
 
     def test_batch_with_same_file_twice_deduplicates(self):
-        """Same file passed twice has identical filename/file_date, so QUALIFY deduplicates."""
+        """Same file passed twice has identical filename/file_date, so GROUP BY deduplicates."""
         batch_rows = run_duckdb_batch_bar_query(
             _STOCK_QUOTE_SNAPSHOT_BATCH_SQL, [str(FIXTURE), str(FIXTURE)], INTERVAL_NS
         )
@@ -113,15 +115,13 @@ class TestBatchQueryProducesSameResults:
         )
         assert all("file_date" in row for row in batch_rows)
 
-    def test_batch_results_ordered_by_file_date_first(self):
-        """Results must be ordered by file_date, then ticker, then asof_timestamp."""
+    def test_batch_results_ordered_by_file_date(self):
+        """Results must be ordered by file_date (replication key for incremental state)."""
         batch_rows = run_duckdb_batch_bar_query(
             _STOCK_QUOTE_SNAPSHOT_BATCH_SQL, [str(FIXTURE)], INTERVAL_NS
         )
-        sort_keys = [
-            (r["file_date"], r["ticker"], r["asof_timestamp"]) for r in batch_rows
-        ]
-        assert sort_keys == sorted(sort_keys)
+        file_dates = [r["file_date"] for r in batch_rows]
+        assert file_dates == sorted(file_dates)
 
     def test_batch_dedup_within_file(self):
         """Last-quote-wins dedup should still work within each file in a batch."""

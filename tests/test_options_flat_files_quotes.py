@@ -38,6 +38,7 @@ def test_options_quote_snapshot_sql_accepts_options_shape() -> None:
 
     assert len(rows) == 3
     assert set(rows[0]) == {
+        "file_date",
         "ticker",
         "asof_timestamp",
         "sip_timestamp",
@@ -73,8 +74,11 @@ def test_options_batch_query_matches_single_file() -> None:
     batch_rows = run_duckdb_batch_bar_query(
         _OPTIONS_QUOTE_SNAPSHOT_BATCH_SQL, [str(FIXTURE)], INTERVAL_NS
     )
+    # Strip file_date from both — single uses a test literal, batch extracts from filename
+    for row in single_rows:
+        row.pop("file_date", None)
     for row in batch_rows:
-        row.pop("file_date")
+        row.pop("file_date", None)
     assert batch_rows == single_rows
 
 

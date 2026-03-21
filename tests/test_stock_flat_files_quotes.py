@@ -45,6 +45,7 @@ def test_stock_quote_snapshot_sql_accepts_stock_shape() -> None:
 
     assert len(rows) == 3
     assert set(rows[0]) == {
+        "file_date",
         "ticker",
         "asof_timestamp",
         "sip_timestamp",
@@ -82,8 +83,11 @@ def test_stock_batch_query_matches_single_file() -> None:
     batch_rows = run_duckdb_batch_bar_query(
         _STOCK_QUOTE_SNAPSHOT_BATCH_SQL, [str(FIXTURE)], INTERVAL_NS
     )
+    # Strip file_date from both — single uses a test literal, batch extracts from filename
+    for row in single_rows:
+        row.pop("file_date", None)
     for row in batch_rows:
-        row.pop("file_date")
+        row.pop("file_date", None)
     assert batch_rows == single_rows
 
 
@@ -100,9 +104,9 @@ def test_stock_batch_has_file_date_and_stock_columns() -> None:
 
 
 def test_stock_batch_results_ordered_by_file_date() -> None:
-    """Batch results must be ordered by file_date, ticker, asof_timestamp."""
+    """Batch results must be ordered by file_date (replication key for incremental state)."""
     batch_rows = run_duckdb_batch_bar_query(
         _STOCK_QUOTE_SNAPSHOT_BATCH_SQL, [str(FIXTURE)], INTERVAL_NS
     )
-    sort_keys = [(r["file_date"], r["ticker"], r["asof_timestamp"]) for r in batch_rows]
-    assert sort_keys == sorted(sort_keys)
+    file_dates = [r["file_date"] for r in batch_rows]
+    assert file_dates == sorted(file_dates)
