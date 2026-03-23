@@ -109,6 +109,99 @@ def resolve_interval_ns(stream_name: str) -> int:
 
 
 # ---------------------------------------------------------------------------
+# Quote snapshot column definitions — single source of truth.
+# Stock quotes have extra columns; options quotes are a subset.
+# ---------------------------------------------------------------------------
+
+STOCK_QUOTE_CSV_COLUMNS = {
+    "ticker": "VARCHAR",
+    "ask_exchange": "INTEGER",
+    "ask_price": "DOUBLE",
+    "ask_size": "DOUBLE",
+    "bid_exchange": "INTEGER",
+    "bid_price": "DOUBLE",
+    "bid_size": "DOUBLE",
+    "conditions": "VARCHAR",
+    "indicators": "VARCHAR",
+    "participant_timestamp": "BIGINT",
+    "sequence_number": "BIGINT",
+    "sip_timestamp": "BIGINT",
+    "tape": "INTEGER",
+    "trf_timestamp": "BIGINT",
+}
+
+OPTIONS_QUOTE_CSV_COLUMNS = {
+    "ticker": "VARCHAR",
+    "ask_exchange": "INTEGER",
+    "ask_price": "DOUBLE",
+    "ask_size": "DOUBLE",
+    "bid_exchange": "INTEGER",
+    "bid_price": "DOUBLE",
+    "bid_size": "DOUBLE",
+    "sequence_number": "BIGINT",
+    "sip_timestamp": "BIGINT",
+}
+
+# Fields tracked in the arg_max struct (all quote fields except ticker).
+STOCK_QUOTE_ARGMAX_FIELDS = (
+    "sip_timestamp",
+    "participant_timestamp",
+    "trf_timestamp",
+    "sequence_number",
+    "ask_exchange",
+    "ask_price",
+    "ask_size",
+    "bid_exchange",
+    "bid_price",
+    "bid_size",
+    "conditions",
+    "indicators",
+    "tape",
+)
+
+OPTIONS_QUOTE_ARGMAX_FIELDS = (
+    "sip_timestamp",
+    "sequence_number",
+    "ask_exchange",
+    "ask_price",
+    "ask_size",
+    "bid_exchange",
+    "bid_price",
+    "bid_size",
+)
+
+# Ordering key for arg_max — always (sip_timestamp, sequence_number).
+ARGMAX_ORDER_KEY = "struct_pack(ts := sip_timestamp, seq := sequence_number)"
+
+
+def _build_csv_columns_clause(columns: dict, double_braces: bool = True) -> str:
+    """Build the DuckDB read_csv columns={...} clause content.
+
+    double_braces=True for .format() templates, False for .replace() templates.
+    """
+    inner = ",\n            ".join(f"'{col}': '{dtype}'" for col, dtype in columns.items())
+    ob, cb = ("{{", "}}") if double_braces else ("{", "}")
+    return f"{ob}\n            {inner}\n        {cb}"
+
+
+def _build_argmax_struct(fields: tuple[str, ...], double_braces: bool = True) -> str:
+    """Build the arg_max struct literal: {field: field, ...}."""
+    inner = ",\n                ".join(f"{f}: {f}" for f in fields)
+    ob, cb = ("{{", "}}") if double_braces else ("{", "}")
+    return f"{ob}\n                {inner}\n            {cb}"
+
+
+def _build_output_select(fields: tuple[str, ...], struct_alias: str = "last_quote") -> str:
+    """Build the SELECT that unpacks struct fields from arg_max result."""
+    return ",\n    ".join(f"({struct_alias}).{f} AS {f}" for f in fields)
+
+
+def _build_select_fields(fields: tuple[str, ...]) -> str:
+    """Build comma-separated field list for SELECT in bucketed CTE."""
+    return ",\n        ".join(fields)
+
+
+# ---------------------------------------------------------------------------
 # Type coercion helpers (CSV string → Python)
 # ---------------------------------------------------------------------------
 
@@ -604,42 +697,15 @@ _STOCK_QUOTE_SNAPSHOT_SQL = """
 WITH bucketed AS (
     SELECT
         ticker,
-        (((sip_timestamp - 1) // {interval_ns}) + 1) * {interval_ns} AS asof_timestamp,
-        sip_timestamp,
-        participant_timestamp,
-        trf_timestamp,
-        sequence_number,
-        ask_exchange,
-        ask_price,
-        ask_size,
-        bid_exchange,
-        bid_price,
-        bid_size,
-        conditions,
-        indicators,
-        tape
+        (((sip_timestamp - 1) // {{interval_ns}}) + 1) * {{interval_ns}} AS asof_timestamp,
+        {bucketed_fields}
     FROM read_csv(
-        '{file_path}',
+        '{{file_path}}',
         header=true,
         auto_detect=false,
         delim=',',
         quote='"',
-        columns={{
-            'ticker': 'VARCHAR',
-            'ask_exchange': 'INTEGER',
-            'ask_price': 'DOUBLE',
-            'ask_size': 'DOUBLE',
-            'bid_exchange': 'INTEGER',
-            'bid_price': 'DOUBLE',
-            'bid_size': 'DOUBLE',
-            'conditions': 'VARCHAR',
-            'indicators': 'VARCHAR',
-            'participant_timestamp': 'BIGINT',
-            'sequence_number': 'BIGINT',
-            'sip_timestamp': 'BIGINT',
-            'tape': 'INTEGER',
-            'trf_timestamp': 'BIGINT'
-        }}
+        columns={csv_columns}
     )
 ),
 grouped AS (
@@ -647,45 +713,25 @@ grouped AS (
         ticker,
         asof_timestamp,
         arg_max(
-            {{
-                sip_timestamp: sip_timestamp,
-                participant_timestamp: participant_timestamp,
-                trf_timestamp: trf_timestamp,
-                sequence_number: sequence_number,
-                ask_exchange: ask_exchange,
-                ask_price: ask_price,
-                ask_size: ask_size,
-                bid_exchange: bid_exchange,
-                bid_price: bid_price,
-                bid_size: bid_size,
-                conditions: conditions,
-                indicators: indicators,
-                tape: tape
-            }},
-            struct_pack(ts := sip_timestamp, seq := sequence_number)
+            {argmax_struct},
+            {order_key}
         ) AS last_quote
     FROM bucketed
     GROUP BY ticker, asof_timestamp
 )
 SELECT
-    '{file_date}' AS file_date,
+    '{{file_date}}' AS file_date,
     ticker,
     asof_timestamp,
-    (last_quote).sip_timestamp AS sip_timestamp,
-    (last_quote).participant_timestamp AS participant_timestamp,
-    (last_quote).trf_timestamp AS trf_timestamp,
-    (last_quote).sequence_number AS sequence_number,
-    (last_quote).ask_exchange AS ask_exchange,
-    (last_quote).ask_price AS ask_price,
-    (last_quote).ask_size AS ask_size,
-    (last_quote).bid_exchange AS bid_exchange,
-    (last_quote).bid_price AS bid_price,
-    (last_quote).bid_size AS bid_size,
-    (last_quote).conditions AS conditions,
-    (last_quote).indicators AS indicators,
-    (last_quote).tape AS tape
+    {output_select}
 FROM grouped
-"""
+""".format(
+    bucketed_fields=_build_select_fields(STOCK_QUOTE_ARGMAX_FIELDS),
+    csv_columns=_build_csv_columns_clause(STOCK_QUOTE_CSV_COLUMNS, double_braces=True),
+    argmax_struct=_build_argmax_struct(STOCK_QUOTE_ARGMAX_FIELDS, double_braces=True),
+    order_key=ARGMAX_ORDER_KEY,
+    output_select=_build_output_select(STOCK_QUOTE_ARGMAX_FIELDS),
+)
 
 _STOCK_QUOTE_SNAPSHOT_FLAT_FILES_SCHEMA = th.PropertiesList(
     th.Property("file_date", th.StringType),
@@ -712,32 +758,15 @@ _OPTIONS_QUOTE_SNAPSHOT_SQL = """
 WITH bucketed AS (
     SELECT
         ticker,
-        (((sip_timestamp - 1) // {interval_ns}) + 1) * {interval_ns} AS asof_timestamp,
-        sip_timestamp,
-        sequence_number,
-        ask_exchange,
-        ask_price,
-        ask_size,
-        bid_exchange,
-        bid_price,
-        bid_size
+        (((sip_timestamp - 1) // {{interval_ns}}) + 1) * {{interval_ns}} AS asof_timestamp,
+        {bucketed_fields}
     FROM read_csv(
-        '{file_path}',
+        '{{file_path}}',
         header=true,
         auto_detect=false,
         delim=',',
         quote='"',
-        columns={{
-            'ticker': 'VARCHAR',
-            'ask_exchange': 'INTEGER',
-            'ask_price': 'DOUBLE',
-            'ask_size': 'DOUBLE',
-            'bid_exchange': 'INTEGER',
-            'bid_price': 'DOUBLE',
-            'bid_size': 'DOUBLE',
-            'sequence_number': 'BIGINT',
-            'sip_timestamp': 'BIGINT'
-        }}
+        columns={csv_columns}
     )
 ),
 grouped AS (
@@ -745,78 +774,41 @@ grouped AS (
         ticker,
         asof_timestamp,
         arg_max(
-            {{
-                sip_timestamp: sip_timestamp,
-                sequence_number: sequence_number,
-                ask_exchange: ask_exchange,
-                ask_price: ask_price,
-                ask_size: ask_size,
-                bid_exchange: bid_exchange,
-                bid_price: bid_price,
-                bid_size: bid_size
-            }},
-            struct_pack(ts := sip_timestamp, seq := sequence_number)
+            {argmax_struct},
+            {order_key}
         ) AS last_quote
     FROM bucketed
     GROUP BY ticker, asof_timestamp
 )
 SELECT
-    '{file_date}' AS file_date,
+    '{{file_date}}' AS file_date,
     ticker,
     asof_timestamp,
-    (last_quote).sip_timestamp AS sip_timestamp,
-    (last_quote).sequence_number AS sequence_number,
-    (last_quote).ask_exchange AS ask_exchange,
-    (last_quote).ask_price AS ask_price,
-    (last_quote).ask_size AS ask_size,
-    (last_quote).bid_exchange AS bid_exchange,
-    (last_quote).bid_price AS bid_price,
-    (last_quote).bid_size AS bid_size
+    {output_select}
 FROM grouped
-"""
+""".format(
+    bucketed_fields=_build_select_fields(OPTIONS_QUOTE_ARGMAX_FIELDS),
+    csv_columns=_build_csv_columns_clause(OPTIONS_QUOTE_CSV_COLUMNS, double_braces=True),
+    argmax_struct=_build_argmax_struct(OPTIONS_QUOTE_ARGMAX_FIELDS, double_braces=True),
+    order_key=ARGMAX_ORDER_KEY,
+    output_select=_build_output_select(OPTIONS_QUOTE_ARGMAX_FIELDS),
+)
 
 _STOCK_QUOTE_SNAPSHOT_BATCH_SQL = """
 WITH bucketed AS (
     SELECT
-        regexp_extract(filename, '(\\d{{4}}-\\d{{2}}-\\d{{2}})', 1) AS file_date,
+        regexp_extract(filename, '(\\d{{{{4}}}}-\\d{{{{2}}}}-\\d{{{{2}}}})', 1) AS file_date,
         ticker,
-        (((sip_timestamp - 1) // {interval_ns}) + 1) * {interval_ns} AS asof_timestamp,
-        sip_timestamp,
-        participant_timestamp,
-        trf_timestamp,
-        sequence_number,
-        ask_exchange,
-        ask_price,
-        ask_size,
-        bid_exchange,
-        bid_price,
-        bid_size,
-        conditions,
-        indicators,
-        tape
+        (((sip_timestamp - 1) // {{interval_ns}}) + 1) * {{interval_ns}} AS asof_timestamp,
+        {bucketed_fields}
     FROM read_csv(
-        {file_list},
+        {{file_list}},
         filename=true,
         header=true,
         auto_detect=false,
         delim=',',
         quote='"',
-        columns={{
-            'ticker': 'VARCHAR',
-            'ask_exchange': 'INTEGER',
-            'ask_price': 'DOUBLE',
-            'ask_size': 'DOUBLE',
-            'bid_exchange': 'INTEGER',
-            'bid_price': 'DOUBLE',
-            'bid_size': 'DOUBLE',
-            'conditions': 'VARCHAR',
-            'indicators': 'VARCHAR',
-            'participant_timestamp': 'BIGINT',
-            'sequence_number': 'BIGINT',
-            'sip_timestamp': 'BIGINT',
-            'tape': 'INTEGER',
-            'trf_timestamp': 'BIGINT'
-        }}
+        columns={csv_columns}
     )
 ),
 grouped AS (
@@ -825,22 +817,8 @@ grouped AS (
         ticker,
         asof_timestamp,
         arg_max(
-            {{
-                sip_timestamp: sip_timestamp,
-                participant_timestamp: participant_timestamp,
-                trf_timestamp: trf_timestamp,
-                sequence_number: sequence_number,
-                ask_exchange: ask_exchange,
-                ask_price: ask_price,
-                ask_size: ask_size,
-                bid_exchange: bid_exchange,
-                bid_price: bid_price,
-                bid_size: bid_size,
-                conditions: conditions,
-                indicators: indicators,
-                tape: tape
-            }},
-            struct_pack(ts := sip_timestamp, seq := sequence_number)
+            {argmax_struct},
+            {order_key}
         ) AS last_quote
     FROM bucketed
     GROUP BY file_date, ticker, asof_timestamp
@@ -849,55 +827,32 @@ SELECT
     file_date,
     ticker,
     asof_timestamp,
-    (last_quote).sip_timestamp AS sip_timestamp,
-    (last_quote).participant_timestamp AS participant_timestamp,
-    (last_quote).trf_timestamp AS trf_timestamp,
-    (last_quote).sequence_number AS sequence_number,
-    (last_quote).ask_exchange AS ask_exchange,
-    (last_quote).ask_price AS ask_price,
-    (last_quote).ask_size AS ask_size,
-    (last_quote).bid_exchange AS bid_exchange,
-    (last_quote).bid_price AS bid_price,
-    (last_quote).bid_size AS bid_size,
-    (last_quote).conditions AS conditions,
-    (last_quote).indicators AS indicators,
-    (last_quote).tape AS tape
+    {output_select}
 FROM grouped
 ORDER BY file_date
-"""
+""".format(
+    bucketed_fields=_build_select_fields(STOCK_QUOTE_ARGMAX_FIELDS),
+    csv_columns=_build_csv_columns_clause(STOCK_QUOTE_CSV_COLUMNS, double_braces=True),
+    argmax_struct=_build_argmax_struct(STOCK_QUOTE_ARGMAX_FIELDS, double_braces=True),
+    order_key=ARGMAX_ORDER_KEY,
+    output_select=_build_output_select(STOCK_QUOTE_ARGMAX_FIELDS),
+)
 
 _OPTIONS_QUOTE_SNAPSHOT_BATCH_SQL = """
 WITH bucketed AS (
     SELECT
-        regexp_extract(filename, '(\\d{{4}}-\\d{{2}}-\\d{{2}})', 1) AS file_date,
+        regexp_extract(filename, '(\\d{{{{4}}}}-\\d{{{{2}}}}-\\d{{{{2}}}})', 1) AS file_date,
         ticker,
-        (((sip_timestamp - 1) // {interval_ns}) + 1) * {interval_ns} AS asof_timestamp,
-        sip_timestamp,
-        sequence_number,
-        ask_exchange,
-        ask_price,
-        ask_size,
-        bid_exchange,
-        bid_price,
-        bid_size
+        (((sip_timestamp - 1) // {{interval_ns}}) + 1) * {{interval_ns}} AS asof_timestamp,
+        {bucketed_fields}
     FROM read_csv(
-        {file_list},
+        {{file_list}},
         filename=true,
         header=true,
         auto_detect=false,
         delim=',',
         quote='"',
-        columns={{
-            'ticker': 'VARCHAR',
-            'ask_exchange': 'INTEGER',
-            'ask_price': 'DOUBLE',
-            'ask_size': 'DOUBLE',
-            'bid_exchange': 'INTEGER',
-            'bid_price': 'DOUBLE',
-            'bid_size': 'DOUBLE',
-            'sequence_number': 'BIGINT',
-            'sip_timestamp': 'BIGINT'
-        }}
+        columns={csv_columns}
     )
 ),
 grouped AS (
@@ -906,17 +861,8 @@ grouped AS (
         ticker,
         asof_timestamp,
         arg_max(
-            {{
-                sip_timestamp: sip_timestamp,
-                sequence_number: sequence_number,
-                ask_exchange: ask_exchange,
-                ask_price: ask_price,
-                ask_size: ask_size,
-                bid_exchange: bid_exchange,
-                bid_price: bid_price,
-                bid_size: bid_size
-            }},
-            struct_pack(ts := sip_timestamp, seq := sequence_number)
+            {argmax_struct},
+            {order_key}
         ) AS last_quote
     FROM bucketed
     GROUP BY file_date, ticker, asof_timestamp
@@ -925,17 +871,16 @@ SELECT
     file_date,
     ticker,
     asof_timestamp,
-    (last_quote).sip_timestamp AS sip_timestamp,
-    (last_quote).sequence_number AS sequence_number,
-    (last_quote).ask_exchange AS ask_exchange,
-    (last_quote).ask_price AS ask_price,
-    (last_quote).ask_size AS ask_size,
-    (last_quote).bid_exchange AS bid_exchange,
-    (last_quote).bid_price AS bid_price,
-    (last_quote).bid_size AS bid_size
+    {output_select}
 FROM grouped
 ORDER BY file_date
-"""
+""".format(
+    bucketed_fields=_build_select_fields(OPTIONS_QUOTE_ARGMAX_FIELDS),
+    csv_columns=_build_csv_columns_clause(OPTIONS_QUOTE_CSV_COLUMNS, double_braces=True),
+    argmax_struct=_build_argmax_struct(OPTIONS_QUOTE_ARGMAX_FIELDS, double_braces=True),
+    order_key=ARGMAX_ORDER_KEY,
+    output_select=_build_output_select(OPTIONS_QUOTE_ARGMAX_FIELDS),
+)
 
 _OPTIONS_QUOTE_SNAPSHOT_FLAT_FILES_SCHEMA = th.PropertiesList(
     th.Property("file_date", th.StringType),
