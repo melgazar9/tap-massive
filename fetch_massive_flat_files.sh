@@ -10,13 +10,13 @@
 # ./fetch_massive_flat_files.sh --bars-1m --start-date "2025-05-12" --end-date "2025-05-13" --asset-class us_indices
 # ./fetch_massive_flat_files.sh --values --start-date "2025-05-12" --end-date "2025-05-13" --asset-class us_indices
 
-if [[ -z "$MASSIVE_FLAT_FILE_AWS_KEY" || -z "$MASSIVE_FLAT_FILE_AWS_SECRET_KEY" ]]; then
-  echo "Error: MASSIVE_FLAT_FILE_AWS_KEY and MASSIVE_FLAT_FILE_AWS_SECRET_KEY must be set"
+if [[ -z "$MASSIVE_AWS_ACCESS_KEY_ID" || -z "$MASSIVE_API_KEY" ]]; then
+  echo "Error: MASSIVE_AWS_ACCESS_KEY_ID and MASSIVE_API_KEY must be set"
   exit 1
 fi
 
-export AWS_ACCESS_KEY_ID="$MASSIVE_FLAT_FILE_AWS_KEY"
-export AWS_SECRET_ACCESS_KEY="$MASSIVE_FLAT_FILE_AWS_SECRET_KEY"
+export AWS_ACCESS_KEY_ID="$MASSIVE_AWS_ACCESS_KEY_ID"
+export AWS_SECRET_ACCESS_KEY="$MASSIVE_API_KEY"
 
 ENDPOINT="--endpoint-url https://files.massive.com"
 

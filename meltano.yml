@@ -371,8 +371,8 @@ plugins:
       postgres_user: ${POSTGRES_USER}
       postgres_password: ${POSTGRES_PASSWORD}
 
-      flat_files_aws_key: ${MASSIVE_FLAT_FILE_AWS_KEY}
-      flat_files_aws_secret: ${MASSIVE_FLAT_FILE_AWS_SECRET_KEY}
+      flat_files_aws_key: ${MASSIVE_AWS_ACCESS_KEY_ID}
+      flat_files_aws_secret: ${MASSIVE_API_KEY}
 
       # --- Earnings-filtered quotes ---
       # earnings_source: "postgres" (default) or "api" (hit Massive API endpoints)
