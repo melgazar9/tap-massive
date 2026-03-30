@@ -12,14 +12,10 @@ read time so that downstream targets receive correctly-typed data.
 from __future__ import annotations
 
 import csv
-import fcntl
 import functools
 import gzip
 import logging
-import os
 import re
-import shutil
-import subprocess
 import tempfile
 import time
 import typing as t
@@ -34,6 +30,7 @@ from singer_sdk import Stream
 from singer_sdk import typing as th
 
 from tap_massive.disk_cache import resolve_home
+from tap_massive.s3_download import DownloadConfig, download_flat_file
 from tap_massive.utils import safe_int
 
 try:
@@ -51,13 +48,15 @@ _FILE_DATE_RE = re.compile(r"(\d{4}-\d{2}-\d{2})")
 # DuckDB configuration
 # ---------------------------------------------------------------------------
 
-_ALLOWED_DUCKDB_PARAMS = frozenset({
-    "threads",
-    "memory_limit",
-    "temp_directory",
-    "max_temp_directory_size",
-    "preserve_insertion_order",
-})
+_ALLOWED_DUCKDB_PARAMS = frozenset(
+    {
+        "threads",
+        "memory_limit",
+        "temp_directory",
+        "max_temp_directory_size",
+        "preserve_insertion_order",
+    }
+)
 
 INTERVAL_NS_MAP = {
     "1_second": 1_000_000_000,
@@ -179,7 +178,9 @@ def _build_csv_columns_clause(columns: dict, double_braces: bool = True) -> str:
 
     double_braces=True for .format() templates, False for .replace() templates.
     """
-    inner = ",\n            ".join(f"'{col}': '{dtype}'" for col, dtype in columns.items())
+    inner = ",\n            ".join(
+        f"'{col}': '{dtype}'" for col, dtype in columns.items()
+    )
     ob, cb = ("{{", "}}") if double_braces else ("{", "}")
     return f"{ob}\n            {inner}\n        {cb}"
 
@@ -191,7 +192,9 @@ def _build_argmax_struct(fields: tuple[str, ...], double_braces: bool = True) ->
     return f"{ob}\n                {inner}\n            {cb}"
 
 
-def _build_output_select(fields: tuple[str, ...], struct_alias: str = "last_quote") -> str:
+def _build_output_select(
+    fields: tuple[str, ...], struct_alias: str = "last_quote"
+) -> str:
     """Build the SELECT that unpacks struct fields from arg_max result."""
     return ",\n    ".join(f"({struct_alias}).{f} AS {f}" for f in fields)
 
@@ -788,7 +791,9 @@ SELECT
 FROM grouped
 """.format(
     bucketed_fields=_build_select_fields(OPTIONS_QUOTE_ARGMAX_FIELDS),
-    csv_columns=_build_csv_columns_clause(OPTIONS_QUOTE_CSV_COLUMNS, double_braces=True),
+    csv_columns=_build_csv_columns_clause(
+        OPTIONS_QUOTE_CSV_COLUMNS, double_braces=True
+    ),
     argmax_struct=_build_argmax_struct(OPTIONS_QUOTE_ARGMAX_FIELDS, double_braces=True),
     order_key=ARGMAX_ORDER_KEY,
     output_select=_build_output_select(OPTIONS_QUOTE_ARGMAX_FIELDS),
@@ -876,7 +881,9 @@ FROM grouped
 ORDER BY file_date
 """.format(
     bucketed_fields=_build_select_fields(OPTIONS_QUOTE_ARGMAX_FIELDS),
-    csv_columns=_build_csv_columns_clause(OPTIONS_QUOTE_CSV_COLUMNS, double_braces=True),
+    csv_columns=_build_csv_columns_clause(
+        OPTIONS_QUOTE_CSV_COLUMNS, double_braces=True
+    ),
     argmax_struct=_build_argmax_struct(OPTIONS_QUOTE_ARGMAX_FIELDS, double_braces=True),
     order_key=ARGMAX_ORDER_KEY,
     output_select=_build_output_select(OPTIONS_QUOTE_ARGMAX_FIELDS),
@@ -910,8 +917,6 @@ class QuoteSnapshotFlatFilesStream(FlatFilesStream):
     _interval_ns: int = 60_000_000_000  # 1 minute default
     _RAW_SQL_TEMPLATE: str = _STOCK_QUOTE_SNAPSHOT_SQL
     _RAW_BATCH_SQL_TEMPLATE: str = _STOCK_QUOTE_SNAPSHOT_BATCH_SQL
-    _S3_ENDPOINT = "https://files.massive.com"
-    _S3_BUCKET_TEMPLATE = "s3://flatfiles/{subdir}/{year}/{month}/{date}.csv.gz"
     FILE_PREFIX: str = "stock_quotes"
 
     schema = _STOCK_QUOTE_SNAPSHOT_FLAT_FILES_SCHEMA
@@ -925,90 +930,19 @@ class QuoteSnapshotFlatFilesStream(FlatFilesStream):
             return stream_cfg["s3_subdir"]
         return self.SUBDIR
 
-    def _s3_url(self, file_date: str) -> str:
-        """Build S3 URL for a given date."""
-        year, month, _day = file_date.split("-")
-        return self._S3_BUCKET_TEMPLATE.format(
-            subdir=self._effective_subdir,
-            year=year,
-            month=month,
-            date=file_date,
-        )
-
-    @staticmethod
-    def _check_aws_cli() -> None:
-        """Verify the AWS CLI is installed. Raises if not found."""
-
-        if shutil.which("aws") is None:
-            msg = (
-                "AWS CLI ('aws') is required for flat file downloads but was not "
-                "found on PATH. Install it: https://docs.aws.amazon.com/cli/"
-            )
-            raise RuntimeError(msg)
-
     def _download_file(self, file_date: str, dest_dir: Path) -> Path | None:
-        """Download a single flat file from S3. Returns local path or None if not found.
-
-        Uses a lock file to prevent parallel processes from downloading
-        the same file simultaneously (race condition between orchestrator workers).
-        Downloads to a temp file first, then renames atomically.
-        """
-
-        s3_url = self._s3_url(file_date)
-        local_path = dest_dir / f"{self.FILE_PREFIX}_{file_date}.csv.gz"
-        if local_path.exists():
-            return local_path
-
-        # Cross-process lock: other workers wait instead of downloading in parallel
-        lock_path = dest_dir / f".{self.FILE_PREFIX}_{file_date}.lock"
-        lock_path.parent.mkdir(parents=True, exist_ok=True)
-        with lock_path.open("w") as lock_fh:
-            fcntl.flock(lock_fh, fcntl.LOCK_EX)
-            # Re-check after acquiring lock — another process may have finished
-            if local_path.exists():
-                return local_path
-
-            aws_key = self.config.get("flat_files_aws_key", "")
-            aws_secret = self.config.get("flat_files_aws_secret", "")
-            env = {
-                **os.environ,
-                "AWS_ACCESS_KEY_ID": aws_key,
-                "AWS_SECRET_ACCESS_KEY": aws_secret,
-            }
-            # Download to temp file, rename atomically on success
-            tmp_path = dest_dir / f".{self.FILE_PREFIX}_{file_date}.tmp.csv.gz"
-            self.logger.info("Downloading %s → %s", s3_url, local_path)
-            result = subprocess.run(  # noqa: S603
-                [
-                    "aws",
-                    "s3",
-                    "cp",
-                    s3_url,
-                    str(tmp_path),
-                    "--endpoint-url",
-                    self._S3_ENDPOINT,
-                ],
-                env=env,
-                capture_output=True,
-            )
-            if result.returncode != 0:
-                tmp_path.unlink(missing_ok=True)
-                stderr = result.stderr.decode(errors="replace") if result.stderr else ""
-                self.logger.warning("aws s3 cp stderr: %s", stderr.strip())
-                if (
-                    "404" in stderr
-                    or "NoSuchKey" in stderr
-                    or "does not exist" in stderr
-                ):
-                    self.logger.info("No file on S3 for %s, skipping.", file_date)
-                    return None
-                msg = f"S3 download failed for {file_date}: {stderr.strip()}"
-                raise RuntimeError(msg)
-            # Atomic rename — other processes see complete file or nothing
-            tmp_path.rename(local_path)
-        # Lock file cleaned up (lock released when fh closes)
-        lock_path.unlink(missing_ok=True)
-        return local_path
+        """Download a single flat file from S3. Returns local path or None if not found."""
+        return download_flat_file(
+            file_date=file_date,
+            dest_dir=str(dest_dir),
+            s3_subdir=self._effective_subdir,
+            local_filename=f"{self.FILE_PREFIX}_{file_date}.csv.gz",
+            config=DownloadConfig(
+                aws_access_key_id=self.config.get("flat_files_aws_key", ""),
+                aws_secret_access_key=self.config.get("flat_files_aws_secret", ""),
+                jitter_max_seconds=0,
+            ),
+        )
 
     def _iter_dates_for_download(
         self, context: dict | None
@@ -1060,7 +994,9 @@ class QuoteSnapshotFlatFilesStream(FlatFilesStream):
 
         conn = duckdb.connect()
         duckdb_params = dict(self.config.get("duckdb_params") or {})
-        duckdb_batch_size = configure_duckdb_connection(conn, duckdb_params, resolve_paths=True)
+        duckdb_batch_size = configure_duckdb_connection(
+            conn, duckdb_params, resolve_paths=True
+        )
 
         if duckdb_batch_size > 1:
             sql_template = self._RAW_BATCH_SQL_TEMPLATE.format(
@@ -1076,8 +1012,7 @@ class QuoteSnapshotFlatFilesStream(FlatFilesStream):
 
         try:
             if workers > 0:
-                # Download mode: verify AWS CLI, iterate configured date range.
-                self._check_aws_cli()
+                # Download mode: iterate configured date range.
                 files_to_process = list(self._iter_dates_for_download(context))
                 if not files_to_process:
                     return
@@ -1288,14 +1223,20 @@ class QuoteSnapshotFlatFilesStream(FlatFilesStream):
         file_date: str,
     ) -> t.Iterable[dict[str, t.Any]]:
         """Execute the aggregation query for a single file and yield rows."""
-        query = sql_template.replace("{file_path}", source).replace("{file_date}", file_date)
+        query = sql_template.replace("{file_path}", source).replace(
+            "{file_date}", file_date
+        )
 
         t0 = time.perf_counter()
         result = conn.execute(query)
         execute_elapsed = time.perf_counter() - t0
-        self.logger.info("PERF duckdb_execute file=%s elapsed=%.2fs", file_date, execute_elapsed)
+        self.logger.info(
+            "PERF duckdb_execute file=%s elapsed=%.2fs", file_date, execute_elapsed
+        )
 
-        yield from self._iter_duckdb_result(result, execute_elapsed, f"file={file_date}")
+        yield from self._iter_duckdb_result(
+            result, execute_elapsed, f"file={file_date}"
+        )
 
     def _run_duckdb_batch_query(
         self,
@@ -1314,9 +1255,15 @@ class QuoteSnapshotFlatFilesStream(FlatFilesStream):
         t0 = time.perf_counter()
         result = conn.execute(query)
         execute_elapsed = time.perf_counter() - t0
-        self.logger.info("PERF duckdb_execute files=%d elapsed=%.2fs", len(file_paths), execute_elapsed)
+        self.logger.info(
+            "PERF duckdb_execute files=%d elapsed=%.2fs",
+            len(file_paths),
+            execute_elapsed,
+        )
 
-        yield from self._iter_duckdb_result(result, execute_elapsed, f"files={len(file_paths)}")
+        yield from self._iter_duckdb_result(
+            result, execute_elapsed, f"files={len(file_paths)}"
+        )
 
     def _process_file_batch(
         self,

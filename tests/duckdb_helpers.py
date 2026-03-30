@@ -22,11 +22,15 @@ def run_duckdb_bar_query(
     interval_ns: int,
 ) -> list[dict]:
     """Format and execute a single-file quote bar SQL template against a CSV fixture."""
-    sql = sql_template_raw.format(
-        interval_ns=interval_ns,
-        file_path="{file_path}",
-        file_date="{file_date}",
-    ).replace("{file_path}", filepath).replace("{file_date}", "2026-01-01")
+    sql = (
+        sql_template_raw.format(
+            interval_ns=interval_ns,
+            file_path="{file_path}",
+            file_date="{file_date}",
+        )
+        .replace("{file_path}", filepath)
+        .replace("{file_date}", "2026-01-01")
+    )
     return _execute_duckdb_sql(sql)
 
 
