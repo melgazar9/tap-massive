@@ -128,9 +128,6 @@ jobs:
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
         run: |
-          CHANGELOG=$(cat formatted-entries.md)
-          CODEBASE=$(cat codebase-context.md)
-
           # Build the prompt
           cat > prompt.txt << 'PROMPT_END'
           You are updating a Singer tap for the Massive API (https://massive.com).
@@ -166,11 +163,11 @@ jobs:
           IMPORTANT: Output ONLY the JSON object. No markdown fences, no commentary before or after.
           PROMPT_END
 
-          # Use jq to safely build the API request JSON
+          # Use jq --rawfile to avoid ARG_MAX limits with large codebase context
           jq -n \
-            --arg prompt "$(cat prompt.txt)" \
-            --arg changelog "$CHANGELOG" \
-            --arg codebase "$CODEBASE" \
+            --rawfile prompt prompt.txt \
+            --rawfile changelog formatted-entries.md \
+            --rawfile codebase codebase-context.md \
             '{
               model: "claude-sonnet-4-6",
               max_tokens: 16000,
