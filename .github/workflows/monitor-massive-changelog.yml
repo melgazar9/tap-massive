@@ -126,7 +126,7 @@ jobs:
         if: steps.check.outputs.has_new == 'true'
         id: claude
         env:
-          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          ANTHROPIC_API_KEY: ${{ secrets.CLAUDE_TAP_MASSIVE_API_KEY }}
         run: |
           # Build the prompt
           cat > prompt.txt << 'PROMPT_END'
