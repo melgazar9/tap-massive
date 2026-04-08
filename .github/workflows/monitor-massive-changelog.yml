@@ -19,7 +19,7 @@ jobs:
         id: check
         run: |
           # Fetch the RSS feed
-          curl -s "https://massive.com/changelog/rss.xml" > changelog-rss.xml
+          curl -s "https://massive.com/changelog/rss.xml" > /tmp/changelog-rss.xml
 
           # Compute lookback timestamp and export for Python
           SINCE=$(date -d '21 days ago' +%s 2>/dev/null || date -v-21d +%s)
@@ -32,7 +32,7 @@ jobs:
           from datetime import datetime, timezone
           import os
 
-          tree = ET.parse('changelog-rss.xml')
+          tree = ET.parse('/tmp/changelog-rss.xml')
           root = tree.getroot()
 
           since_timestamp = int(os.environ['SINCE'])
@@ -61,7 +61,7 @@ jobs:
                       pass
 
           # Save to JSON
-          with open('new-entries.json', 'w') as f:
+          with open('/tmp/new-entries.json', 'w') as f:
               json.dump(entries, f, indent=2)
 
           # Output count
@@ -105,7 +105,7 @@ jobs:
           python3 << 'PYTHON_SCRIPT'
           import json
 
-          with open('new-entries.json', 'r') as f:
+          with open('/tmp/new-entries.json', 'r') as f:
               entries = json.load(f)
 
           md_lines = []
