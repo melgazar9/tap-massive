@@ -13,16 +13,13 @@ permissions:
 jobs:
   check-and-update:
     runs-on: ubuntu-latest
-    env:
-      CHANGELOG_RSS_PATH: ${{ runner.temp }}/changelog-rss.xml
-      NEW_ENTRIES_PATH: ${{ runner.temp }}/new-entries.json
 
     steps:
       - name: Fetch and parse RSS feed
         id: check
         run: |
           # Fetch the RSS feed
-          curl -s "https://massive.com/changelog/rss.xml" > "$CHANGELOG_RSS_PATH"
+          curl -s "https://massive.com/changelog/rss.xml" > /tmp/changelog-rss.xml
 
           # Compute lookback timestamp and export for Python
           SINCE=$(date -d '21 days ago' +%s 2>/dev/null || date -v-21d +%s)
@@ -35,7 +32,7 @@ jobs:
           from datetime import datetime, timezone
           import os
 
-          tree = ET.parse(os.environ['CHANGELOG_RSS_PATH'])
+          tree = ET.parse('/tmp/changelog-rss.xml')
           root = tree.getroot()
 
           since_timestamp = int(os.environ['SINCE'])
@@ -64,7 +61,7 @@ jobs:
                       pass
 
           # Save to JSON
-          with open(os.environ['NEW_ENTRIES_PATH'], 'w') as f:
+          with open('/tmp/new-entries.json', 'w') as f:
               json.dump(entries, f, indent=2)
 
           # Output count
@@ -107,9 +104,8 @@ jobs:
         run: |
           python3 << 'PYTHON_SCRIPT'
           import json
-          import os
 
-          with open(os.environ['NEW_ENTRIES_PATH'], 'r') as f:
+          with open('/tmp/new-entries.json', 'r') as f:
               entries = json.load(f)
 
           md_lines = []
