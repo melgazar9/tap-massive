@@ -72,6 +72,7 @@ class MassiveRestStream(RESTStream):
             "published_utc",
             "published",
             "last_updated",
+            "transaction_date",
         ]
         self.record_timestamp_keys = [
             "timestamp",
@@ -96,6 +97,7 @@ class MassiveRestStream(RESTStream):
             "acceptance_datetime",
             "end_date",
             "settlement_date",
+            "transaction_date",
         ]
 
         timestamp_filter_suffixes = ["gt", "gte", "lt", "lte"]

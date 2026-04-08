@@ -13,6 +13,10 @@ from singer_sdk import Tap
 from singer_sdk import typing as th
 from singer_sdk.helpers._util import read_json_file
 
+from tap_massive.alternative_streams import (
+    MerchantAggregatesStream,
+    MerchantHierarchyStream,
+)
 from tap_massive.base_streams import (
     AllConditionCodesStream,
     AllExchangesStream,
@@ -863,6 +867,9 @@ class TapMassive(Tap):
             FuturesTradeStream(self),
             FuturesQuoteStream(self),
             FuturesContractsSnapshotStream(self),
+            # Alternative data streams
+            MerchantAggregatesStream(self),
+            MerchantHierarchyStream(self),
             # Economy streams
             TreasuryYieldStream(self),
             InflationExpectationsStream(self),

@@ -85,19 +85,48 @@ jobs:
           echo '```' >> codebase-context.md
           echo "" >> codebase-context.md
 
-          # Collect all stream file paths and their class/schema definitions
-          echo "## Stream Files in tap_massive/" >> codebase-context.md
+          # Extract only class definitions and schema attributes (no method bodies)
+          # to stay within API token limits
+          echo "## Stream Class Schemas in tap_massive/" >> codebase-context.md
           echo "" >> codebase-context.md
 
-          for f in tap_massive/*.py; do
-            [ "$f" = "tap_massive/__init__.py" ] && continue
-            [ "$f" = "tap_massive/__main__.py" ] && continue
-            echo "### $f" >> codebase-context.md
-            echo '```python' >> codebase-context.md
-            cat "$f" >> codebase-context.md
-            echo '```' >> codebase-context.md
-            echo "" >> codebase-context.md
-          done
+          python3 << 'EXTRACT_SCHEMAS'
+          import ast
+          from pathlib import Path
+
+          SKIP = {"__init__.py", "__main__.py", "utils.py", "disk_cache.py", "s3_download.py"}
+          output_lines = []
+
+          for f in sorted(Path("tap_massive").glob("*.py")):
+              if f.name in SKIP:
+                  continue
+              lines = f.read_text().splitlines()
+              try:
+                  tree = ast.parse("\n".join(lines))
+              except SyntaxError:
+                  continue
+              file_lines = []
+              for node in ast.iter_child_nodes(tree):
+                  if not isinstance(node, ast.ClassDef):
+                      continue
+                  # Class definition line
+                  file_lines.append(lines[node.lineno - 1])
+                  # Extract class-level assignments (schema, name, primary_keys, etc.)
+                  for child in node.body:
+                      if isinstance(child, (ast.Assign, ast.AnnAssign)):
+                          for ln in range(child.lineno - 1, child.end_lineno):
+                              file_lines.append(lines[ln])
+                  file_lines.append("")
+              if file_lines:
+                  output_lines.append(f"### {f}")
+                  output_lines.append("```python")
+                  output_lines.extend(file_lines)
+                  output_lines.append("```")
+                  output_lines.append("")
+
+          with Path("codebase-context.md").open("a") as fh:
+              fh.write("\n".join(output_lines))
+          EXTRACT_SCHEMAS
 
       - name: Format changelog entries
         if: steps.check.outputs.has_new == 'true'
