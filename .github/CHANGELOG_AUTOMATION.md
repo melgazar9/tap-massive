@@ -29,7 +29,7 @@ Add these in Repository Settings → Secrets → Actions:
 - **Trigger**: Weekly cron (Monday 9 AM UTC) or manual (`workflow_dispatch`)
 - **What it does**:
   1. Fetches Massive RSS feed (https://massive.com/changelog/rss.xml), parses entries from last 21 days
-  2. If new changes found, reads all stream files in `tap_massive/streams/` plus `CLAUDE.md`
+  2. If new changes found, reads all stream files in `tap_massive/` plus `CLAUDE.md`
   3. Sends changelog + full codebase context to Claude API
   4. Claude identifies affected schemas and generates updated files
   5. Creates a new branch and PR via GitHub API (never pushes to main)

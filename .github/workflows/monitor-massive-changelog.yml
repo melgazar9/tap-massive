@@ -21,10 +21,10 @@ jobs:
           # Fetch the RSS feed
           curl -s "https://massive.com/changelog/rss.xml" > changelog-rss.xml
 
-          # Parse RSS with xmllint and extract entries from last 21 days
+          # Compute lookback timestamp and export for Python
           SINCE=$(date -d '21 days ago' +%s 2>/dev/null || date -v-21d +%s)
+          export SINCE
 
-          # Convert RSS to simplified JSON for processing
           # Extract title, pubDate, link, and description from each item
           python3 << 'PYTHON_SCRIPT'
           import xml.etree.ElementTree as ET
@@ -70,12 +70,10 @@ jobs:
               f.write(f"new_count={len(entries)}\n")
               f.write(f"has_new={'true' if len(entries) > 0 else 'false'}\n")
           PYTHON_SCRIPT
-        env:
-          SINCE: ${{ env.SINCE }}
 
       - name: Checkout repository
         if: steps.check.outputs.has_new == 'true'
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Gather codebase context
         if: steps.check.outputs.has_new == 'true'
@@ -88,11 +86,12 @@ jobs:
           echo "" >> codebase-context.md
 
           # Collect all stream file paths and their class/schema definitions
-          echo "## Stream Files in tap_massive/streams/" >> codebase-context.md
+          echo "## Stream Files in tap_massive/" >> codebase-context.md
           echo "" >> codebase-context.md
 
-          for f in tap_massive/streams/*.py; do
-            [ "$f" = "tap_massive/streams/__init__.py" ] && continue
+          for f in tap_massive/*.py; do
+            [ "$f" = "tap_massive/__init__.py" ] && continue
+            [ "$f" = "tap_massive/__main__.py" ] && continue
             echo "### $f" >> codebase-context.md
             echo '```python' >> codebase-context.md
             cat "$f" >> codebase-context.md
@@ -155,7 +154,7 @@ jobs:
             "no_changes_needed": false,
             "files": [
               {
-                "path": "tap_massive/streams/labor_market_streams.py",
+                "path": "tap_massive/economy_streams.py",
                 "content": "...full file content...",
                 "description": "Added new_field field to SomeStream"
               }
@@ -173,7 +172,7 @@ jobs:
             --arg changelog "$CHANGELOG" \
             --arg codebase "$CODEBASE" \
             '{
-              model: "claude-sonnet-4-5-20250929",
+              model: "claude-sonnet-4-6",
               max_tokens: 16000,
               messages: [{
                 role: "user",
@@ -214,7 +213,7 @@ jobs:
 
       - name: Apply file changes and create PR
         if: steps.check.outputs.has_new == 'true' && steps.claude.outputs.no_changes != 'true'
-        uses: actions/github-script@v7
+        uses: actions/github-script@v8
         with:
           script: |
             const fs = require('fs');
@@ -305,6 +304,8 @@ jobs:
         run: |
           if [ "${{ steps.check.outputs.has_new }}" != "true" ]; then
             echo "### Massive Changelog: No new changes in the last 21 days" >> "$GITHUB_STEP_SUMMARY"
+          elif [ "${{ steps.claude.outcome }}" != "success" ]; then
+            echo "### Massive Changelog: ${{ steps.check.outputs.new_count }} change(s) detected, but Claude analysis step failed" >> "$GITHUB_STEP_SUMMARY"
           elif [ "${{ steps.claude.outputs.no_changes }}" = "true" ]; then
             echo "### Massive Changelog: ${{ steps.check.outputs.new_count }} change(s) detected, no code changes needed" >> "$GITHUB_STEP_SUMMARY"
           else
