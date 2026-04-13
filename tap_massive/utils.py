@@ -2,10 +2,23 @@
 
 from __future__ import annotations
 
+import uuid
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal, InvalidOperation
 
 import pandas_market_calendars as mcal
+
+
+def generate_surrogate_key(data: dict, namespace=uuid.NAMESPACE_DNS) -> str:
+    """Generate a deterministic UUID5 surrogate key from a record's field values.
+
+    Matches the pattern used by tap_fred / tap_yfinance. Callers should pass a dict
+    containing ONLY the identity fields they want in the key (don't include values
+    that change across reruns, e.g. processed_date or _sdc_* metadata).
+    """
+    key_values = [str(data.get(field, "")) for field in sorted(data.keys())]
+    key_string = "|".join(key_values)
+    return str(uuid.uuid5(namespace, key_string))
 
 # ---------------------------------------------------------------------------
 # Type conversion helpers

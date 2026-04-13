@@ -2,13 +2,11 @@
 
 from __future__ import annotations
 
-import hashlib
-import json
-
 from singer_sdk import typing as th
 from singer_sdk.helpers.types import Context
 
 from tap_massive.client import MassiveRestStream
+from tap_massive.utils import generate_surrogate_key
 
 # Reusable schema for array-of-object exposure fields (e.g. sector_exposure, geographic_exposure).
 _EXPOSURE_ITEM_TYPE = th.ObjectType(
@@ -22,10 +20,9 @@ class EtfGlobalConstituentsStream(MassiveRestStream):
 
     name = "etf_global_constituents"
 
-    # PK uses constituent_rank (always present integer, unique within ETF on date) because
-    # both constituent_ticker (NULL for commodities like "GOLD OZ.") and constituent_name
-    # (NULL for some untyped holdings) can be absent in the API response.
-    primary_keys = ["composite_ticker", "constituent_rank", "effective_date"]
+    # Surrogate key avoids reliance on natural fields that the API treats as nullable
+    # (constituent_ticker is NULL for commodities; constituent_name absent for some holdings).
+    primary_keys = ["_surrogate_key"]
     replication_key = "processed_date"
     replication_method = "INCREMENTAL"
     is_timestamp_replication_key = True
@@ -34,6 +31,7 @@ class EtfGlobalConstituentsStream(MassiveRestStream):
     _use_cached_tickers_default = False
 
     schema = th.PropertiesList(
+        th.Property("_surrogate_key", th.StringType),
         th.Property("asset_class", th.StringType),
         th.Property("composite_ticker", th.StringType),
         th.Property("constituent_name", th.StringType),
@@ -56,6 +54,21 @@ class EtfGlobalConstituentsStream(MassiveRestStream):
 
     def get_url(self, context: Context = None):
         return f"{self.url_base}/etf-global/v1/constituents"
+
+    # Only identity fields contribute to the surrogate key — exclude values that can
+    # change between fetches (processed_date, weight, market_value, shares_held, etc.).
+    _SURROGATE_KEY_FIELDS = (
+        "composite_ticker", "constituent_ticker", "constituent_name",
+        "constituent_rank", "isin", "figi", "sedol", "us_code", "effective_date",
+    )
+
+    def post_process(self, row, context=None):
+        row = super().post_process(row, context)
+        if row is None:
+            return None
+        identity = {f: row.get(f) for f in self._SURROGATE_KEY_FIELDS}
+        row["_surrogate_key"] = generate_surrogate_key(identity)
+        return row
 
 
 class EtfGlobalFundFlowsStream(MassiveRestStream):
