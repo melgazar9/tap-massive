@@ -30,6 +30,13 @@ class EtfGlobalConstituentsStream(MassiveRestStream):
 
     _use_cached_tickers_default = False
 
+    # Identity fields that contribute to the surrogate key — exclude values that can
+    # change between fetches (processed_date, weight, market_value, shares_held, etc.).
+    _SURROGATE_KEY_FIELDS = (
+        "composite_ticker", "constituent_ticker", "constituent_name",
+        "constituent_rank", "isin", "figi", "sedol", "us_code", "effective_date",
+    )
+
     schema = th.PropertiesList(
         th.Property("_surrogate_key", th.StringType),
         th.Property("asset_class", th.StringType),
@@ -54,13 +61,6 @@ class EtfGlobalConstituentsStream(MassiveRestStream):
 
     def get_url(self, context: Context = None):
         return f"{self.url_base}/etf-global/v1/constituents"
-
-    # Only identity fields contribute to the surrogate key — exclude values that can
-    # change between fetches (processed_date, weight, market_value, shares_held, etc.).
-    _SURROGATE_KEY_FIELDS = (
-        "composite_ticker", "constituent_ticker", "constituent_name",
-        "constituent_rank", "isin", "figi", "sedol", "us_code", "effective_date",
-    )
 
     def post_process(self, row, context=None):
         row = super().post_process(row, context)
