@@ -19,7 +19,9 @@ class EtfGlobalConstituentsStream(MassiveRestStream):
 
     name = "etf_global_constituents"
 
-    primary_keys = ["composite_ticker", "constituent_ticker", "effective_date"]
+    # PK uses constituent_name (always present) instead of constituent_ticker (NULL for
+    # physical commodity holdings like "GOLD OZ." in AAAU, IAU, etc.).
+    primary_keys = ["composite_ticker", "constituent_name", "effective_date"]
     replication_key = "processed_date"
     replication_method = "INCREMENTAL"
     is_timestamp_replication_key = True
