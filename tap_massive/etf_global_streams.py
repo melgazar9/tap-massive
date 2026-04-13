@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import hashlib
+import json
+
 from singer_sdk import typing as th
 from singer_sdk.helpers.types import Context
 
@@ -19,9 +22,10 @@ class EtfGlobalConstituentsStream(MassiveRestStream):
 
     name = "etf_global_constituents"
 
-    # PK uses constituent_name (always present) instead of constituent_ticker (NULL for
-    # physical commodity holdings like "GOLD OZ." in AAAU, IAU, etc.).
-    primary_keys = ["composite_ticker", "constituent_name", "effective_date"]
+    # PK uses constituent_rank (always present integer, unique within ETF on date) because
+    # both constituent_ticker (NULL for commodities like "GOLD OZ.") and constituent_name
+    # (NULL for some untyped holdings) can be absent in the API response.
+    primary_keys = ["composite_ticker", "constituent_rank", "effective_date"]
     replication_key = "processed_date"
     replication_method = "INCREMENTAL"
     is_timestamp_replication_key = True
