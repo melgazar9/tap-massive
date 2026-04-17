@@ -20,6 +20,7 @@ def generate_surrogate_key(data: dict, namespace=uuid.NAMESPACE_DNS) -> str:
     key_string = "|".join(key_values)
     return str(uuid.uuid5(namespace, key_string))
 
+
 # ---------------------------------------------------------------------------
 # Type conversion helpers
 # ---------------------------------------------------------------------------

@@ -775,27 +775,33 @@ class StockTickerEventsStream(StockTickerPartitionStream):
 
     name = "stock_ticker_events"
 
-    primary_keys = ["ticker", "date", "type"]
+    primary_keys = ["ticker"]
 
     _ticker_in_path_params = True
 
     schema = th.PropertiesList(
         th.Property("ticker", th.StringType),
         th.Property("name", th.StringType),
-        th.Property("date", th.DateType),
-        th.Property("type", th.StringType),
-        th.Property("ticker_change", th.ObjectType(additional_properties=True)),
+        th.Property("composite_figi", th.StringType),
+        th.Property("cik", th.StringType),
+        th.Property(
+            "events",
+            th.ArrayType(
+                th.ObjectType(
+                    th.Property("date", th.DateType),
+                    th.Property("type", th.StringType),
+                    th.Property(
+                        "ticker_change", th.ObjectType(additional_properties=True)
+                    ),
+                    additional_properties=True,
+                )
+            ),
+        ),
     ).to_dict()
 
     def get_url(self, context: Context):
         ticker = context.get(self._ticker_param, {})
         return f"{self.url_base}/vX/reference/tickers/{ticker}/events"
-
-    def parse_response(self, record: dict, context: dict) -> t.Iterable[dict]:
-        name = record.get("name")
-        for event in record.get("events", []):
-            if isinstance(event, dict):
-                yield {"name": name, **event}
 
     def post_process(self, row: dict, context: Context | None = None) -> dict | None:
         row = super().post_process(row, context)

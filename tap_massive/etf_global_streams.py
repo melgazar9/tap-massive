@@ -33,8 +33,15 @@ class EtfGlobalConstituentsStream(MassiveRestStream):
     # Identity fields that contribute to the surrogate key — exclude values that can
     # change between fetches (processed_date, weight, market_value, shares_held, etc.).
     _SURROGATE_KEY_FIELDS = (
-        "composite_ticker", "constituent_ticker", "constituent_name",
-        "constituent_rank", "isin", "figi", "sedol", "us_code", "effective_date",
+        "composite_ticker",
+        "constituent_ticker",
+        "constituent_name",
+        "constituent_rank",
+        "isin",
+        "figi",
+        "sedol",
+        "us_code",
+        "effective_date",
     )
 
     schema = th.PropertiesList(
