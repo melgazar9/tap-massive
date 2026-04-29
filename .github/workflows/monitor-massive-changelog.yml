@@ -179,7 +179,7 @@ jobs:
             - If no code changes are warranted (e.g., all entries are bug fixes), exit without creating a branch or PR
 
           claude_args: |
-            --max-turns 30
+            --max-turns 100
             --model claude-sonnet-4-6
             --allowedTools "Read,Write,Edit,Bash(git:*),Bash(gh:*),Bash(./lint.sh),Bash(uv:*),Bash(meltano:*),Bash(python3:*),Bash(ls:*),Bash(cat:*),Bash(grep:*),Bash(find:*),Bash(rg:*),Bash(wc:*),Bash(head:*),Bash(date:*)"
 
