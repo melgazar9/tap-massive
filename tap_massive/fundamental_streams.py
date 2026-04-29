@@ -748,6 +748,45 @@ class StockRiskCategoriesStream(MassiveRestStream):
         return f"{self.url_base}/stocks/taxonomies/vX/risk-factors"
 
 
+class Stock13FFilingsStream(OptionalTickerPartitionStream):
+    """SEC Form 13-F institutional equity holdings stream."""
+
+    name = "stock_13f_filings"
+
+    primary_keys = ["accession_number", "cusip"]
+    replication_key = "filing_date"
+    replication_method = "INCREMENTAL"
+    is_timestamp_replication_key = True
+
+    _use_cached_tickers_default = False
+    _incremental_timestamp_is_date = True
+    _ticker_in_query_params = True
+
+    schema = th.PropertiesList(
+        th.Property("accession_number", th.StringType),
+        th.Property("cik", th.StringType),
+        th.Property("manager_name", th.StringType),
+        th.Property("filing_date", th.DateType),
+        th.Property("period_of_report", th.DateType),
+        th.Property("ticker", th.StringType),
+        th.Property("cusip", th.StringType),
+        th.Property("issuer_name", th.StringType),
+        th.Property("class_of_securities", th.StringType),
+        th.Property("value", th.IntegerType),
+        th.Property("shares", th.IntegerType),
+        th.Property("share_type", th.StringType),
+        th.Property("put_call", th.StringType),
+        th.Property("investment_discretion", th.StringType),
+        th.Property("voting_authority_sole", th.IntegerType),
+        th.Property("voting_authority_shared", th.IntegerType),
+        th.Property("voting_authority_none", th.IntegerType),
+        th.Property("other_managers", th.IntegerType),
+    ).to_dict()
+
+    def get_url(self, context: Context = None):
+        return f"{self.url_base}/stocks/filings/13-F/vX/holdings"
+
+
 # --- News Stream ---
 
 

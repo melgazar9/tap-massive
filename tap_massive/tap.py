@@ -151,6 +151,7 @@ from tap_massive.forex_streams import (
 from tap_massive.fundamental_streams import (
     Stock8KTextStream,
     Stock10KSectionsStream,
+    Stock13FFilingsStream,
     StockBalanceSheetsStream,
     StockCashFlowStatementsStream,
     StockFilingsIndexStream,
@@ -744,6 +745,7 @@ class TapMassive(Tap):
             StockFloatStream(self),
             Stock8KTextStream(self),
             Stock10KSectionsStream(self),
+            Stock13FFilingsStream(self),
             StockFilingsIndexStream(self),
             StockRiskFactorsStream(self),
             StockRiskCategoriesStream(self),
