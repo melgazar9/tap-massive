@@ -199,46 +199,23 @@ The meltano.yml `select:` and `config:` keys must match the stream's `name` attr
 
 ### Choosing a Primary Key
 
-Every stream must have a primary key that uniquely identifies a row. Be **VERY** careful — a PK that looks unique in a small sample frequently collides in practice. The cost of getting this wrong is silent data corruption downstream (rows overwriting each other in the warehouse).
+Every stream must have a primary key that uniquely identifies a row. Be careful — a PK that looks unique in a small sample frequently collides in practice. The cost of getting this wrong is silent data corruption downstream (rows overwriting each other in the warehouse).
+
+**Prefer a natural composite PK** built from the API's actual identity fields (e.g. for 13-F: `accession_number, cusip, title_of_class, put_call`). A surrogate key is a fallback, not the default. If a subset of fields already makes every row unique, use that subset directly — adding a `_surrogate_key` column on top of a working natural PK is wasted data.
 
 Process:
 
-1. **Identify what makes a row truly unique**: entity + time-period + variant axes (e.g. for 13-F: filing × held security × security class × put/call).
+1. **Identify what makes a row truly unique**: entity + time-period + variant axes.
 2. **Inspect a multi-record sample**, not the docs alone. Look for any combination of fields that repeats across two rows.
-3. **Read the docs for nullable fields.** Many SQL targets reject `NULL` in PK columns, and Singer state tracking misbehaves with null PK values.
-4. **If you are not 100% sure** a natural composite PK is unique AND non-null, **use a surrogate key.** Do not guess.
+3. **If a natural composite is unique across all real cases, use it directly as `primary_keys`.** This is the answer in almost every case.
+4. **Handle nullable PK fields with coercion in `post_process`**, not by reaching for a surrogate. Example: in 13-F, `put_call` is null for common stock and gets coerced to `""` so the composite PK is non-null per row. Only one or two PK fields nullable → coerce.
+5. **Reach for a surrogate key only when the natural composite genuinely fails** — i.e., multiple identity fields are simultaneously nullable in real data (so coercion would collide), or the API has no field combination that distinguishes rows. `EtfGlobalConstituentsStream` is the existing example: both `constituent_ticker` and `constituent_name` can be missing for the same constituent.
 
-### Surrogate Key Pattern
+### Surrogate Key Pattern (fallback only)
 
-The repo's convention (see `tap_massive/etf_global_streams.py:EtfGlobalConstituentsStream`) is a deterministic UUID5 hash of the identity fields, stored as `_surrogate_key`:
+When the natural composite genuinely fails per (5), hash the row's distinguishing fields into a deterministic UUID5 stored as `_surrogate_key`. See `tap_massive/etf_global_streams.py:EtfGlobalConstituentsStream`. Exclude fields whose values change between fetches of the same logical row (prices, weights, processed-at timestamps), or re-fetches produce different keys for the same row and break dedup.
 
-```python
-from tap_massive.utils import generate_surrogate_key
-
-class MyStream(MassiveRestStream):
-    primary_keys = ["_surrogate_key"]
-
-    # Identity fields (what makes a row a row).
-    # Exclude fields whose values can change between fetches (prices, market values, weights, etc.).
-    _SURROGATE_KEY_FIELDS = (
-        "field1", "field2", "field3",
-    )
-
-    schema = th.PropertiesList(
-        th.Property("_surrogate_key", th.StringType),
-        # ... other fields
-    ).to_dict()
-
-    def post_process(self, row, context=None):
-        row = super().post_process(row, context)
-        if row is None:
-            return None
-        identity = {f: row.get(f) for f in self._SURROGATE_KEY_FIELDS}
-        row["_surrogate_key"] = generate_surrogate_key(identity)
-        return row
-```
-
-**`_SURROGATE_KEY_FIELDS` are identity fields, not value fields.** Excluding mutable values (prices, weights, dates that get re-stamped on every refresh) ensures the same logical row hashes to the same key across runs.
+If you find yourself listing identity fields for a surrogate, first ask: "why not just `primary_keys = [those fields]`, with `post_process` coercion if any are nullable?" Usually there's no good answer.
 
 ### No Silent Failures
 
