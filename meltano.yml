@@ -92,6 +92,7 @@ plugins:
       - stock_float.*
       - stock_8k_text.*
       - stock_10k_sections.*
+      - stock_13f_filings.*
       - stock_filings_index.*
       - stock_risk_factors.*
       - stock_risk_categories.*
@@ -1009,6 +1010,14 @@ plugins:
           limit: 9999
         other_params:
           use_cached_tickers: true
+
+      stock_13f_filings:
+        query_params:
+          filing_date__gte: "2025-01-05"
+          filing_date__lte: "2025-01-07"
+          limit: 1000
+        other_params:
+          use_cached_tickers: false
 
       stock_filings_index:
         query_params:
