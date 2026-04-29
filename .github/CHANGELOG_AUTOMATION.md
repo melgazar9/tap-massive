@@ -7,9 +7,12 @@ Automated monitoring of Massive API changes with AI-powered analysis and PR crea
 ```
 Weekly (Monday 9 AM UTC)
   → GitHub Action checks Massive RSS feed
-  → New changes? → Claude reads changelog + all stream files + CLAUDE.md
-  → Claude identifies schema updates needed
-  → Creates branch + PR with schema updates
+  → New changes? → anthropics/claude-code-action runs Claude Code in CI:
+      • Reads CLAUDE.md, tap_massive/*.py, formatted changelog
+      • Classifies entries (new endpoint / new fields / bug fix / deprecation)
+      • Edits stream code + meltano.yml
+      • Runs ./lint.sh and self-reviews diff for DRY/SOLID/duplication
+      • Creates branch, commits, pushes, opens PR via gh
   → You review, test, merge
 ```
 
@@ -19,9 +22,14 @@ Add these in Repository Settings → Secrets → Actions:
 
 | Secret | Source | Purpose |
 |--------|--------|---------|
-| `ANTHROPIC_API_KEY` | https://console.anthropic.com/ | Claude AI analysis |
+| `CLAUDE_TAP_MASSIVE_API_KEY` | https://console.anthropic.com/ | Claude Code analysis |
 
 **Note**: No Massive API key needed for changelog monitoring (uses public RSS feed)
+
+## Required Repository Settings
+
+Settings → Actions → General → Workflow permissions:
+- **"Allow GitHub Actions to create and approve pull requests"** must be checked (required for the workflow to open PRs).
 
 ## Workflow
 
@@ -29,12 +37,12 @@ Add these in Repository Settings → Secrets → Actions:
 - **Trigger**: Weekly cron (Monday 9 AM UTC) or manual (`workflow_dispatch`)
 - **What it does**:
   1. Fetches Massive RSS feed (https://massive.com/changelog/rss.xml), parses entries from last 21 days
-  2. If new changes found, reads all stream files in `tap_massive/` plus `CLAUDE.md`
-  3. Sends changelog + full codebase context to Claude API
-  4. Claude identifies affected schemas and generates updated files
-  5. Creates a new branch and PR via GitHub API (never pushes to main)
-- **No changes needed**: If Claude determines no code changes are required, the workflow ends with a summary note
+  2. If new changes found, sets up `uv` and installs project dependencies
+  3. Runs `anthropics/claude-code-action@v1` with full read/write access to the working tree
+  4. Claude reads `CLAUDE.md` + stream files, edits code, runs `./lint.sh`, self-reviews, then opens a PR
+- **No changes needed**: If Claude classifies all entries as bug fixes / deprecations, no PR is opened
 - **Never pushes to main**
+- **Cost guard**: `timeout-minutes: 30` and `--max-turns 30` cap a runaway run
 
 ## Customization
 

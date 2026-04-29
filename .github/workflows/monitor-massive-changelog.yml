@@ -9,10 +9,12 @@ on:
 permissions:
   contents: write
   pull-requests: write
+  id-token: write
 
 jobs:
   check-and-update:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
 
     steps:
       - name: Fetch and parse RSS feed
@@ -75,58 +77,12 @@ jobs:
         if: steps.check.outputs.has_new == 'true'
         uses: actions/checkout@v6
 
-      - name: Gather codebase context
+      - name: Configure git and date stamp
         if: steps.check.outputs.has_new == 'true'
         run: |
-          # Include CLAUDE.md for project conventions
-          echo "## CLAUDE.md" > codebase-context.md
-          echo '```markdown' >> codebase-context.md
-          cat CLAUDE.md >> codebase-context.md
-          echo '```' >> codebase-context.md
-          echo "" >> codebase-context.md
-
-          # Extract only class definitions and schema attributes (no method bodies)
-          # to stay within API token limits
-          echo "## Stream Class Schemas in tap_massive/" >> codebase-context.md
-          echo "" >> codebase-context.md
-
-          python3 << 'EXTRACT_SCHEMAS'
-          import ast
-          from pathlib import Path
-
-          SKIP = {"__init__.py", "__main__.py", "utils.py", "disk_cache.py", "s3_download.py"}
-          output_lines = []
-
-          for f in sorted(Path("tap_massive").glob("*.py")):
-              if f.name in SKIP:
-                  continue
-              lines = f.read_text().splitlines()
-              try:
-                  tree = ast.parse("\n".join(lines))
-              except SyntaxError:
-                  continue
-              file_lines = []
-              for node in ast.iter_child_nodes(tree):
-                  if not isinstance(node, ast.ClassDef):
-                      continue
-                  # Class definition line
-                  file_lines.append(lines[node.lineno - 1])
-                  # Extract class-level assignments (schema, name, primary_keys, etc.)
-                  for child in node.body:
-                      if isinstance(child, (ast.Assign, ast.AnnAssign)):
-                          for ln in range(child.lineno - 1, child.end_lineno):
-                              file_lines.append(lines[ln])
-                  file_lines.append("")
-              if file_lines:
-                  output_lines.append(f"### {f}")
-                  output_lines.append("```python")
-                  output_lines.extend(file_lines)
-                  output_lines.append("```")
-                  output_lines.append("")
-
-          with Path("codebase-context.md").open("a") as fh:
-              fh.write("\n".join(output_lines))
-          EXTRACT_SCHEMAS
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          echo "DATE_STAMP=$(date +%Y-%m-%d)" >> "$GITHUB_ENV"
 
       - name: Format changelog entries
         if: steps.check.outputs.has_new == 'true'
@@ -151,189 +107,97 @@ jobs:
               f.write('\n'.join(md_lines))
           PYTHON_SCRIPT
 
-      - name: Call Claude API for analysis
+      - name: Set up uv
         if: steps.check.outputs.has_new == 'true'
-        id: claude
-        env:
-          ANTHROPIC_API_KEY: ${{ secrets.CLAUDE_TAP_MASSIVE_API_KEY }}
-        run: |
-          # Build the prompt
-          cat > prompt.txt << 'PROMPT_END'
-          You are updating a Singer tap for the Massive API (https://massive.com).
-
-          CRITICAL RULES:
-          - Read the CLAUDE.md file included in the codebase context below for full project conventions.
-          - Field names must be snake_case (the SDK auto-converts from camelCase)
-          - Use singer_sdk typing: th.StringType, th.IntegerType, th.BooleanType, th.NumberType, th.DateType, th.DateTimeType, th.ArrayType, th.ObjectType
-          - Only add new fields to existing schemas. Do NOT remove fields, rename classes, or change endpoints unless the changelog explicitly says to.
-          - All streams already have additionalProperties: True, so missing fields won't cause errors. But explicit schema fields are preferred for type validation.
-          - Massive API endpoints are documented at: https://massive.com/docs
-          - Follow the class hierarchy and code conventions described in CLAUDE.md.
-
-          Based on the changelog entries below, identify which stream schemas need new fields added.
-
-          For each file that needs changes, output the COMPLETE updated file contents. Do not output partial files or diffs.
-
-          Output your response as a JSON object with this exact structure:
-          {
-            "analysis": "Human-readable summary of changes needed",
-            "no_changes_needed": false,
-            "files": [
-              {
-                "path": "tap_massive/economy_streams.py",
-                "content": "...full file content...",
-                "description": "Added new_field field to SomeStream"
-              }
-            ]
-          }
-
-          If no code changes are needed (e.g., all changes are internal/non-breaking), set "no_changes_needed": true and "files": [].
-
-          IMPORTANT: Output ONLY the JSON object. No markdown fences, no commentary before or after.
-          PROMPT_END
-
-          # Use jq --rawfile to avoid ARG_MAX limits with large codebase context
-          jq -n \
-            --rawfile prompt prompt.txt \
-            --rawfile changelog formatted-entries.md \
-            --rawfile codebase codebase-context.md \
-            '{
-              model: "claude-sonnet-4-6",
-              max_tokens: 16000,
-              messages: [{
-                role: "user",
-                content: ($prompt + "\n\n## CHANGELOG ENTRIES\n\n" + $changelog + "\n\n## CURRENT CODEBASE\n\n" + $codebase)
-              }]
-            }' > api-request.json
-
-          # Call Claude API
-          HTTP_CODE=$(curl -s -o claude-response.json -w "%{http_code}" \
-            https://api.anthropic.com/v1/messages \
-            -H "x-api-key: $ANTHROPIC_API_KEY" \
-            -H "anthropic-version: 2023-06-01" \
-            -H "content-type: application/json" \
-            -d @api-request.json)
-
-          if [ "$HTTP_CODE" != "200" ]; then
-            echo "::error::Claude API returned HTTP $HTTP_CODE"
-            cat claude-response.json
-            exit 1
-          fi
-
-          # Extract the text content from Claude's response
-          jq -r '.content[0].text' claude-response.json > claude-analysis-raw.txt
-
-          # Strip markdown code fences if Claude wrapped the JSON
-          sed -n '/^{/,/^}/p' claude-analysis-raw.txt > claude-analysis.json
-
-          # Validate it's parseable JSON
-          if ! jq empty claude-analysis.json 2>/dev/null; then
-            echo "::error::Claude did not return valid JSON"
-            echo "Raw response:"
-            cat claude-analysis-raw.txt
-            exit 1
-          fi
-
-          NO_CHANGES=$(jq -r '.no_changes_needed // false' claude-analysis.json)
-          echo "no_changes=$NO_CHANGES" >> "$GITHUB_OUTPUT"
-
-      - name: Apply file changes and create PR
-        if: steps.check.outputs.has_new == 'true' && steps.claude.outputs.no_changes != 'true'
-        uses: actions/github-script@v8
+        uses: astral-sh/setup-uv@v8
         with:
-          script: |
-            const fs = require('fs');
-            const analysis = JSON.parse(fs.readFileSync('claude-analysis.json', 'utf8'));
+          enable-cache: true
 
-            // Create branch
-            const branchName = `massive-api-update-${new Date().toISOString().split('T')[0].replace(/-/g, '')}`;
-            const mainRef = await github.rest.git.getRef({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              ref: 'heads/main'
-            });
+      - name: Install Python dependencies
+        if: steps.check.outputs.has_new == 'true'
+        run: uv sync
 
-            await github.rest.git.createRef({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              ref: `refs/heads/${branchName}`,
-              sha: mainRef.data.object.sha
-            });
+      - name: Run Claude Code to update streams and open PR
+        if: steps.check.outputs.has_new == 'true'
+        uses: anthropics/claude-code-action@v1
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          anthropic_api_key: ${{ secrets.CLAUDE_TAP_MASSIVE_API_KEY }}
+          prompt: |
+            You are updating the tap-massive Singer tap based on new Massive API changelog entries.
 
-            // Apply each file change as a commit
-            for (const file of analysis.files) {
-              let fileSha;
-              try {
-                const { data: existing } = await github.rest.repos.getContent({
-                  owner: context.repo.owner,
-                  repo: context.repo.repo,
-                  path: file.path,
-                  ref: branchName
-                });
-                fileSha = existing.sha;
-              } catch (e) {
-                fileSha = undefined;
-              }
+            ## Inputs available in the working directory
+            - `formatted-entries.md` — the new changelog entries (READ THIS)
+            - `CLAUDE.md` — project conventions (READ THIS FIRST, fully)
+            - `tap_massive/*.py` — stream classes
+            - `meltano.yml` — stream config and select list
+            - `./lint.sh` — runs black, isort, flake8 (already installed via `uv sync`)
 
-              await github.rest.repos.createOrUpdateFileContents({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                path: file.path,
-                message: `chore: ${file.description}`,
-                content: Buffer.from(file.content).toString('base64'),
-                branch: branchName,
-                ...(fileSha ? { sha: fileSha } : {})
-              });
-            }
+            ## Task
+            1. Read `CLAUDE.md` fully. Internalize:
+               - The class hierarchy (MassiveRestStream → OptionalTickerPartitionStream → asset-specific bases → concrete streams)
+               - The cross-asset base class pattern (BaseTickerTypesStream, BaseExchangesStream, BaseConditionCodesStream)
+               - Endpoint version prefixes (`/v3/`, `/vX/`, `/stocks/v1/`, `/stocks/financials/v1/`)
+               - Code conventions (snake_case, singer_sdk types, no inline imports, Decimal for numerics)
+            2. Read `formatted-entries.md`.
+            3. For each changelog entry, classify it:
+               - **New endpoint announced** → ADD a new stream class following existing patterns. Look at neighboring streams in the most relevant file (e.g., new stocks endpoint → `tap_massive/fundamental_streams.py` or `tap_massive/stock_streams.py`).
+               - **New field(s) on an existing endpoint** → ADD fields to the existing schema.
+               - **Bug fix or data correction with no schema change** → SKIP (do nothing).
+               - **Deprecation announcement** → SKIP (do not remove until explicitly told to).
+            4. Make the code changes:
+               - Follow existing patterns — read neighboring stream classes before writing new ones
+               - Reuse base classes where possible (don't duplicate logic)
+               - Field names snake_case; use `th.StringType`, `th.IntegerType`, `th.NumberType`, `th.BooleanType`, `th.DateType`, `th.DateTimeType`, `th.ArrayType`, `th.ObjectType`
+               - Never auto-discover schemas — always declare them explicitly
+               - All imports at top of file
+            5. If you created a new stream, add it to `meltano.yml` under both the `select:` list and the appropriate stream `config:` block. Match the naming convention in CLAUDE.md (e.g., `stock_` prefix for stock-specific streams).
+            6. Run `./lint.sh` and fix all reported issues. Re-run until clean.
+            7. **Self-review the diff** (`git diff`):
+               - DRY: any duplicated logic that should use a base class?
+               - SOLID: are responsibilities cleanly separated?
+               - Are field names snake_case throughout?
+               - Did you remove anything that should not have been removed?
+               - Are there unused imports or dead code?
+               - Simplify anything over-engineered.
+            8. If changes were made:
+               - Create branch: `massive-api-update-${{ env.DATE_STAMP }}`
+               - Commit with a clear message
+               - Push the branch
+               - Open a PR titled `[Massive API] Schema updates — ${{ env.DATE_STAMP }}` to `main` using `gh pr create` with a body that includes:
+                 - A summary of what changed and why (reference the changelog entry)
+                 - The list of files changed
+                 - The full changelog excerpt from `formatted-entries.md`
+                 - A testing checklist (`./lint.sh`, `meltano el tap-massive target-jsonl --select <stream>.*`)
 
-            // Build PR body
-            const changelog = fs.readFileSync('formatted-entries.md', 'utf8');
-            const fileList = analysis.files
-              .map(f => `- \`${f.path}\`: ${f.description}`)
-              .join('\n');
+            ## Critical rules
+            - Use `uv` for everything; never run `python`/`pip`/`poetry` directly
+            - No silent failures: if `lint.sh` keeps failing, report what's wrong rather than hiding it
+            - Never push to `main` directly
+            - Never amend commits; create new ones if you need to fix something
+            - If no code changes are warranted (e.g., all entries are bug fixes), exit without creating a branch or PR
 
-            const prBody = [
-              `## Massive API Schema Updates`,
-              ``,
-              analysis.analysis,
-              ``,
-              `### Files Changed`,
-              ``,
-              fileList,
-              ``,
-              `### Changelog Entries`,
-              ``,
-              changelog,
-              ``,
-              `### Testing Checklist`,
-              ``,
-              `- [ ] \`./lint.sh\` passes`,
-              `- [ ] \`uv run pytest\` passes`,
-              `- [ ] Test affected streams: \`meltano run tap-massive target-jsonl\``,
-              `- [ ] Review schema changes match Massive API docs`,
-              ``,
-              `---`,
-              `Generated by Claude AI`,
-            ].join('\n');
-
-            await github.rest.pulls.create({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              title: `[Massive API] Schema updates — ${new Date().toISOString().split('T')[0]}`,
-              head: branchName,
-              base: 'main',
-              body: prBody
-            });
+          claude_args: |
+            --max-turns 30
+            --model claude-sonnet-4-6
+            --allowedTools "Read,Write,Edit,Bash(git:*),Bash(gh:*),Bash(./lint.sh),Bash(uv:*),Bash(meltano:*),Bash(python3:*),Bash(ls:*),Bash(cat:*),Bash(grep:*),Bash(find:*),Bash(rg:*),Bash(wc:*),Bash(head:*),Bash(date:*)"
 
       - name: Workflow summary
         if: always()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           if [ "${{ steps.check.outputs.has_new }}" != "true" ]; then
             echo "### Massive Changelog: No new changes in the last 21 days" >> "$GITHUB_STEP_SUMMARY"
-          elif [ "${{ steps.claude.outcome }}" != "success" ]; then
-            echo "### Massive Changelog: ${{ steps.check.outputs.new_count }} change(s) detected, but Claude analysis step failed" >> "$GITHUB_STEP_SUMMARY"
-          elif [ "${{ steps.claude.outputs.no_changes }}" = "true" ]; then
-            echo "### Massive Changelog: ${{ steps.check.outputs.new_count }} change(s) detected, no code changes needed" >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          echo "### Massive Changelog: ${{ steps.check.outputs.new_count }} change(s) detected" >> "$GITHUB_STEP_SUMMARY"
+          PR_URL=$(gh pr list --head "massive-api-update-${DATE_STAMP}" --json url --jq '.[0].url' 2>/dev/null || true)
+          if [ -n "$PR_URL" ]; then
+            echo "" >> "$GITHUB_STEP_SUMMARY"
+            echo "**PR opened**: $PR_URL" >> "$GITHUB_STEP_SUMMARY"
           else
-            echo "### Massive Changelog: ${{ steps.check.outputs.new_count }} change(s) detected, PR created" >> "$GITHUB_STEP_SUMMARY"
+            echo "" >> "$GITHUB_STEP_SUMMARY"
+            echo "No PR was opened — Claude Code determined no code changes were needed, or the run failed before reaching the PR step. Check the Actions log." >> "$GITHUB_STEP_SUMMARY"
           fi
