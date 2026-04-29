@@ -1015,9 +1015,9 @@ plugins:
         query_params:
           filing_date__gte: "2025-01-05"
           filing_date__lte: "2025-01-07"
-          limit: 9999
+          limit: 1000
         other_params:
-          use_cached_tickers: true
+          use_cached_tickers: false
 
       stock_filings_index:
         query_params:
