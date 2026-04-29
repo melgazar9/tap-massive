@@ -140,6 +140,7 @@ jobs:
                - The cross-asset base class pattern (BaseTickerTypesStream, BaseExchangesStream, BaseConditionCodesStream)
                - Endpoint version prefixes (`/v3/`, `/vX/`, `/stocks/v1/`, `/stocks/financials/v1/`)
                - Code conventions (snake_case, singer_sdk types, no inline imports, Decimal for numerics)
+               - **Primary Key & Correctness Rules** — this is critical. Correctness over speed. Be VERY careful about PK selection; if not 100% sure a natural PK is unique AND non-null across all real-world cases, use the `_surrogate_key` pattern from `tap_massive/etf_global_streams.py`. Never silently truncate, drop, or misrepresent data.
             2. Read `formatted-entries.md`.
             3. For each changelog entry, classify it:
                - **New endpoint announced** → ADD a new stream class following existing patterns. Look at neighboring streams in the most relevant file (e.g., new stocks endpoint → `tap_massive/fundamental_streams.py` or `tap_massive/stock_streams.py`).
@@ -152,6 +153,8 @@ jobs:
                - Field names snake_case; use `th.StringType`, `th.IntegerType`, `th.NumberType`, `th.BooleanType`, `th.DateType`, `th.DateTimeType`, `th.ArrayType`, `th.ObjectType`
                - Never auto-discover schemas — always declare them explicitly
                - All imports at top of file
+               - **For NEW streams**: read the linked Massive API docs page (the changelog entry has a URL) to get the exact field names, types, sample response, and query parameters. Do not invent field names or guess types. If a field's correctness is unclear from the docs alone, say so in the PR description rather than guessing.
+               - **Primary key**: follow the rules in `CLAUDE.md` § "Primary Key & Correctness Rules". Inspect the sample response for collisions across the obvious natural keys. If not certain the natural PK is unique and non-null across all cases, default to `_surrogate_key` per the `etf_global_streams.py` pattern.
             5. If you created a new stream, add it to `meltano.yml` under both the `select:` list and the appropriate stream `config:` block. Match the naming convention in CLAUDE.md (e.g., `stock_` prefix for stock-specific streams).
             6. Run `./lint.sh` and fix all reported issues. Re-run until clean.
             7. **Self-review the diff** (`git diff`):

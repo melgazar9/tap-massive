@@ -193,6 +193,61 @@ The meltano.yml `select:` and `config:` keys must match the stream's `name` attr
 - The `massive` Python package (`RESTClient`) is used for market status but most streams use raw `requests` with custom pagination
 - All imports at top of file, no inline imports
 
+## Primary Key & Correctness Rules
+
+**Correctness is paramount. Never silently truncate, drop, or misrepresent data.** When in doubt, stop and ask rather than guess.
+
+### Choosing a Primary Key
+
+Every stream must have a primary key that uniquely identifies a row. Be **VERY** careful — a PK that looks unique in a small sample frequently collides in practice. The cost of getting this wrong is silent data corruption downstream (rows overwriting each other in the warehouse).
+
+Process:
+
+1. **Identify what makes a row truly unique**: entity + time-period + variant axes (e.g. for 13-F: filing × held security × security class × put/call).
+2. **Inspect a multi-record sample**, not the docs alone. Look for any combination of fields that repeats across two rows.
+3. **Read the docs for nullable fields.** Many SQL targets reject `NULL` in PK columns, and Singer state tracking misbehaves with null PK values.
+4. **If you are not 100% sure** a natural composite PK is unique AND non-null, **use a surrogate key.** Do not guess.
+
+### Surrogate Key Pattern
+
+The repo's convention (see `tap_massive/etf_global_streams.py:EtfGlobalConstituentsStream`) is a deterministic UUID5 hash of the identity fields, stored as `_surrogate_key`:
+
+```python
+from tap_massive.utils import generate_surrogate_key
+
+class MyStream(MassiveRestStream):
+    primary_keys = ["_surrogate_key"]
+
+    # Identity fields (what makes a row a row).
+    # Exclude fields whose values can change between fetches (prices, market values, weights, etc.).
+    _SURROGATE_KEY_FIELDS = (
+        "field1", "field2", "field3",
+    )
+
+    schema = th.PropertiesList(
+        th.Property("_surrogate_key", th.StringType),
+        # ... other fields
+    ).to_dict()
+
+    def post_process(self, row, context=None):
+        row = super().post_process(row, context)
+        if row is None:
+            return None
+        identity = {f: row.get(f) for f in self._SURROGATE_KEY_FIELDS}
+        row["_surrogate_key"] = generate_surrogate_key(identity)
+        return row
+```
+
+**`_SURROGATE_KEY_FIELDS` are identity fields, not value fields.** Excluding mutable values (prices, weights, dates that get re-stamped on every refresh) ensures the same logical row hashes to the same key across runs.
+
+### No Silent Failures
+
+- **Never return partial data without surfacing the issue.** If pagination breaks, raise — do not return what you have.
+- **Never drop fields the API returns** just because they aren't in the schema. `additionalProperties: True` lets unknown fields through.
+- **Never silently skip rows that fail validation.** Log and surface, do not swallow.
+- **Never invent fields** that aren't in the API response or docs. If the schema must include a derived field, derive it explicitly in `post_process`.
+- **If you cannot determine the correct schema or PK from the docs and a real sample**, stop and report rather than guess.
+
 ## Automated Changelog Monitoring
 
 **Setup**: GitHub Actions workflow in `.github/workflows/monitor-massive-changelog.yml` automatically monitors Massive API changes
