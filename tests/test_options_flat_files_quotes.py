@@ -69,7 +69,13 @@ def test_options_quote_snapshot_sql_accepts_options_shape() -> None:
 
 
 def test_options_batch_query_matches_single_file() -> None:
-    """Batch SQL with one file should produce same rows as single-file SQL."""
+    """Batch SQL with one file should produce same rows as single-file SQL.
+
+    Compared as a set (sorted by ticker + asof_timestamp) — neither query has
+    an ``ORDER BY`` clause that pins inter-row order, and DuckDB's planner can
+    reorder rows under aggregation. The semantic contract is identical row
+    *content*, not implementation-detail row ordering.
+    """
     single_rows = _run_options_query(str(FIXTURE))
     batch_rows = run_duckdb_batch_bar_query(
         _OPTIONS_QUOTE_SNAPSHOT_BATCH_SQL, [str(FIXTURE)], INTERVAL_NS
@@ -79,7 +85,8 @@ def test_options_batch_query_matches_single_file() -> None:
         row.pop("file_date", None)
     for row in batch_rows:
         row.pop("file_date", None)
-    assert batch_rows == single_rows
+    sort_key = lambda row: (row["ticker"], row["asof_timestamp"])
+    assert sorted(batch_rows, key=sort_key) == sorted(single_rows, key=sort_key)
 
 
 def test_options_batch_has_file_date_column() -> None:

@@ -25,10 +25,10 @@ def run_duckdb_bar_query(
     sql = (
         sql_template_raw.format(
             interval_ns=interval_ns,
-            file_path="{file_path}",
+            file_paths="{file_paths}",
             file_date="{file_date}",
         )
-        .replace("{file_path}", filepath)
+        .replace("{file_paths}", f"'{filepath}'")
         .replace("{file_date}", "2026-01-01")
     )
     return _execute_duckdb_sql(sql)

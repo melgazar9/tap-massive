@@ -169,8 +169,61 @@ OPTIONS_QUOTE_ARGMAX_FIELDS = (
     "bid_size",
 )
 
-# Ordering key for arg_max — always (sip_timestamp, sequence_number).
+# Futures NBBO snapshots (Polygon Globex per-exchange: CME / CBOT / NYMEX /
+# COMEX). Schema discovered empirically from real CME flat files (2026-02-18):
+#   ticker, timestamp, sequence_number, report_sequence, ask_timestamp,
+#   ask_price, ask_size, bid_timestamp, bid_price, bid_size, exchange,
+#   session_end_date
+# `timestamp` is ns-since-epoch BIGINT (NOT ms-fractional VARCHAR), and
+# `sequence_number` IS present — both same shape as stocks/options. Differences
+# from options:
+#   * Per-side timestamps `ask_timestamp` / `bid_timestamp` (BIGINT ns).
+#   * `report_sequence` extra integer (Polygon's internal sequencing within a
+#     publish batch — kept for round-trip fidelity).
+#   * Single `exchange` column (not split into ask/bid_exchange) — for a
+#     single futures contract, both sides come from the same exchange.
+#   * `session_end_date` DATE — useful for spotting overnight/Globex sessions
+#     that span calendar midnight.
+FUTURES_QUOTE_CSV_COLUMNS = {
+    "ticker": "VARCHAR",
+    "timestamp": "BIGINT",
+    "sequence_number": "BIGINT",
+    "report_sequence": "BIGINT",
+    "ask_timestamp": "BIGINT",
+    "ask_price": "DOUBLE",
+    "ask_size": "DOUBLE",
+    "bid_timestamp": "BIGINT",
+    "bid_price": "DOUBLE",
+    "bid_size": "DOUBLE",
+    "exchange": "INTEGER",
+    "session_end_date": "DATE",
+}
+
+FUTURES_QUOTE_ARGMAX_FIELDS = (
+    "sip_timestamp",
+    "sequence_number",
+    "report_sequence",
+    "ask_timestamp",
+    "ask_price",
+    "ask_size",
+    "bid_timestamp",
+    "bid_price",
+    "bid_size",
+    "exchange",
+    "session_end_date",
+    # Per-row venue tag injected at SQL build time as a string literal
+    # ('cme'/'cbot'/'comex'/'nymex'). NOT in the source CSV — derived from
+    # the per-venue input file the worker is processing. Sources are written
+    # to per-venue parquets, so the column is technically redundant with the
+    # filename, but keeping it in-record means downstream readers don't have
+    # to parse paths to identify the venue.
+    "venue",
+)
+
+# Ordering key for arg_max — stocks/options/futures all use
+# (sip_timestamp, sequence_number) for tie-breaking on identical sip_timestamps.
 ARGMAX_ORDER_KEY = "struct_pack(ts := sip_timestamp, seq := sequence_number)"
+FUTURES_ARGMAX_ORDER_KEY = ARGMAX_ORDER_KEY
 
 
 def _build_csv_columns_clause(columns: dict, double_braces: bool = True) -> str:
@@ -202,6 +255,36 @@ def _build_output_select(
 def _build_select_fields(fields: tuple[str, ...]) -> str:
     """Build comma-separated field list for SELECT in bucketed CTE."""
     return ",\n        ".join(fields)
+
+
+
+# Per-asset normalization SELECT clause (raw CSV columns → canonical fields
+# with ns-int `sip_timestamp`). All three assets are now pass-through: stocks
+# and options use the canonical `sip_timestamp`/`sequence_number` shape
+# directly; futures rename only `timestamp` → `sip_timestamp` (the column was
+# named `timestamp` upstream but is already ns BIGINT).
+STOCK_NORMALIZED_SELECT = _build_select_fields(STOCK_QUOTE_ARGMAX_FIELDS)
+OPTIONS_NORMALIZED_SELECT = _build_select_fields(OPTIONS_QUOTE_ARGMAX_FIELDS)
+FUTURES_NORMALIZED_SELECT = ",\n        ".join(
+    [
+        "timestamp AS sip_timestamp",
+        "sequence_number",
+        "report_sequence",
+        "ask_timestamp",
+        "ask_price",
+        "ask_size",
+        "bid_timestamp",
+        "bid_price",
+        "bid_size",
+        "exchange",
+        "session_end_date",
+        # `{venue}` is a runtime placeholder — the build-time `.format()` only
+        # rewrites placeholders in the *template*, not in the values being
+        # interpolated, so this literal survives unchanged into the post-build
+        # SQL. The worker fills it via `.replace("{venue}", "cme")` per call.
+        "'{venue}' AS venue",
+    ]
+)
 
 
 # ---------------------------------------------------------------------------
@@ -694,14 +777,20 @@ class FlatFilesStreamFutureQuotes(FlatFilesStream):
 
 # ---------------------------------------------------------------------------
 # Quote update bars from flat files (DuckDB aggregation)
+#
+# All asset classes share two SQL skeletons (single-file and multi-file batch).
+# Each asset class supplies its own raw CSV column dict, normalization SELECT
+# (raw → canonical fields with ns-int sip_timestamp), arg_max output fields,
+# and arg_max ordering key. The normalization CTE is a no-op pass-through for
+# stocks/options (CSVs already have sip_timestamp/sequence_number) and parses
+# fractional-ms VARCHAR timestamps to ns-int for futures.
 # ---------------------------------------------------------------------------
 
-_STOCK_QUOTE_SNAPSHOT_SQL = """
-WITH bucketed AS (
+_QUOTE_SNAPSHOT_SQL_TEMPLATE = """
+WITH normalized AS (
     SELECT
         ticker,
-        (((sip_timestamp - 1) // {{interval_ns}}) + 1) * {{interval_ns}} AS asof_timestamp,
-        {bucketed_fields}
+        {normalized_select}
     FROM read_csv(
         '{{file_path}}',
         header=true,
@@ -710,6 +799,13 @@ WITH bucketed AS (
         quote='"',
         columns={csv_columns}
     )
+),
+bucketed AS (
+    SELECT
+        ticker,
+        (((sip_timestamp - 1) // {{interval_ns}}) + 1) * {{interval_ns}} AS asof_timestamp,
+        {bucketed_fields}
+    FROM normalized
 ),
 grouped AS (
     SELECT
@@ -728,14 +824,125 @@ SELECT
     asof_timestamp,
     {output_select}
 FROM grouped
-""".format(
-    bucketed_fields=_build_select_fields(STOCK_QUOTE_ARGMAX_FIELDS),
-    csv_columns=_build_csv_columns_clause(STOCK_QUOTE_CSV_COLUMNS, double_braces=True),
-    argmax_struct=_build_argmax_struct(STOCK_QUOTE_ARGMAX_FIELDS, double_braces=True),
-    order_key=ARGMAX_ORDER_KEY,
-    output_select=_build_output_select(STOCK_QUOTE_ARGMAX_FIELDS),
+"""
+
+_QUOTE_SNAPSHOT_BATCH_SQL_TEMPLATE = """
+WITH normalized AS (
+    SELECT
+        regexp_extract(filename, '(\\d{{{{4}}}}-\\d{{{{2}}}}-\\d{{{{2}}}})', 1) AS file_date,
+        ticker,
+        {normalized_select}
+    FROM read_csv(
+        {{file_list}},
+        filename=true,
+        header=true,
+        auto_detect=false,
+        delim=',',
+        quote='"',
+        columns={csv_columns}
+    )
+),
+bucketed AS (
+    SELECT
+        file_date,
+        ticker,
+        (((sip_timestamp - 1) // {{interval_ns}}) + 1) * {{interval_ns}} AS asof_timestamp,
+        {bucketed_fields}
+    FROM normalized
+),
+grouped AS (
+    SELECT
+        file_date,
+        ticker,
+        asof_timestamp,
+        arg_max(
+            {argmax_struct},
+            {order_key}
+        ) AS last_quote
+    FROM bucketed
+    GROUP BY file_date, ticker, asof_timestamp
+)
+SELECT
+    file_date,
+    ticker,
+    asof_timestamp,
+    {output_select}
+FROM grouped
+ORDER BY file_date, ticker, asof_timestamp
+"""
+
+
+def _build_quote_snapshot_sql(
+    template: str,
+    csv_columns: dict[str, str],
+    argmax_fields: tuple[str, ...],
+    normalized_select: str,
+    order_key: str,
+) -> str:
+    """Build a quote-snapshot SQL string from a template skeleton + per-asset config.
+
+    The returned SQL still contains runtime placeholders (``{file_paths}`` /
+    ``{file_list}``, ``{file_date}``, ``{interval_ns}``) that the caller fills
+    via ``.format()`` or ``.replace()`` per execution.
+    """
+    return template.format(
+        normalized_select=normalized_select,
+        csv_columns=_build_csv_columns_clause(csv_columns, double_braces=True),
+        bucketed_fields=_build_select_fields(argmax_fields),
+        argmax_struct=_build_argmax_struct(argmax_fields, double_braces=True),
+        order_key=order_key,
+        output_select=_build_output_select(argmax_fields),
+    )
+
+
+_STOCK_QUOTE_SNAPSHOT_SQL = _build_quote_snapshot_sql(
+    _QUOTE_SNAPSHOT_SQL_TEMPLATE,
+    STOCK_QUOTE_CSV_COLUMNS,
+    STOCK_QUOTE_ARGMAX_FIELDS,
+    STOCK_NORMALIZED_SELECT,
+    ARGMAX_ORDER_KEY,
+)
+_OPTIONS_QUOTE_SNAPSHOT_SQL = _build_quote_snapshot_sql(
+    _QUOTE_SNAPSHOT_SQL_TEMPLATE,
+    OPTIONS_QUOTE_CSV_COLUMNS,
+    OPTIONS_QUOTE_ARGMAX_FIELDS,
+    OPTIONS_NORMALIZED_SELECT,
+    ARGMAX_ORDER_KEY,
+)
+_FUTURES_QUOTE_SNAPSHOT_SQL = _build_quote_snapshot_sql(
+    _QUOTE_SNAPSHOT_SQL_TEMPLATE,
+    FUTURES_QUOTE_CSV_COLUMNS,
+    FUTURES_QUOTE_ARGMAX_FIELDS,
+    FUTURES_NORMALIZED_SELECT,
+    FUTURES_ARGMAX_ORDER_KEY,
 )
 
+_STOCK_QUOTE_SNAPSHOT_BATCH_SQL = _build_quote_snapshot_sql(
+    _QUOTE_SNAPSHOT_BATCH_SQL_TEMPLATE,
+    STOCK_QUOTE_CSV_COLUMNS,
+    STOCK_QUOTE_ARGMAX_FIELDS,
+    STOCK_NORMALIZED_SELECT,
+    ARGMAX_ORDER_KEY,
+)
+_OPTIONS_QUOTE_SNAPSHOT_BATCH_SQL = _build_quote_snapshot_sql(
+    _QUOTE_SNAPSHOT_BATCH_SQL_TEMPLATE,
+    OPTIONS_QUOTE_CSV_COLUMNS,
+    OPTIONS_QUOTE_ARGMAX_FIELDS,
+    OPTIONS_NORMALIZED_SELECT,
+    ARGMAX_ORDER_KEY,
+)
+_FUTURES_QUOTE_SNAPSHOT_BATCH_SQL = _build_quote_snapshot_sql(
+    _QUOTE_SNAPSHOT_BATCH_SQL_TEMPLATE,
+    FUTURES_QUOTE_CSV_COLUMNS,
+    FUTURES_QUOTE_ARGMAX_FIELDS,
+    FUTURES_NORMALIZED_SELECT,
+    FUTURES_ARGMAX_ORDER_KEY,
+)
+
+
+# Singer-target output schemas. One per asset class — fields differ structurally
+# (stocks have participant_timestamp/conditions/etc.; options are leaner;
+# futures have session_end_date and no sequence_number).
 _STOCK_QUOTE_SNAPSHOT_FLAT_FILES_SCHEMA = th.PropertiesList(
     th.Property("file_date", th.StringType),
     th.Property("ticker", th.StringType),
@@ -755,140 +962,6 @@ _STOCK_QUOTE_SNAPSHOT_FLAT_FILES_SCHEMA = th.PropertiesList(
     th.Property("tape", th.IntegerType),
 ).to_dict()
 
-# Options quote update bar SQL — options CSVs have no participant_timestamp,
-# trf_timestamp, conditions, indicators, or tape columns.
-_OPTIONS_QUOTE_SNAPSHOT_SQL = """
-WITH bucketed AS (
-    SELECT
-        ticker,
-        (((sip_timestamp - 1) // {{interval_ns}}) + 1) * {{interval_ns}} AS asof_timestamp,
-        {bucketed_fields}
-    FROM read_csv(
-        '{{file_path}}',
-        header=true,
-        auto_detect=false,
-        delim=',',
-        quote='"',
-        columns={csv_columns}
-    )
-),
-grouped AS (
-    SELECT
-        ticker,
-        asof_timestamp,
-        arg_max(
-            {argmax_struct},
-            {order_key}
-        ) AS last_quote
-    FROM bucketed
-    GROUP BY ticker, asof_timestamp
-)
-SELECT
-    '{{file_date}}' AS file_date,
-    ticker,
-    asof_timestamp,
-    {output_select}
-FROM grouped
-""".format(
-    bucketed_fields=_build_select_fields(OPTIONS_QUOTE_ARGMAX_FIELDS),
-    csv_columns=_build_csv_columns_clause(
-        OPTIONS_QUOTE_CSV_COLUMNS, double_braces=True
-    ),
-    argmax_struct=_build_argmax_struct(OPTIONS_QUOTE_ARGMAX_FIELDS, double_braces=True),
-    order_key=ARGMAX_ORDER_KEY,
-    output_select=_build_output_select(OPTIONS_QUOTE_ARGMAX_FIELDS),
-)
-
-_STOCK_QUOTE_SNAPSHOT_BATCH_SQL = """
-WITH bucketed AS (
-    SELECT
-        regexp_extract(filename, '(\\d{{{{4}}}}-\\d{{{{2}}}}-\\d{{{{2}}}})', 1) AS file_date,
-        ticker,
-        (((sip_timestamp - 1) // {{interval_ns}}) + 1) * {{interval_ns}} AS asof_timestamp,
-        {bucketed_fields}
-    FROM read_csv(
-        {{file_list}},
-        filename=true,
-        header=true,
-        auto_detect=false,
-        delim=',',
-        quote='"',
-        columns={csv_columns}
-    )
-),
-grouped AS (
-    SELECT
-        file_date,
-        ticker,
-        asof_timestamp,
-        arg_max(
-            {argmax_struct},
-            {order_key}
-        ) AS last_quote
-    FROM bucketed
-    GROUP BY file_date, ticker, asof_timestamp
-)
-SELECT
-    file_date,
-    ticker,
-    asof_timestamp,
-    {output_select}
-FROM grouped
-ORDER BY file_date
-""".format(
-    bucketed_fields=_build_select_fields(STOCK_QUOTE_ARGMAX_FIELDS),
-    csv_columns=_build_csv_columns_clause(STOCK_QUOTE_CSV_COLUMNS, double_braces=True),
-    argmax_struct=_build_argmax_struct(STOCK_QUOTE_ARGMAX_FIELDS, double_braces=True),
-    order_key=ARGMAX_ORDER_KEY,
-    output_select=_build_output_select(STOCK_QUOTE_ARGMAX_FIELDS),
-)
-
-_OPTIONS_QUOTE_SNAPSHOT_BATCH_SQL = """
-WITH bucketed AS (
-    SELECT
-        regexp_extract(filename, '(\\d{{{{4}}}}-\\d{{{{2}}}}-\\d{{{{2}}}})', 1) AS file_date,
-        ticker,
-        (((sip_timestamp - 1) // {{interval_ns}}) + 1) * {{interval_ns}} AS asof_timestamp,
-        {bucketed_fields}
-    FROM read_csv(
-        {{file_list}},
-        filename=true,
-        header=true,
-        auto_detect=false,
-        delim=',',
-        quote='"',
-        columns={csv_columns}
-    )
-),
-grouped AS (
-    SELECT
-        file_date,
-        ticker,
-        asof_timestamp,
-        arg_max(
-            {argmax_struct},
-            {order_key}
-        ) AS last_quote
-    FROM bucketed
-    GROUP BY file_date, ticker, asof_timestamp
-)
-SELECT
-    file_date,
-    ticker,
-    asof_timestamp,
-    {output_select}
-FROM grouped
-ORDER BY file_date
-""".format(
-    bucketed_fields=_build_select_fields(OPTIONS_QUOTE_ARGMAX_FIELDS),
-    csv_columns=_build_csv_columns_clause(
-        OPTIONS_QUOTE_CSV_COLUMNS, double_braces=True
-    ),
-    argmax_struct=_build_argmax_struct(OPTIONS_QUOTE_ARGMAX_FIELDS, double_braces=True),
-    order_key=ARGMAX_ORDER_KEY,
-    output_select=_build_output_select(OPTIONS_QUOTE_ARGMAX_FIELDS),
-)
-
 _OPTIONS_QUOTE_SNAPSHOT_FLAT_FILES_SCHEMA = th.PropertiesList(
     th.Property("file_date", th.StringType),
     th.Property("ticker", th.StringType),
@@ -901,6 +974,21 @@ _OPTIONS_QUOTE_SNAPSHOT_FLAT_FILES_SCHEMA = th.PropertiesList(
     th.Property("bid_exchange", th.IntegerType),
     th.Property("bid_price", th.NumberType),
     th.Property("bid_size", th.NumberType),
+).to_dict()
+
+_FUTURES_QUOTE_SNAPSHOT_FLAT_FILES_SCHEMA = th.PropertiesList(
+    th.Property("file_date", th.StringType),
+    th.Property("ticker", th.StringType),
+    th.Property("asof_timestamp", th.IntegerType),
+    th.Property("sip_timestamp", th.IntegerType),
+    th.Property("ask_timestamp", th.IntegerType),
+    th.Property("ask_price", th.NumberType),
+    th.Property("ask_size", th.NumberType),
+    th.Property("bid_timestamp", th.IntegerType),
+    th.Property("bid_price", th.NumberType),
+    th.Property("bid_size", th.NumberType),
+    th.Property("exchange", th.IntegerType),
+    th.Property("session_end_date", th.DateType),
 ).to_dict()
 
 
@@ -1006,7 +1094,7 @@ class QuoteSnapshotFlatFilesStream(FlatFilesStream):
         else:
             sql_template = self._RAW_SQL_TEMPLATE.format(
                 interval_ns=self._interval_ns,
-                file_path="{file_path}",
+                file_paths="{file_paths}",
                 file_date="{file_date}",
             )
 
@@ -1223,7 +1311,7 @@ class QuoteSnapshotFlatFilesStream(FlatFilesStream):
         file_date: str,
     ) -> t.Iterable[dict[str, t.Any]]:
         """Execute the aggregation query for a single file and yield rows."""
-        query = sql_template.replace("{file_path}", source).replace(
+        query = sql_template.replace("{file_paths}", f"'{source}'").replace(
             "{file_date}", file_date
         )
 

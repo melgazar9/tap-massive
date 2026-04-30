@@ -89,7 +89,12 @@ class TestBatchQueryProducesSameResults:
     """Verify batch SQL template produces identical results to single-file template."""
 
     def test_batch_with_single_file_matches_single_query(self):
-        """Batch query with one file should produce same rows as single-file query."""
+        """Batch query with one file should produce same rows as single-file query.
+
+        Compared as a sorted set — only the batch SQL has an ``ORDER BY``
+        clause, so single-pass row order is implementation-defined. Equality
+        of contents (not order) is the contract.
+        """
         single_rows = _run_query(str(FIXTURE))
         batch_rows = run_duckdb_batch_bar_query(
             _STOCK_QUOTE_SNAPSHOT_BATCH_SQL, [str(FIXTURE)], INTERVAL_NS
@@ -99,7 +104,8 @@ class TestBatchQueryProducesSameResults:
             row.pop("file_date", None)
         for row in batch_rows:
             row.pop("file_date", None)
-        assert batch_rows == single_rows
+        sort_key = lambda row: (row["ticker"], row["asof_timestamp"])
+        assert sorted(batch_rows, key=sort_key) == sorted(single_rows, key=sort_key)
 
     def test_batch_with_same_file_twice_deduplicates(self):
         """Same file passed twice has identical filename/file_date, so GROUP BY deduplicates."""
