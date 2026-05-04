@@ -123,7 +123,7 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          anthropic_api_key: ${{ secrets.CLAUDE_TAP_MASSIVE_API_KEY }}
+          claude_code_oauth_token: ${{ secrets.CLAUDE_TAP_MASSIVE_API_KEY }}
           prompt: |
             You are updating the tap-massive Singer tap based on new Massive API changelog entries.
 
