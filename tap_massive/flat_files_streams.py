@@ -257,7 +257,6 @@ def _build_select_fields(fields: tuple[str, ...]) -> str:
     return ",\n        ".join(fields)
 
 
-
 # Per-asset normalization SELECT clause (raw CSV columns → canonical fields
 # with ns-int `sip_timestamp`). All three assets are now pass-through: stocks
 # and options use the canonical `sip_timestamp`/`sequence_number` shape
