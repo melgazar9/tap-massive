@@ -25,7 +25,7 @@ from tap_massive.utils import safe_decimal, safe_int
 class FuturesContractsStream(MassiveRestStream):
     """Futures contracts reference data.
 
-    Endpoint: ``GET /futures/vX/contracts``
+    Endpoint: ``GET /futures/v1/contracts``
     Max limit: 1000
     """
 
@@ -59,13 +59,13 @@ class FuturesContractsStream(MassiveRestStream):
     ).to_dict()
 
     def get_url(self, context: Context = None) -> str:
-        return f"{self.url_base}/futures/vX/contracts"
+        return f"{self.url_base}/futures/v1/contracts"
 
 
 class FuturesProductsStream(MassiveRestStream):
     """Futures products reference data.
 
-    Endpoint: ``GET /futures/vX/products``
+    Endpoint: ``GET /futures/v1/products``
     Max limit: 50000
     """
 
@@ -99,13 +99,13 @@ class FuturesProductsStream(MassiveRestStream):
     ).to_dict()
 
     def get_url(self, context: Context = None) -> str:
-        return f"{self.url_base}/futures/vX/products"
+        return f"{self.url_base}/futures/v1/products"
 
 
 class FuturesSchedulesStream(MassiveRestStream):
     """Futures trading schedules.
 
-    Endpoint: ``GET /futures/vX/schedules``
+    Endpoint: ``GET /futures/v1/schedules``
     Max limit: 1000
     """
 
@@ -124,13 +124,13 @@ class FuturesSchedulesStream(MassiveRestStream):
     ).to_dict()
 
     def get_url(self, context: Context = None) -> str:
-        return f"{self.url_base}/futures/vX/schedules"
+        return f"{self.url_base}/futures/v1/schedules"
 
 
 class FuturesExchangesStream(MassiveRestStream):
     """Futures exchanges reference data.
 
-    Endpoint: ``GET /futures/vX/exchanges``
+    Endpoint: ``GET /futures/v1/exchanges``
     Max limit: 999
     """
 
@@ -151,13 +151,13 @@ class FuturesExchangesStream(MassiveRestStream):
     ).to_dict()
 
     def get_url(self, context: Context = None) -> str:
-        return f"{self.url_base}/futures/vX/exchanges"
+        return f"{self.url_base}/futures/v1/exchanges"
 
 
 class FuturesMarketStatusStream(MassiveRestStream):
     """Futures market status.
 
-    Endpoint: ``GET /futures/vX/market-status``
+    Endpoint: ``GET /futures/v1/market-status``
     Max limit: 50000
     """
 
@@ -176,7 +176,7 @@ class FuturesMarketStatusStream(MassiveRestStream):
     ).to_dict()
 
     def get_url(self, context: Context = None) -> str:
-        return f"{self.url_base}/futures/vX/market-status"
+        return f"{self.url_base}/futures/v1/market-status"
 
 
 # ---------------------------------------------------------------------------
@@ -236,14 +236,14 @@ class FuturesTickerPartitionStream(BaseTickerPartitionStream):
 
 
 # ---------------------------------------------------------------------------
-# Aggregate bars  —  /futures/vX/aggs/{ticker}
+# Aggregate bars  —  /futures/v1/aggs/{ticker}
 # ---------------------------------------------------------------------------
 
 
 class FuturesCustomBarsStream(FuturesTickerPartitionStream, BaseCustomBarsStream):
     """Futures aggregate bars.
 
-    Endpoint: ``GET /futures/vX/aggs/{ticker}``
+    Endpoint: ``GET /futures/v1/aggs/{ticker}``
     Max limit: 50000
 
     Uses nanosecond ``window_start`` timestamps from the API.  Additional fields
@@ -298,7 +298,7 @@ class FuturesCustomBarsStream(FuturesTickerPartitionStream, BaseCustomBarsStream
 
     def get_url(self, context: Context) -> str:
         ticker = context.get(self._ticker_param)
-        return f"{self.url_base}/futures/vX/aggs/{ticker}"
+        return f"{self.url_base}/futures/v1/aggs/{ticker}"
 
     def post_process(self, row, context=None):
         if "window_start" not in row:
@@ -341,14 +341,14 @@ class FuturesBars1MonthStream(FuturesCustomBarsStream):
 
 
 # ---------------------------------------------------------------------------
-# Trades  —  /futures/vX/trades/{ticker}
+# Trades  —  /futures/v1/trades/{ticker}
 # ---------------------------------------------------------------------------
 
 
 class FuturesTradeStream(_NanosecondIncrementalMixin, FuturesTickerPartitionStream):
     """Futures tick-level trades.
 
-    Endpoint: ``GET /futures/vX/trades/{ticker}``
+    Endpoint: ``GET /futures/v1/trades/{ticker}``
     Max limit: 50000
     """
 
@@ -376,7 +376,7 @@ class FuturesTradeStream(_NanosecondIncrementalMixin, FuturesTickerPartitionStre
 
     def get_url(self, context: Context) -> str:
         ticker = context.get(self._ticker_param)
-        return f"{self.url_base}/futures/vX/trades/{ticker}"
+        return f"{self.url_base}/futures/v1/trades/{ticker}"
 
     def post_process(self, row, context=None):
         row["ticker"] = context.get(self._ticker_param)
@@ -386,14 +386,14 @@ class FuturesTradeStream(_NanosecondIncrementalMixin, FuturesTickerPartitionStre
 
 
 # ---------------------------------------------------------------------------
-# Quotes  —  /futures/vX/quotes/{ticker}
+# Quotes  —  /futures/v1/quotes/{ticker}
 # ---------------------------------------------------------------------------
 
 
 class FuturesQuoteStream(_NanosecondIncrementalMixin, FuturesTickerPartitionStream):
     """Futures tick-level quotes.
 
-    Endpoint: ``GET /futures/vX/quotes/{ticker}``
+    Endpoint: ``GET /futures/v1/quotes/{ticker}``
     Max limit: 50000
     """
 
@@ -425,7 +425,7 @@ class FuturesQuoteStream(_NanosecondIncrementalMixin, FuturesTickerPartitionStre
 
     def get_url(self, context: Context) -> str:
         ticker = context.get(self._ticker_param)
-        return f"{self.url_base}/futures/vX/quotes/{ticker}"
+        return f"{self.url_base}/futures/v1/quotes/{ticker}"
 
     def post_process(self, row, context=None):
         row["ticker"] = context.get(self._ticker_param)
@@ -434,14 +434,14 @@ class FuturesQuoteStream(_NanosecondIncrementalMixin, FuturesTickerPartitionStre
 
 
 # ---------------------------------------------------------------------------
-# Snapshot  —  /futures/vX/snapshot
+# Snapshot  —  /futures/v1/snapshot
 # ---------------------------------------------------------------------------
 
 
 class FuturesContractsSnapshotStream(MassiveRestStream):
     """Futures contracts snapshot.
 
-    Endpoint: ``GET /futures/vX/snapshot``
+    Endpoint: ``GET /futures/v1/snapshot``
     Max limit: 50000
     """
 
@@ -512,7 +512,7 @@ class FuturesContractsSnapshotStream(MassiveRestStream):
     ).to_dict()
 
     def get_url(self, context: Context = None) -> str:
-        return f"{self.url_base}/futures/vX/snapshot"
+        return f"{self.url_base}/futures/v1/snapshot"
 
     def post_process(self, row, context=None):
         row = super().post_process(row, context)
