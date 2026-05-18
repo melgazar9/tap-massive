@@ -6,6 +6,7 @@ from singer_sdk import typing as th
 from singer_sdk.helpers.types import Context
 
 from tap_massive.client import MassiveRestStream, OptionalTickerPartitionStream
+from tap_massive.utils import generate_surrogate_key
 
 # --- Financial Statement Streams ---
 
@@ -798,6 +799,177 @@ class Stock13FFilingsStream(OptionalTickerPartitionStream):
             return None
         if row.get("put_call") is None:
             row["put_call"] = ""
+        return row
+
+
+class StockForm3FilingsStream(OptionalTickerPartitionStream):
+    """SEC Form 3 initial beneficial ownership filings by corporate insiders.
+
+    Surrogate PK: natural identity spans multiple nullable fields
+    (security_title, nature_of_ownership, shares_owned) that can be simultaneously
+    absent in real filings, so a hash of the identity fields is used.
+    """
+
+    name = "stock_form3_filings"
+
+    primary_keys = ["_surrogate_key"]
+    replication_key = "filing_date"
+    replication_method = "INCREMENTAL"
+    is_timestamp_replication_key = True
+
+    _use_cached_tickers_default = False
+    _incremental_timestamp_is_date = True
+    _ticker_in_query_params = True
+    _ticker_param = "tickers"
+
+    _SURROGATE_KEY_FIELDS = (
+        "accession_number",
+        "security_title",
+        "security_type",
+        "direct_or_indirect",
+        "nature_of_ownership",
+        "shares_owned",
+    )
+
+    _footnote_schema = th.ObjectType(
+        th.Property("id", th.StringType),
+        th.Property("description", th.StringType),
+    )
+
+    schema = th.PropertiesList(
+        th.Property("_surrogate_key", th.StringType),
+        th.Property("accession_number", th.StringType),
+        th.Property("aff_10b5_one", th.BooleanType),
+        th.Property("date_of_original_submission", th.DateType),
+        th.Property("direct_or_indirect", th.StringType),
+        th.Property("exercise_date", th.DateType),
+        th.Property("exercise_price", th.NumberType),
+        th.Property("filing_date", th.DateType),
+        th.Property("filing_url", th.StringType),
+        th.Property("footnotes", th.ArrayType(_footnote_schema)),
+        th.Property("form_type", th.StringType),
+        th.Property("is_director", th.BooleanType),
+        th.Property("is_officer", th.BooleanType),
+        th.Property("is_other", th.BooleanType),
+        th.Property("is_ten_percent_owner", th.BooleanType),
+        th.Property("issuer_cik", th.StringType),
+        th.Property("issuer_name", th.StringType),
+        th.Property("nature_of_ownership", th.StringType),
+        th.Property("not_subject_to_section_16", th.BooleanType),
+        th.Property("officer_title", th.StringType),
+        th.Property("owner_cik", th.StringType),
+        th.Property("owner_name", th.StringType),
+        th.Property("period_of_report", th.DateType),
+        th.Property("remarks", th.StringType),
+        th.Property("security_title", th.StringType),
+        th.Property("security_type", th.StringType),
+        th.Property("shares_owned", th.NumberType),
+        th.Property("tickers", th.ArrayType(th.StringType)),
+        th.Property("underlying_security_shares", th.NumberType),
+        th.Property("underlying_security_title", th.StringType),
+    ).to_dict()
+
+    def get_url(self, context: Context = None):
+        return f"{self.url_base}/stocks/filings/vX/form-3"
+
+    def post_process(self, row, context=None):
+        row = super().post_process(row, context)
+        if row is None:
+            return None
+        identity = {f: row.get(f) for f in self._SURROGATE_KEY_FIELDS}
+        row["_surrogate_key"] = generate_surrogate_key(identity)
+        return row
+
+
+class StockForm4FilingsStream(OptionalTickerPartitionStream):
+    """SEC Form 4 changes in beneficial ownership by corporate insiders.
+
+    Surrogate PK: transaction rows have multiple nullable identity fields
+    (transaction_date, transaction_code, transaction_shares) that can be
+    simultaneously absent for holding-type records, so a hash is used.
+    """
+
+    name = "stock_form4_filings"
+
+    primary_keys = ["_surrogate_key"]
+    replication_key = "filing_date"
+    replication_method = "INCREMENTAL"
+    is_timestamp_replication_key = True
+
+    _use_cached_tickers_default = False
+    _incremental_timestamp_is_date = True
+    _ticker_in_query_params = True
+    _ticker_param = "tickers"
+
+    _SURROGATE_KEY_FIELDS = (
+        "accession_number",
+        "security_title",
+        "security_type",
+        "direct_or_indirect",
+        "record_type",
+        "transaction_date",
+        "transaction_code",
+        "transaction_shares",
+    )
+
+    _footnote_schema = th.ObjectType(
+        th.Property("id", th.StringType),
+        th.Property("description", th.StringType),
+    )
+
+    schema = th.PropertiesList(
+        th.Property("_surrogate_key", th.StringType),
+        th.Property("accession_number", th.StringType),
+        th.Property("aff_10b5_one", th.BooleanType),
+        th.Property("date_of_original_submission", th.DateType),
+        th.Property("deemed_execution_date", th.DateType),
+        th.Property("direct_or_indirect", th.StringType),
+        th.Property("equity_swap_involved", th.BooleanType),
+        th.Property("exercise_date", th.DateType),
+        th.Property("exercise_price", th.NumberType),
+        th.Property("expiration_date", th.DateType),
+        th.Property("filing_date", th.DateType),
+        th.Property("filing_url", th.StringType),
+        th.Property("footnotes", th.ArrayType(_footnote_schema)),
+        th.Property("form_type", th.StringType),
+        th.Property("is_director", th.BooleanType),
+        th.Property("is_officer", th.BooleanType),
+        th.Property("is_other", th.BooleanType),
+        th.Property("is_ten_percent_owner", th.BooleanType),
+        th.Property("issuer_cik", th.StringType),
+        th.Property("issuer_name", th.StringType),
+        th.Property("nature_of_ownership", th.StringType),
+        th.Property("not_subject_to_section_16", th.BooleanType),
+        th.Property("officer_title", th.StringType),
+        th.Property("owner_cik", th.StringType),
+        th.Property("owner_name", th.StringType),
+        th.Property("period_of_report", th.DateType),
+        th.Property("record_type", th.StringType),
+        th.Property("remarks", th.StringType),
+        th.Property("security_title", th.StringType),
+        th.Property("security_type", th.StringType),
+        th.Property("shares_owned_following_transaction", th.NumberType),
+        th.Property("tickers", th.ArrayType(th.StringType)),
+        th.Property("transaction_acquired_disposed", th.StringType),
+        th.Property("transaction_code", th.StringType),
+        th.Property("transaction_date", th.DateType),
+        th.Property("transaction_price_per_share", th.NumberType),
+        th.Property("transaction_shares", th.NumberType),
+        th.Property("transaction_timeliness", th.StringType),
+        th.Property("transaction_value", th.NumberType),
+        th.Property("underlying_security_shares", th.NumberType),
+        th.Property("underlying_security_title", th.StringType),
+    ).to_dict()
+
+    def get_url(self, context: Context = None):
+        return f"{self.url_base}/stocks/filings/vX/form-4"
+
+    def post_process(self, row, context=None):
+        row = super().post_process(row, context)
+        if row is None:
+            return None
+        identity = {f: row.get(f) for f in self._SURROGATE_KEY_FIELDS}
+        row["_surrogate_key"] = generate_surrogate_key(identity)
         return row
 
 
