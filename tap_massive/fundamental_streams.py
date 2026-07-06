@@ -640,6 +640,54 @@ class Stock10KSectionsStream(OptionalTickerPartitionStream):
         return f"{self.url_base}/stocks/filings/10-K/vX/sections"
 
 
+class Stock8KDisclosuresStream(OptionalTickerPartitionStream):
+    """8-K Disclosures Stream — material corporate events from 8-K filings classified by three-tier taxonomy.
+
+    A single filing can produce multiple records when it contains multiple disclosures.
+    PK uses all three category fields; tertiary_category is coerced to "" when absent.
+    """
+
+    name = "stock_8k_disclosures"
+
+    primary_keys = [
+        "accession_number",
+        "primary_category",
+        "secondary_category",
+        "tertiary_category",
+    ]
+    replication_key = "filing_date"
+    replication_method = "INCREMENTAL"
+    is_timestamp_replication_key = True
+
+    _use_cached_tickers_default = False
+    _incremental_timestamp_is_date = True
+    _ticker_in_query_params = True
+    _ticker_param = "tickers"
+
+    schema = th.PropertiesList(
+        th.Property("accession_number", th.StringType),
+        th.Property("cik", th.StringType),
+        th.Property("tickers", th.ArrayType(th.StringType)),
+        th.Property("filing_date", th.DateType),
+        th.Property("filing_url", th.StringType),
+        th.Property("primary_category", th.StringType),
+        th.Property("secondary_category", th.StringType),
+        th.Property("tertiary_category", th.StringType),
+        th.Property("supporting_text", th.StringType),
+    ).to_dict()
+
+    def get_url(self, context: Context = None):
+        return f"{self.url_base}/stocks/filings/8-K/vX/disclosures"
+
+    def post_process(self, row, context=None):
+        row = super().post_process(row, context)
+        if row is None:
+            return None
+        if row.get("tertiary_category") is None:
+            row["tertiary_category"] = ""
+        return row
+
+
 class Stock8KTextStream(OptionalTickerPartitionStream):
     """8-K Text Stream — parsed plain-text content from SEC 8-K filings."""
 
@@ -747,6 +795,39 @@ class StockRiskCategoriesStream(MassiveRestStream):
 
     def get_url(self, context: Context = None):
         return f"{self.url_base}/stocks/taxonomies/vX/risk-factors"
+
+
+class StockDisclosureCategoriesStream(MassiveRestStream):
+    """Disclosure Categories Stream — hierarchical taxonomy for classifying 8-K disclosure events."""
+
+    name = "stock_disclosure_categories"
+
+    primary_keys = [
+        "taxonomy",
+        "primary_category",
+        "secondary_category",
+        "tertiary_category",
+    ]
+    _use_cached_tickers_default = False
+
+    schema = th.PropertiesList(
+        th.Property("taxonomy", th.StringType),
+        th.Property("primary_category", th.StringType),
+        th.Property("secondary_category", th.StringType),
+        th.Property("tertiary_category", th.StringType),
+        th.Property("description", th.StringType),
+    ).to_dict()
+
+    def get_url(self, context: Context = None):
+        return f"{self.url_base}/stocks/taxonomies/vX/disclosures"
+
+    def post_process(self, row, context=None):
+        row = super().post_process(row, context)
+        if row is None:
+            return None
+        if row.get("tertiary_category") is None:
+            row["tertiary_category"] = ""
+        return row
 
 
 class Stock13FFilingsStream(OptionalTickerPartitionStream):
