@@ -90,6 +90,7 @@ plugins:
       - stock_short_interest.*
       - stock_short_volume.*
       - stock_float.*
+      - stock_8k_disclosures.*
       - stock_8k_text.*
       - stock_10k_sections.*
       - stock_13f_filings.*
@@ -98,6 +99,7 @@ plugins:
       - stock_filings_index.*
       - stock_risk_factors.*
       - stock_risk_categories.*
+      - stock_disclosure_categories.*
       - stock_news.*
 
       # --- Cross-Asset Reference Streams ---
@@ -998,6 +1000,13 @@ plugins:
         other_params:
           use_cached_tickers: true
 
+      stock_8k_disclosures:
+        query_params:
+          filing_date__gte: "2025-01-01"
+          limit: 999
+        other_params:
+          use_cached_tickers: false
+
       stock_8k_text:
         query_params:
           filing_date__gte: "2025-01-01"
@@ -1051,6 +1060,10 @@ plugins:
           use_cached_tickers: true
 
       stock_risk_categories:
+        query_params:
+          limit: 999
+
+      stock_disclosure_categories:
         query_params:
           limit: 999
 
