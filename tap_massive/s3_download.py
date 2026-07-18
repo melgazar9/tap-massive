@@ -184,6 +184,8 @@ def download_flat_file(
         **os.environ,
         "AWS_ACCESS_KEY_ID": cfg.aws_access_key_id,
         "AWS_SECRET_ACCESS_KEY": cfg.aws_secret_access_key,
+        # awscli >=2.23 response-checksum validation crashes on Massive's S3 responses.
+        "AWS_RESPONSE_CHECKSUM_VALIDATION": "when_required",
     }
 
     with lock_path.open("w") as lock_fh:
