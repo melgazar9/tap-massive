@@ -57,7 +57,7 @@ def _download_with_retries(
     env: dict[str, str],
     cfg: DownloadConfig,
 ) -> subprocess.CompletedProcess[bytes] | None:
-    """Run ``aws s3 cp`` with retry on 429/403.
+    """Run ``aws s3 cp`` with retry on 429/403/503/connection loss.
 
     Returns the successful CompletedProcess, or None when the
     file does not exist on S3 (404 / NoSuchKey).
@@ -115,7 +115,7 @@ def _download_with_retries(
     msg = (
         f"S3 download failed for {file_date} "
         f"after {cfg.max_retries} retries "
-        f"(rate limited or forbidden)"
+        f"(retryable errors persisted)"
     )
     raise RuntimeError(msg)
 
@@ -130,12 +130,19 @@ def _is_retryable(stderr: str) -> bool:
         or "Too Many Requests" in stderr
         or "403" in stderr
         or "Forbidden" in stderr
+        or "503" in stderr
+        or "Service Unavailable" in stderr
+        or "Connection was closed" in stderr
     )
 
 
 def _retryable_label(stderr: str) -> str:
     if "429" in stderr or "Too Many Requests" in stderr:
         return "Rate limited (429)"
+    if "503" in stderr or "Service Unavailable" in stderr:
+        return "Service unavailable (503)"
+    if "Connection was closed" in stderr:
+        return "Connection closed"
     return "Forbidden (403)"
 
 
@@ -150,8 +157,8 @@ def download_flat_file(
 
     Returns local path or None if not on S3. Uses fcntl locking
     to prevent parallel downloads of the same file. Downloads to
-    a temp file first, then renames atomically. Retries on 429
-    (rate limited) and 403 (forbidden) with exponential backoff.
+    a temp file first, then renames atomically. Retries on 429,
+    403, 503, and dropped connections with exponential backoff.
     """
     cfg = config or DownloadConfig()
 
@@ -186,6 +193,10 @@ def download_flat_file(
         "AWS_SECRET_ACCESS_KEY": cfg.aws_secret_access_key,
         # awscli >=2.23 response-checksum validation crashes on Massive's S3 responses.
         "AWS_RESPONSE_CHECKSUM_VALIDATION": "when_required",
+        # Massive load-sheds with 503 bursts; adaptive mode backs off per chunk
+        # instead of killing a multi-hour transfer (no partial resume in aws s3 cp).
+        "AWS_RETRY_MODE": "adaptive",
+        "AWS_MAX_ATTEMPTS": "3",
     }
 
     with lock_path.open("w") as lock_fh:
