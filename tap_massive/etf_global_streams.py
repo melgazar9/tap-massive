@@ -160,8 +160,10 @@ class EtfGlobalProfilesStream(EtfGlobalStream):
     name = "etf_global_profiles"
 
     # Exposure breakdowns arrive as {code: weight} maps with dynamic keys, not the array[object]
-    # the vendor docs advertise.
-    _EXPOSURE_MAP_TYPE = th.ObjectType(additional_properties=th.NumberType)
+    # the vendor docs advertise. Weights are nullable: the vendor emits e.g. {"eur": null}.
+    _EXPOSURE_MAP_TYPE = th.ObjectType(
+        additional_properties=th.CustomType({"type": ["number", "null"]})
+    )
 
     schema = th.PropertiesList(
         th.Property("_surrogate_key", th.StringType),
