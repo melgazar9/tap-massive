@@ -24,13 +24,14 @@ export AWS_SECRET_ACCESS_KEY="$MASSIVE_API_KEY"
 ENDPOINT="--endpoint-url https://files.massive.com"
 
 usage() {
-  echo "Usage: $0 --trades|--quotes|--bars-1m|--eod|--values|--all [--exclude TYPE,...] [--exchange LIST] [--destination DIR] --start-date YYYY-MM-DD --end-date YYYY-MM-DD --asset-class ASSET_CLASS"
+  echo "Usage: $0 --trades|--quotes|--bars-1m|--eod|--values|--all [--exclude TYPE,...] [--exchange LIST] [--destination DIR] --start-date YYYY-MM-DD [--end-date YYYY-MM-DD] --asset-class ASSET_CLASS"
   echo ""
   echo "Asset class examples:"
   echo "  us_stocks_sip, us_options_opra, us_indices"
   echo "  global_forex, global_crypto, futures"
   echo ""
   echo "Options:"
+  echo "  --end-date DATE     Last date to download (default: today, UTC)"
   echo "  --destination DIR   Base directory for downloads (default: \$HOME/massive_data)"
   echo "  --exclude TYPE,...  Exclude dataset types when using --all."
   echo "                      Valid types: trades, quotes, bars-1m, eod, values"
@@ -75,6 +76,10 @@ if [[ "$OS_NAME" == "Darwin" ]]; then
     DATE_STYLE="bsd"
   fi
 fi
+
+today_date() {
+  TZ=UTC "$DATE_BIN" +%Y-%m-%d
+}
 
 date_to_epoch() {
   local d="$1"
@@ -173,8 +178,16 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-if [[ -z "$START_DATE" || -z "$END_DATE" || -z "$ASSET_CLASS" ]]; then
+if [[ -z "$START_DATE" || -z "$ASSET_CLASS" ]]; then
   usage
+fi
+
+# --end-date is optional; default to today (UTC, matching the date helpers above).
+# Dates with no file on S3 yet (today before publish, weekends, holidays) are
+# skipped by download_with_validation's 404 handling, not treated as failures.
+if [[ -z "$END_DATE" ]]; then
+  END_DATE="$(today_date)"
+  echo "No --end-date given; defaulting to today (UTC): $END_DATE"
 fi
 
 if [[ "$ALL_DATASETS" == "true" && -n "$DATA_TYPE" ]]; then

@@ -8,20 +8,15 @@ from singer_sdk.helpers.types import Context
 from tap_massive.client import MassiveRestStream
 from tap_massive.utils import generate_surrogate_key
 
-# Reusable schema for array-of-object exposure fields (e.g. sector_exposure, geographic_exposure).
-_EXPOSURE_ITEM_TYPE = th.ObjectType(
-    th.Property("key", th.StringType),
-    th.Property("value", th.NumberType),
-)
 
+class EtfGlobalStream(MassiveRestStream):
+    """Base for the ETF Global daily-vintage streams.
 
-class EtfGlobalConstituentsStream(MassiveRestStream):
-    """ETF Global Constituents Stream."""
+    All of them key on a deterministic surrogate rather than natural fields: the API treats
+    those as nullable (constituent_ticker is NULL for commodities, effective_date is absent
+    for some tickers on certain vendor days), and one null key property aborts the load.
+    """
 
-    name = "etf_global_constituents"
-
-    # Surrogate key avoids reliance on natural fields that the API treats as nullable
-    # (constituent_ticker is NULL for commodities; constituent_name absent for some holdings).
     primary_keys = ["_surrogate_key"]
     replication_key = "processed_date"
     replication_method = "INCREMENTAL"
@@ -30,8 +25,31 @@ class EtfGlobalConstituentsStream(MassiveRestStream):
 
     _use_cached_tickers_default = False
 
-    # Identity fields that contribute to the surrogate key — exclude values that can
-    # change between fetches (processed_date, weight, market_value, shares_held, etc.).
+    # One row per ETF per vendor vintage. processed_date is redundant with effective_date in
+    # normal operation but is the only always-populated date, so it keeps whole vendor days
+    # whose effective_date is missing from collapsing onto one key per ticker.
+    _SURROGATE_KEY_FIELDS = (
+        "composite_ticker",
+        "effective_date",
+        "processed_date",
+    )
+
+    def post_process(self, row, context=None):
+        row = super().post_process(row, context)
+        if row is None:
+            return None
+        identity = {f: row.get(f) for f in self._SURROGATE_KEY_FIELDS}
+        row["_surrogate_key"] = generate_surrogate_key(identity)
+        return row
+
+
+class EtfGlobalConstituentsStream(EtfGlobalStream):
+    """ETF Global Constituents Stream."""
+
+    name = "etf_global_constituents"
+
+    # Deduped to effective_date grain: processed_date is excluded so that re-processing the
+    # same snapshot does not duplicate rows on a table this wide.
     _SURROGATE_KEY_FIELDS = (
         "composite_ticker",
         "constituent_ticker",
@@ -69,29 +87,14 @@ class EtfGlobalConstituentsStream(MassiveRestStream):
     def get_url(self, context: Context = None):
         return f"{self.url_base}/etf-global/v1/constituents"
 
-    def post_process(self, row, context=None):
-        row = super().post_process(row, context)
-        if row is None:
-            return None
-        identity = {f: row.get(f) for f in self._SURROGATE_KEY_FIELDS}
-        row["_surrogate_key"] = generate_surrogate_key(identity)
-        return row
 
-
-class EtfGlobalFundFlowsStream(MassiveRestStream):
+class EtfGlobalFundFlowsStream(EtfGlobalStream):
     """ETF Global Fund Flows Stream."""
 
     name = "etf_global_fund_flows"
 
-    primary_keys = ["composite_ticker", "effective_date"]
-    replication_key = "processed_date"
-    replication_method = "INCREMENTAL"
-    is_timestamp_replication_key = True
-    _incremental_timestamp_is_date = True
-
-    _use_cached_tickers_default = False
-
     schema = th.PropertiesList(
+        th.Property("_surrogate_key", th.StringType),
         th.Property("composite_ticker", th.StringType),
         th.Property("effective_date", th.DateType),
         th.Property("fund_flow", th.NumberType),
@@ -104,20 +107,13 @@ class EtfGlobalFundFlowsStream(MassiveRestStream):
         return f"{self.url_base}/etf-global/v1/fund-flows"
 
 
-class EtfGlobalAnalyticsStream(MassiveRestStream):
+class EtfGlobalAnalyticsStream(EtfGlobalStream):
     """ETF Global Analytics Stream."""
 
     name = "etf_global_analytics"
 
-    primary_keys = ["composite_ticker", "effective_date"]
-    replication_key = "processed_date"
-    replication_method = "INCREMENTAL"
-    is_timestamp_replication_key = True
-    _incremental_timestamp_is_date = True
-
-    _use_cached_tickers_default = False
-
     schema = th.PropertiesList(
+        th.Property("_surrogate_key", th.StringType),
         th.Property("composite_ticker", th.StringType),
         th.Property("effective_date", th.DateType),
         th.Property("processed_date", th.DateType),
@@ -158,20 +154,17 @@ class EtfGlobalAnalyticsStream(MassiveRestStream):
         return f"{self.url_base}/etf-global/v1/analytics"
 
 
-class EtfGlobalProfilesStream(MassiveRestStream):
+class EtfGlobalProfilesStream(EtfGlobalStream):
     """ETF Global Profiles & Exposure Stream."""
 
     name = "etf_global_profiles"
 
-    primary_keys = ["composite_ticker", "effective_date"]
-    replication_key = "processed_date"
-    replication_method = "INCREMENTAL"
-    is_timestamp_replication_key = True
-    _incremental_timestamp_is_date = True
-
-    _use_cached_tickers_default = False
+    # Exposure breakdowns arrive as {code: weight} maps with dynamic keys, not the array[object]
+    # the vendor docs advertise.
+    _EXPOSURE_MAP_TYPE = th.ObjectType(additional_properties=th.NumberType)
 
     schema = th.PropertiesList(
+        th.Property("_surrogate_key", th.StringType),
         th.Property("administrator", th.StringType),
         th.Property("advisor", th.StringType),
         th.Property("asset_class", th.StringType),
@@ -181,10 +174,10 @@ class EtfGlobalProfilesStream(MassiveRestStream):
         th.Property("call_volume", th.NumberType),
         th.Property("category", th.StringType),
         th.Property("composite_ticker", th.StringType),
-        th.Property("coupon_exposure", th.ArrayType(_EXPOSURE_ITEM_TYPE)),
+        th.Property("coupon_exposure", _EXPOSURE_MAP_TYPE),
         th.Property("creation_fee", th.NumberType),
         th.Property("creation_unit_size", th.NumberType),
-        th.Property("currency_exposure", th.ArrayType(_EXPOSURE_ITEM_TYPE)),
+        th.Property("currency_exposure", _EXPOSURE_MAP_TYPE),
         th.Property("custodian", th.StringType),
         th.Property("description", th.StringType),
         th.Property("development_class", th.StringType),
@@ -196,10 +189,10 @@ class EtfGlobalProfilesStream(MassiveRestStream):
         th.Property("fiscal_year_end", th.StringType),
         th.Property("focus", th.StringType),
         th.Property("futures_commission_merchant", th.StringType),
-        th.Property("geographic_exposure", th.ArrayType(_EXPOSURE_ITEM_TYPE)),
+        th.Property("geographic_exposure", _EXPOSURE_MAP_TYPE),
         th.Property("inception_date", th.DateType),
-        th.Property("industry_exposure", th.ArrayType(_EXPOSURE_ITEM_TYPE)),
-        th.Property("industry_group_exposure", th.ArrayType(_EXPOSURE_ITEM_TYPE)),
+        th.Property("industry_exposure", _EXPOSURE_MAP_TYPE),
+        th.Property("industry_group_exposure", _EXPOSURE_MAP_TYPE),
         th.Property("issuer", th.StringType),
         th.Property("lead_market_maker", th.StringType),
         th.Property("leverage_style", th.StringType),
@@ -207,7 +200,7 @@ class EtfGlobalProfilesStream(MassiveRestStream):
         th.Property("listing_exchange", th.StringType),
         th.Property("management_classification", th.StringType),
         th.Property("management_fee", th.NumberType),
-        th.Property("maturity_exposure", th.ArrayType(_EXPOSURE_ITEM_TYPE)),
+        th.Property("maturity_exposure", _EXPOSURE_MAP_TYPE),
         th.Property("net_expenses", th.NumberType),
         th.Property("num_holdings", th.NumberType),
         th.Property("options_available", th.IntegerType),
@@ -220,10 +213,10 @@ class EtfGlobalProfilesStream(MassiveRestStream):
         th.Property("put_call_ratio", th.NumberType),
         th.Property("put_volume", th.NumberType),
         th.Property("region", th.StringType),
-        th.Property("sector_exposure", th.ArrayType(_EXPOSURE_ITEM_TYPE)),
+        th.Property("sector_exposure", _EXPOSURE_MAP_TYPE),
         th.Property("short_interest", th.NumberType),
         th.Property("subadvisor", th.StringType),
-        th.Property("subindustry_exposure", th.ArrayType(_EXPOSURE_ITEM_TYPE)),
+        th.Property("subindustry_exposure", _EXPOSURE_MAP_TYPE),
         th.Property("tax_classification", th.StringType),
         th.Property("total_expenses", th.NumberType),
         th.Property("transfer_agent", th.StringType),
@@ -234,20 +227,13 @@ class EtfGlobalProfilesStream(MassiveRestStream):
         return f"{self.url_base}/etf-global/v1/profiles"
 
 
-class EtfGlobalTaxonomiesStream(MassiveRestStream):
+class EtfGlobalTaxonomiesStream(EtfGlobalStream):
     """ETF Global Taxonomies Stream."""
 
     name = "etf_global_taxonomies"
 
-    primary_keys = ["composite_ticker", "effective_date"]
-    replication_key = "processed_date"
-    replication_method = "INCREMENTAL"
-    is_timestamp_replication_key = True
-    _incremental_timestamp_is_date = True
-
-    _use_cached_tickers_default = False
-
     schema = th.PropertiesList(
+        th.Property("_surrogate_key", th.StringType),
         th.Property("asset_class", th.StringType),
         th.Property("category", th.StringType),
         th.Property("composite_ticker", th.StringType),
