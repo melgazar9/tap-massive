@@ -73,6 +73,7 @@ class MassiveRestStream(RESTStream):
             "published",
             "last_updated",
             "transaction_date",
+            "processed_date",
         ]
         self.record_timestamp_keys = [
             "timestamp",

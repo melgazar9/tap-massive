@@ -104,7 +104,10 @@ class TestBatchQueryProducesSameResults:
             row.pop("file_date", None)
         for row in batch_rows:
             row.pop("file_date", None)
-        sort_key = lambda row: (row["ticker"], row["asof_timestamp"])
+
+        def sort_key(row):
+            return (row["ticker"], row["asof_timestamp"])
+
         assert sorted(batch_rows, key=sort_key) == sorted(single_rows, key=sort_key)
 
     def test_batch_with_same_file_twice_deduplicates(self):
