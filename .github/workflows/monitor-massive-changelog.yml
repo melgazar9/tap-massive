@@ -183,7 +183,7 @@ jobs:
 
           claude_args: |
             --max-turns 100
-            --model claude-sonnet-4-6
+            --model claude-opus-5-5
             --allowedTools "Read,Write,Edit,Bash(git:*),Bash(gh:*),Bash(./lint.sh),Bash(uv:*),Bash(meltano:*),Bash(python3:*),Bash(ls:*),Bash(cat:*),Bash(grep:*),Bash(find:*),Bash(rg:*),Bash(wc:*),Bash(head:*),Bash(date:*)"
 
       - name: Workflow summary
