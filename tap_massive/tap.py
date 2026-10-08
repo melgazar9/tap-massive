@@ -85,6 +85,7 @@ from tap_massive.earnings_subset import (
     StockEarningsQuotesStream,
 )
 from tap_massive.economy_streams import (
+    FundingConditionsStream,
     InflationExpectationsStream,
     InflationStream,
     LaborMarketStream,
@@ -885,6 +886,7 @@ class TapMassive(Tap):
             InflationExpectationsStream(self),
             InflationStream(self),
             LaborMarketStream(self),
+            FundingConditionsStream(self),
             # Benzinga streams
             BenzingaAnalystDetailsStream(self),
             BenzingaAnalystInsightsStream(self),
