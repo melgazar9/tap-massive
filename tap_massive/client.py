@@ -606,16 +606,18 @@ class MassiveRestStream(RESTStream):
                         f"*** Access denied (403) for {self.name} at {request_url}: {safe_exception} - skipping this ticker ***"
                     )
                     break  # Break the pagination loop for this ticker, but don't crash
+                # Retries are exhausted by here; ending the stream quietly would advance its bookmark past the
+                # pages never read.
                 logging.exception(
                     f"*** Request failed for {self.name} at {request_url}: {safe_exception} ***"
                 )
-                break
+                raise
             except ValueError as e:
                 safe_exception = self.redact_api_key(str(e))
                 logging.exception(
                     f"Failed to decode JSON for {self.name} at {request_url}: {safe_exception}"
                 )
-                break
+                raise
 
             if isinstance(data, dict):
                 records = data.get("results", data)
@@ -652,7 +654,7 @@ class MassiveRestStream(RESTStream):
                             logging.exception(
                                 f"Failed to post-process record for {self.name} at {request_url}: {e}. RECORD: {record}"
                             )
-                            continue
+                            raise
                         if not record:
                             continue
                         try:

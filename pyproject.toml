@@ -52,6 +52,10 @@ convention = "google"
 requires = ["hatchling"]
 build-backend = "hatchling.build"
 
+# Installs the fetch script into the venv's bin/, so callers run this copy and never vendor their own.
+[tool.hatch.build.targets.wheel.shared-scripts]
+"fetch_massive_flat_files.sh" = "fetch_massive_flat_files.sh"
+
 [dependency-groups]
 dev = [
     "black>=26.3.1",

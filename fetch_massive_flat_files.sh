@@ -258,8 +258,9 @@ if [[ "$ASSET_CLASS" != "futures" ]]; then
   BASE_PATH="s3://flatfiles/${ASSET_CLASS}"
 fi
 
-start_sec=$(date_to_epoch "$START_DATE")
-end_sec=$(date_to_epoch "$END_DATE")
+# An unparsed date leaves the epoch empty, which the day loop reads as 1970-01-01.
+start_sec=$(date_to_epoch "$START_DATE") || { echo "Error: --start-date '$START_DATE' is not a YYYY-MM-DD date."; exit 1; }
+end_sec=$(date_to_epoch "$END_DATE") || { echo "Error: --end-date '$END_DATE' is not a YYYY-MM-DD date."; exit 1; }
 
 if (( end_sec < start_sec )); then
   echo "Error: end-date must be after or equal to start-date"
