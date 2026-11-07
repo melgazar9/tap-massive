@@ -16,6 +16,8 @@ logger = logging.getLogger(__name__)
 
 S3_ENDPOINT = "https://files.massive.com"
 S3_BUCKET_TEMPLATE = "s3://flatfiles/{subdir}/{year}/{month}/{date}.csv.gz"
+# aws s3 cp crashes on Massive's empty <Message> errors, hiding their real status.
+CLI_CRASH_ON_EMPTY_ERROR_MESSAGE = "argument of type 'NoneType'"
 
 
 @dataclasses.dataclass
@@ -57,7 +59,7 @@ def _download_with_retries(
     env: dict[str, str],
     cfg: DownloadConfig,
 ) -> subprocess.CompletedProcess[bytes] | None:
-    """Run ``aws s3 cp`` with retry on 429/403/503/connection loss.
+    """Run ``aws s3 cp``, retrying on 429/403/503, lost connections and CLI crashes.
 
     Returns the successful CompletedProcess, or None when the
     file does not exist on S3 (404 / NoSuchKey).
@@ -133,6 +135,7 @@ def _is_retryable(stderr: str) -> bool:
         or "503" in stderr
         or "Service Unavailable" in stderr
         or "Connection was closed" in stderr
+        or CLI_CRASH_ON_EMPTY_ERROR_MESSAGE in stderr
     )
 
 
@@ -143,6 +146,8 @@ def _retryable_label(stderr: str) -> str:
         return "Service unavailable (503)"
     if "Connection was closed" in stderr:
         return "Connection closed"
+    if CLI_CRASH_ON_EMPTY_ERROR_MESSAGE in stderr:
+        return "Storage error the AWS CLI could not report"
     return "Forbidden (403)"
 
 
@@ -196,7 +201,7 @@ def download_flat_file(
         # Massive load-sheds with 503 bursts; adaptive mode backs off per chunk
         # instead of killing a multi-hour transfer (no partial resume in aws s3 cp).
         "AWS_RETRY_MODE": "adaptive",
-        "AWS_MAX_ATTEMPTS": "3",
+        "AWS_MAX_ATTEMPTS": "10",
     }
 
     with lock_path.open("w") as lock_fh:

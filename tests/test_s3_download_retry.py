@@ -37,6 +37,19 @@ class TestRetryClassification:
         )
         assert _is_retryable(stderr)
 
+    @pytest.mark.parametrize(
+        "crash",
+        [
+            "argument of type 'NoneType' is not iterable",
+            "argument of type 'NoneType' is not a container or iterable",
+        ],
+        ids=["cli-python-3.11", "cli-python-3.14"],
+    )
+    def test_cli_crash_on_an_empty_error_message_is_retryable(self, crash):
+        stderr = f"download failed: s3://flatfiles/x.csv.gz to .x.tmp.csv.gz {crash}"
+        assert _is_retryable(stderr)
+        assert _retryable_label(stderr) == "Storage error the AWS CLI could not report"
+
     def test_unrelated_error_not_retryable(self):
         assert not _is_retryable("An error occurred (400): Bad Request")
 
@@ -72,6 +85,27 @@ class TestDownloadWithRetries:
         assert result is not None
         assert result.returncode == 0
         sleep_mock.assert_called_once()
+
+    def test_cli_crash_then_success_retries_the_file(self, tmp_path):
+        responses = [
+            MagicMock(
+                returncode=1,
+                stderr=b"download failed: argument of type 'NoneType' is not iterable",
+            ),
+            MagicMock(returncode=0, stderr=b""),
+        ]
+        with (
+            patch("tap_massive.s3_download.subprocess.run", side_effect=responses),
+            patch("tap_massive.s3_download.time.sleep"),
+        ):
+            result = _download_with_retries(
+                s3_url="s3://flatfiles/x.csv.gz",
+                tmp_path=tmp_path / "x.tmp.csv.gz",
+                file_date="2026-07-28",
+                env={},
+                cfg=DownloadConfig(jitter_max_seconds=0),
+            )
+        assert result is responses[1]
 
     def test_non_retryable_raises_immediately(self, tmp_path):
         responses = [
@@ -112,5 +146,5 @@ class TestAwscliRetryEnv:
 
         assert result is not None
         assert captured["AWS_RETRY_MODE"] == "adaptive"
-        assert captured["AWS_MAX_ATTEMPTS"] == "3"
+        assert captured["AWS_MAX_ATTEMPTS"] == "10"
         assert captured["AWS_RESPONSE_CHECKSUM_VALIDATION"] == "when_required"
