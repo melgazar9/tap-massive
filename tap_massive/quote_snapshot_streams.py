@@ -136,7 +136,6 @@ class QuoteSnapshotStream(_NanosecondIncrementalMixin, BaseTickerPartitionStream
             "sort": "timestamp",
             "order": "asc",
             "limit": self.query_params.get("limit", 50000),
-            "apiKey": self.config["api_key"],
         }
 
         window_idx = 0
@@ -194,7 +193,7 @@ class QuoteSnapshotStream(_NanosecondIncrementalMixin, BaseTickerPartitionStream
             if not next_url:
                 break
             fetch_url = next_url
-            params = {"apiKey": self.config["api_key"]}
+            params = {}
 
         # Emit for remaining windows after pagination exhausts
         while window_idx < len(windows):
@@ -224,7 +223,6 @@ class QuoteSnapshotStream(_NanosecondIncrementalMixin, BaseTickerPartitionStream
                 "sort": "timestamp",
                 "order": "desc",
                 "limit": 1,
-                "apiKey": self.config["api_key"],
             }
             response = self.get_response(url, params)
             if response is None:

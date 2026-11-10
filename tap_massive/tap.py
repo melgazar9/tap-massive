@@ -387,7 +387,7 @@ class TapMassive(Tap):
         *,
         query_params: dict[str, t.Any],
         other_params: dict[str, t.Any] | None = None,
-        exclude_qp_keys: frozenset[str] = frozenset({"apiKey"}),
+        exclude_qp_keys: frozenset[str] = frozenset(),
         extra_canonical: dict[str, t.Any] | None = None,
         boolean_flag_key: str = "",
     ) -> str:
@@ -481,7 +481,6 @@ class TapMassive(Tap):
         """Paginate through all option contracts for an underlying ticker."""
         query_params = query_params.copy()
         query_params["underlying_ticker"] = underlying
-        query_params["apiKey"] = self.config["api_key"]
         query_params.setdefault("limit", 1000)
         query_params.setdefault("sort", "ticker")
 
@@ -500,14 +499,11 @@ class TapMassive(Tap):
             data = response.json()
             contracts.extend(data.get("results", []))
             url = data.get("next_url")
-            if url:
-                query_params = {"apiKey": self.config["api_key"]}
+            query_params = {}
 
         return contracts
 
-    _OPTION_CONTRACTS_EXCLUDE_QP = frozenset(
-        {"apiKey", "underlying_ticker", "limit", "sort"}
-    )
+    _OPTION_CONTRACTS_EXCLUDE_QP = frozenset({"underlying_ticker", "limit", "sort"})
     _option_contracts_fingerprint_cache: str | None = None
 
     def _option_contracts_fingerprint(

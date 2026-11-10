@@ -12,7 +12,7 @@ from tap_massive.stock_streams import StockTopMarketMoversStream
 def _make_stream(direction: str | None = None) -> StockTopMarketMoversStream:
     stream = StockTopMarketMoversStream.__new__(StockTopMarketMoversStream)
     stream.path_params = {} if direction is None else {"direction": direction}
-    stream.query_params = {"apiKey": "test_key"}
+    stream.query_params = {}
     stream.logger = MagicMock()
     stream.get_url = MagicMock(
         side_effect=lambda context=None: f"https://example/{context['direction']}"

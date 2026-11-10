@@ -62,10 +62,10 @@ def iso_to_ns(d: date) -> int:
 
 
 def get_json(path: str, params: dict[str, Any]) -> tuple[int, dict[str, Any]]:
-    q = dict(params)
-    q["apiKey"] = API_KEY
-    url = f"{API_BASE}{path}?{urllib.parse.urlencode(q)}"
-    req = urllib.request.Request(url, method="GET")
+    url = f"{API_BASE}{path}?{urllib.parse.urlencode(params)}"
+    req = urllib.request.Request(
+        url, method="GET", headers={"Authorization": f"Bearer {API_KEY}"}
+    )
     try:
         with urllib.request.urlopen(req, timeout=30) as resp:
             body = resp.read().decode("utf-8", errors="replace")

@@ -14,6 +14,17 @@ from singer_sdk.helpers.types import Context
 from singer_sdk.streams import RESTStream
 
 
+class MassiveBearerAuth(requests.auth.AuthBase):
+    """The key rides in the Authorization header: a URL is quoted by every error, retry line and traceback."""
+
+    def __init__(self, api_key: str) -> None:
+        self._api_key = api_key
+
+    def __call__(self, request: requests.PreparedRequest) -> requests.PreparedRequest:
+        request.headers["Authorization"] = f"Bearer {self._api_key}"
+        return request
+
+
 class MassiveRestStream(RESTStream):
     _incremental_timestamp_is_date = False
     _api_expects_unix_timestamp = False
@@ -45,6 +56,7 @@ class MassiveRestStream(RESTStream):
         super().__init__(tap=tap)
         self.tap = tap
         self.client = RESTClient(self.config["api_key"])
+        self._auth = MassiveBearerAuth(self.config["api_key"])
         self.parse_config_params()
 
         self._cfg_starting_timestamp_key: str | None = None
@@ -131,6 +143,16 @@ class MassiveRestStream(RESTStream):
 
         if getattr(self, "_asset_class", None) is not None:
             self.query_params["asset_class"] = self._asset_class
+
+    @property
+    def authenticator(self) -> MassiveBearerAuth:
+        return self._auth
+
+    @property
+    def requests_session(self) -> requests.Session:
+        session = super().requests_session
+        session.auth = self.authenticator
+        return session
 
     @staticmethod
     def iso_to_unix_timestamp(dt_str: str, unit: str) -> int:
@@ -392,7 +414,6 @@ class MassiveRestStream(RESTStream):
                 f"State: {state}, "
                 f"state_replication_value: {state_replication_value}, "
                 f"self._cfg_starting_timestamp_value: {self._cfg_starting_timestamp_value}"
-                f"CONFIG: {self.config}"
             )
 
         if (
@@ -490,10 +511,6 @@ class MassiveRestStream(RESTStream):
         return context, query_params, path_params
 
     @staticmethod
-    def redact_api_key(msg):
-        return re.sub(r"(apiKey=)([^\s&]+)", r"\1<REDACTED>", msg)
-
-    @staticmethod
     @backoff.on_exception(
         backoff.expo,
         (requests.exceptions.RequestException,),
@@ -523,36 +540,19 @@ class MassiveRestStream(RESTStream):
                 timeout=timeout,
             )
         except requests.exceptions.ConnectionError as ce:
-            log_url = self.redact_api_key(url)
-            log_exception = self.redact_api_key(str(ce))
             if isinstance(ce.__cause__, socket.gaierror):
-                logging.exception(
-                    f"DNS resolution failed for {log_url}: {log_exception}"
-                )
+                logging.exception(f"DNS resolution failed for {url}: {ce}")
             else:
-                logging.exception(f"Connection error for {log_url}: {log_exception}")
+                logging.exception(f"Connection error for {url}: {ce}")
             raise
         except requests.HTTPError as e:
-            log_exception = self.redact_api_key(str(e))
             if e.response is not None and e.response.status_code in (404, 204):
-                log_url = self.redact_api_key(url)
                 logging.warning(
-                    f"No data for {log_url} (status {e.response.status_code}): {log_exception}"
+                    f"No data for {url} (status {e.response.status_code}): {e}"
                 )
                 return None
-            logging.exception(f"HTTP Error: {log_exception}")
-            redacted_url = self.redact_api_key(e.request.url if e.request else url)
-            error_message = (
-                f"{e.response.status_code} Client Error: {e.response.reason} for url: {redacted_url}"
-                if e.response and e.request
-                else str(e)
-            )
-            error_message = self.redact_api_key(error_message)
-            raise requests.exceptions.HTTPError(
-                error_message,
-                response=e.response,
-                request=e.request,
-            )
+            logging.exception(f"HTTP Error: {e}")
+            raise
 
     def paginate_records(self, context: Context) -> t.Iterable[dict[str, t.Any]]:
         query_params = context.get("query_params", {}).copy()
@@ -583,11 +583,8 @@ class MassiveRestStream(RESTStream):
         while True:
             request_url = next_url or self.get_url(request_context)
 
-            query_params_to_log = {
-                k: v for k, v in query_params.items() if k != "apiKey"
-            }
             logging.info(
-                f"Streaming {self.name} from URL: {request_url} with query_params: {query_params_to_log}..."
+                f"Streaming {self.name} from URL: {request_url} with query_params: {query_params}..."
             )
             try:
                 response = self.get_response(url=request_url, query_params=query_params)
@@ -595,7 +592,6 @@ class MassiveRestStream(RESTStream):
                     break
                 data = response.json()
             except requests.exceptions.RequestException as e:
-                safe_exception = self.redact_api_key(str(e))
                 # For 403 errors, log and continue to next ticker instead of breaking
                 if (
                     isinstance(e, requests.exceptions.HTTPError)
@@ -603,19 +599,18 @@ class MassiveRestStream(RESTStream):
                     and e.response.status_code == 403
                 ):
                     logging.warning(
-                        f"*** Access denied (403) for {self.name} at {request_url}: {safe_exception} - skipping this ticker ***"
+                        f"*** Access denied (403) for {self.name} at {request_url}: {e} - skipping this ticker ***"
                     )
                     break  # Break the pagination loop for this ticker, but don't crash
                 # Retries are exhausted by here; ending the stream quietly would advance its bookmark past the
                 # pages never read.
                 logging.exception(
-                    f"*** Request failed for {self.name} at {request_url}: {safe_exception} ***"
+                    f"*** Request failed for {self.name} at {request_url}: {e} ***"
                 )
                 raise
             except ValueError as e:
-                safe_exception = self.redact_api_key(str(e))
                 logging.exception(
-                    f"Failed to decode JSON for {self.name} at {request_url}: {safe_exception}"
+                    f"Failed to decode JSON for {self.name} at {request_url}: {e}"
                 )
                 raise
 
@@ -742,8 +737,6 @@ class MassiveRestStream(RESTStream):
             raise ConfigValidationError(
                 f"Config key '{self.name}' must be a dict or list of dicts."
             )
-
-        self.query_params["apiKey"] = self.config.get("api_key")
 
     def normalize_date_params(self, params: dict, force_date: bool = False) -> None:
         """Normalize date/datetime params inplace, for (query and path)

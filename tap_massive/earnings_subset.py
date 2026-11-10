@@ -16,11 +16,12 @@ import typing as t
 from datetime import date, datetime, timedelta, timezone
 
 import pandas_market_calendars as mcal
+import requests
 from singer_sdk import typing as th
 from singer_sdk.helpers.types import Context
 
 from tap_massive.base_streams import _NanosecondIncrementalMixin
-from tap_massive.client import MassiveRestStream
+from tap_massive.client import MassiveBearerAuth, MassiveRestStream
 from tap_massive.flat_files_streams import (
     _BARS_SCHEMA,
     _OPTIONS_QUOTES_SCHEMA,
@@ -298,22 +299,22 @@ class EarningsCalendar:
 
     def _paginate_api(self, url: str, query_params: dict) -> list[dict]:
         """Paginate through a Massive API endpoint."""
-        import requests  # noqa: PLC0415
-
-        query_params = {**query_params, "apiKey": self._api_key}
+        auth = MassiveBearerAuth(self._api_key)
         all_results: list[dict] = []
         current_url: str | None = url
 
         while current_url:
             response = requests.get(
-                current_url, params=query_params, timeout=self._request_timeout
+                current_url,
+                params=query_params,
+                auth=auth,
+                timeout=self._request_timeout,
             )
             response.raise_for_status()
             data = response.json()
             all_results.extend(data.get("results", []))
             current_url = data.get("next_url")
-            if current_url:
-                query_params = {"apiKey": self._api_key}
+            query_params = {}
 
         return all_results
 

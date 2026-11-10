@@ -108,14 +108,6 @@ class TestBuildCacheFingerprint:
         f2 = tap._build_cache_fingerprint(query_params={"b": "2", "a": "1"})
         assert f1 == f2
 
-    def test_excludes_apiKey(self):
-        tap = self._make_tap()
-        f1 = tap._build_cache_fingerprint(query_params={"active": "true"})
-        f2 = tap._build_cache_fingerprint(
-            query_params={"active": "true", "apiKey": "secret"}
-        )
-        assert f1 == f2
-
     def test_different_base_url_different_fingerprint(self):
         tap1 = self._make_tap("https://api1.com")
         tap2 = self._make_tap("https://api2.com")
