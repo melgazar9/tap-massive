@@ -23,6 +23,9 @@ export AWS_SECRET_ACCESS_KEY="$MASSIVE_API_KEY"
 # Unset, every aws call first waits on an EC2 metadata service this host never has; unset region signs as us-east-1 anyway.
 export AWS_DEFAULT_REGION="us-east-1"
 export AWS_EC2_METADATA_DISABLED="true"
+# Massive answers an occasional 503; aws retries it with jittered exponential backoff up to this many attempts.
+export AWS_RETRY_MODE="standard"
+export AWS_MAX_ATTEMPTS=10
 
 ENDPOINT="--endpoint-url https://files.massive.com"
 # Bytes of aws's own error text kept per failure: an error and its reason must stay one atomic write between workers.

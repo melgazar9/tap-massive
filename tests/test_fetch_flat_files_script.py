@@ -32,6 +32,8 @@ with open(os.environ["FAKE_AWS_LOG"], "a") as log:
         "args": args,
         "region": os.environ.get("AWS_DEFAULT_REGION"),
         "imds_disabled": os.environ.get("AWS_EC2_METADATA_DISABLED"),
+        "retry_mode": os.environ.get("AWS_RETRY_MODE"),
+        "max_attempts": os.environ.get("AWS_MAX_ATTEMPTS"),
     }) + "\n")
 
 def keys_in(env_name):
@@ -230,6 +232,9 @@ class TestLayoutAndRange:
         assert run.aws_calls, "the script made no aws call at all"
         assert {(c["region"], c["imds_disabled"]) for c in run.aws_calls} == {
             ("us-east-1", "true")
+        }
+        assert {(c["retry_mode"], c["max_attempts"]) for c in run.aws_calls} == {
+            ("standard", "10")
         }
         assert all(c["args"][:2] in (["s3", "ls"], ["s3", "cp"]) for c in run.aws_calls)
 
