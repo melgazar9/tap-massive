@@ -27,6 +27,8 @@ class MassiveBearerAuth(requests.auth.AuthBase):
 
 class MassiveRestStream(RESTStream):
     _incremental_timestamp_is_date = False
+    # The response carries no date, so the day asked for is the record's replication key.
+    _replication_key_is_request_date = False
     _api_expects_unix_timestamp = False
     _unix_timestamp_unit = None
     _use_cached_tickers_default = True
@@ -290,9 +292,9 @@ class MassiveRestStream(RESTStream):
     def use_cached_tickers(self) -> bool:
         config_val = self._get_config_child_params("use_cached_tickers")
         if config_val is not None:
-            assert isinstance(
-                config_val, bool
-            ), f"Config for use_cached_tickers must be bool, got {type(config_val)}"
+            assert isinstance(config_val, bool), (
+                f"Config for use_cached_tickers must be bool, got {type(config_val)}"
+            )
             return config_val
         if hasattr(type(self), "_use_cached_tickers_default"):
             return type(self)._use_cached_tickers_default
@@ -577,6 +579,9 @@ class MassiveRestStream(RESTStream):
 
         next_url = None
         no_records_counter = 0
+        request_date = {**path_params, **query_params}.get(
+            self._cfg_starting_timestamp_key
+        )
 
         state = self.get_context_state(context)
 
@@ -652,6 +657,8 @@ class MassiveRestStream(RESTStream):
                             raise
                         if not record:
                             continue
+                        if self._replication_key_is_request_date:
+                            record[self.replication_key] = request_date
                         try:
                             self._check_missing_fields(self.schema, record)
                         except TypeError as e:
@@ -806,11 +813,15 @@ class MassiveRestStream(RESTStream):
                     "'_cfg_starting_timestamp' is not set."
                 )
 
-            parsed_start = self.safe_parse_datetime(self._cfg_starting_timestamp_value)
+            # The prepared params hold the bookmark wherever it is past the config start.
+            starting_value = {**path_params, **query_params}[
+                self._cfg_starting_timestamp_key
+            ]
+            parsed_start = self.safe_parse_datetime(starting_value)
             if parsed_start is None:
                 raise ConfigValidationError(
                     f"Stream {self.name}: could not parse starting timestamp "
-                    f"'{self._cfg_starting_timestamp_value}' as a date."
+                    f"'{starting_value}' as a date."
                 )
             start_date = parsed_start.date()
 
@@ -835,13 +846,13 @@ class MassiveRestStream(RESTStream):
                 context["query_params"] = query_params.copy()
                 context["path_params"] = path_params.copy()
                 if self._cfg_starting_timestamp_key in context.get("query_params"):
-                    context["query_params"][
-                        self._cfg_starting_timestamp_key
-                    ] = current_timestamp.isoformat()
+                    context["query_params"][self._cfg_starting_timestamp_key] = (
+                        current_timestamp.isoformat()
+                    )
                 if self._cfg_starting_timestamp_key in context.get("path_params"):
-                    context["path_params"][
-                        self._cfg_starting_timestamp_key
-                    ] = current_timestamp.isoformat()
+                    context["path_params"][self._cfg_starting_timestamp_key] = (
+                        current_timestamp.isoformat()
+                    )
                 yield from self.paginate_records(context)
                 current_timestamp += timedelta(days=1)
 
@@ -923,7 +934,7 @@ class OptionalTickerPartitionStream(MassiveRestStream):
 
     def get_cached_ticker_records(self) -> list[dict[str, t.Any]]:
         """Return cached ticker records used for manual ticker looping."""
-        tap_obj = getattr(self, "tap", None) or getattr(self, "_tap")
+        tap_obj = getattr(self, "tap", None) or self._tap
         return tap_obj.get_cached_stock_tickers()
 
     def get_records(self, context: Context | None) -> t.Iterable[dict[str, t.Any]]:

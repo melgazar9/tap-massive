@@ -12,7 +12,7 @@ from tap_massive.base_streams import (
     BaseIndicatorStream,
     BaseLastTradeStream,
     BasePreviousDayBarSummaryStream,
-    BaseTickerDetailsStream,
+    BaseTickerDetailsHistoryStream,
     BaseTickerPartitionStream,
     BaseTickerStream,
     BaseTopMarketMoversStream,
@@ -55,7 +55,9 @@ class CryptoTickerPartitionStream(BaseTickerPartitionStream):
     _cached_tickers_getter = "get_cached_crypto_tickers"
 
 
-class CryptoTickerDetailsStream(CryptoTickerPartitionStream, BaseTickerDetailsStream):
+class CryptoTickerDetailsStream(
+    CryptoTickerPartitionStream, BaseTickerDetailsHistoryStream
+):
     """Stream for retrieving detailed crypto ticker information."""
 
     name = "crypto_ticker_details"

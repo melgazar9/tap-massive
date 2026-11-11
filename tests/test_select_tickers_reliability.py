@@ -12,13 +12,22 @@ from tap_massive.option_streams import OptionsChainSnapshotStream
 from tap_massive.stock_streams import StockTickerPartitionStream
 
 
+def _configured(stream_cls, config):
+    # Set on the real class, the mock would outlive this test into every later one.
+    isolated_cls = type(
+        stream_cls.__name__,
+        (stream_cls,),
+        {"config": PropertyMock(return_value=config)},
+    )
+    return isolated_cls.__new__(isolated_cls)
+
+
 def _build_partition_stream(stream_cls, config, tap_method, records):
     tap = MagicMock()
     getattr(tap, tap_method).return_value = records
 
-    stream = stream_cls.__new__(stream_cls)
+    stream = _configured(stream_cls, config)
     stream._tap = tap
-    type(stream).config = PropertyMock(return_value=config)
     return stream, tap
 
 
@@ -109,13 +118,12 @@ def test_options_chain_snapshot_uses_option_tickers_select():
         {"ticker": "META"},
     ]
 
-    stream = OptionsChainSnapshotStream.__new__(OptionsChainSnapshotStream)
+    stream = _configured(
+        OptionsChainSnapshotStream, {"option_tickers": {"select_tickers": ["META"]}}
+    )
     stream._tap = tap
     stream._prepare_context_and_params = MagicMock(return_value=({}, {}, {}))
     stream.paginate_records = MagicMock(return_value=iter([]))
-    type(stream).config = PropertyMock(
-        return_value={"option_tickers": {"select_tickers": ["META"]}}
-    )
 
     list(stream.get_records(None))
 

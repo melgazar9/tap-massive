@@ -205,6 +205,28 @@ class BaseTickerDetailsStream(BaseTickerPartitionStream):
         return f"{self.url_base}/v3/reference/tickers/{ticker}"
 
 
+class BaseTickerDetailsHistoryStream(BaseTickerDetailsStream):
+    """Ticker details as of each day the date loop asks: one row per ticker per day."""
+
+    primary_keys = ["ticker", "date"]
+    replication_key = "date"
+    replication_method = "INCREMENTAL"
+    is_timestamp_replication_key = True
+    # The loop asks a ticker's days in order, so an interrupted ticker resumes.
+    is_sorted = True
+
+    _incremental_timestamp_is_date = True
+    _replication_key_is_request_date = True
+
+    schema = {
+        **BaseTickerDetailsStream.schema,
+        "properties": {
+            **BaseTickerDetailsStream.schema["properties"],
+            **th.Property("date", th.DateType).to_dict(),
+        },
+    }
+
+
 class _OhlcMappingMixin:
     ohlc_mapping = {
         "T": "ticker",

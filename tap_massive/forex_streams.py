@@ -12,7 +12,7 @@ from tap_massive.base_streams import (
     BaseLastQuoteStream,
     BasePreviousDayBarSummaryStream,
     BaseQuoteStream,
-    BaseTickerDetailsStream,
+    BaseTickerDetailsHistoryStream,
     BaseTickerPartitionStream,
     BaseTickerStream,
     BaseTopMarketMoversStream,
@@ -55,7 +55,9 @@ class ForexTickerPartitionStream(BaseTickerPartitionStream):
     _cached_tickers_getter = "get_cached_forex_tickers"
 
 
-class ForexTickerDetailsStream(ForexTickerPartitionStream, BaseTickerDetailsStream):
+class ForexTickerDetailsStream(
+    ForexTickerPartitionStream, BaseTickerDetailsHistoryStream
+):
     """Stream for retrieving detailed forex ticker information."""
 
     name = "forex_ticker_details"
