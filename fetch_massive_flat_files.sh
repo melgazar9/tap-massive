@@ -20,11 +20,16 @@ fi
 
 export AWS_ACCESS_KEY_ID="$MASSIVE_AWS_ACCESS_KEY_ID"
 export AWS_SECRET_ACCESS_KEY="$MASSIVE_API_KEY"
+# Unset, every aws call first waits on an EC2 metadata service this host never has; unset region signs as us-east-1 anyway.
+export AWS_DEFAULT_REGION="us-east-1"
+export AWS_EC2_METADATA_DISABLED="true"
 
 ENDPOINT="--endpoint-url https://files.massive.com"
+# Bytes of aws's own error text kept per failure: an error and its reason must stay one atomic write between workers.
+MAX_REASON_BYTES=2000
 
 usage() {
-  echo "Usage: $0 --trades|--quotes|--bars-1m|--eod|--values|--all [--exclude TYPE,...] [--exchange LIST] [--destination DIR] --start-date YYYY-MM-DD [--end-date YYYY-MM-DD] --asset-class ASSET_CLASS"
+  echo "Usage: $0 --trades|--quotes|--bars-1m|--eod|--values|--all [--exclude TYPE,...] [--exchange LIST] [--destination DIR] [--parallel N] --start-date YYYY-MM-DD [--end-date YYYY-MM-DD] --asset-class ASSET_CLASS"
   echo ""
   echo "Asset class examples:"
   echo "  us_stocks_sip, us_options_opra, us_indices"
@@ -38,15 +43,18 @@ usage() {
   echo "                      Example: --all --exclude quotes,trades"
   echo "  --exchange LIST     Comma-separated futures exchanges (CBOT,CME,NYMEX,COMEX)."
   echo "                      Only valid with --asset-class futures. Default: all four."
+  echo "  --parallel N        Files downloaded at once (default: $PARALLEL_DOWNLOADS)."
   echo ""
   echo "Notes:"
+  echo "  - All downloads are validated (listed size, gzip integrity) before being renamed from"
+  echo "    .<file>.tmp to <file>, so a partial or corrupt download never takes the final name."
+  echo "  - The files to fetch are the ones Massive lists in the date range; a file already on disk"
+  echo "    at the listed size is kept, so a re-run fetches only what is missing or changed."
   echo "  - Indices flat files support minute aggregates, day aggregates (--eod), and values."
   echo "  - Forex flat files support quotes and minute/eod aggregates only."
   echo "  - Crypto flat files support trades and minute/eod aggregates only."
   echo "  - Futures flat files support trades, quotes, --bars-1m (minute-aggregates), and"
   echo "    --eod (session-aggregates) per exchange (CBOT, CME, NYMEX, COMEX)."
-  echo "  - All downloads are validated (gzip integrity check) before being renamed from"
-  echo "    .<file>.tmp to <file> to avoid leaving corrupt files in place."
   exit 1
 }
 
@@ -60,6 +68,7 @@ EXCLUDE_TYPES=""
 EXCHANGES_INPUT=""
 ASSET_FILENAME_PREFIX=""
 DESTINATION="$HOME/massive_data"
+PARALLEL_DOWNLOADS=8
 
 # Default futures exchanges when --exchange is not specified.
 DEFAULT_FUTURES_EXCHANGES=("cbot" "cme" "nymex" "comex")
@@ -87,33 +96,6 @@ date_to_epoch() {
     TZ=UTC "$DATE_BIN" -d "$d" +%s
   else
     TZ=UTC "$DATE_BIN" -j -f "%Y-%m-%d" "$d" +%s
-  fi
-}
-
-epoch_to_date() {
-  local s="$1"
-  if [[ "$DATE_STYLE" == "gnu" ]]; then
-    TZ=UTC "$DATE_BIN" -d "@$s" +%Y-%m-%d
-  else
-    TZ=UTC "$DATE_BIN" -r "$s" +%Y-%m-%d
-  fi
-}
-
-epoch_to_year() {
-  local s="$1"
-  if [[ "$DATE_STYLE" == "gnu" ]]; then
-    TZ=UTC "$DATE_BIN" -d "@$s" +%Y
-  else
-    TZ=UTC "$DATE_BIN" -r "$s" +%Y
-  fi
-}
-
-epoch_to_month() {
-  local s="$1"
-  if [[ "$DATE_STYLE" == "gnu" ]]; then
-    TZ=UTC "$DATE_BIN" -d "@$s" +%m
-  else
-    TZ=UTC "$DATE_BIN" -r "$s" +%m
   fi
 }
 
@@ -160,6 +142,10 @@ while [[ $# -gt 0 ]]; do
       EXCHANGES_INPUT="$2"
       shift 2
       ;;
+    --parallel)
+      PARALLEL_DOWNLOADS="$2"
+      shift 2
+      ;;
     --start-date)
       START_DATE="$2"
       shift 2
@@ -202,6 +188,11 @@ fi
 
 if [[ -n "$EXCHANGES_INPUT" && "$ASSET_CLASS" != "futures" ]]; then
   echo "Error: --exchange is only valid with --asset-class futures."
+  exit 1
+fi
+
+if [[ ! "$PARALLEL_DOWNLOADS" =~ ^[1-9][0-9]*$ ]]; then
+  echo "Error: --parallel '$PARALLEL_DOWNLOADS' is not a positive whole number."
   exit 1
 fi
 
@@ -252,22 +243,20 @@ if [[ "$ASSET_CLASS" == "futures" ]]; then
   fi
 fi
 
-# For futures, the actual S3 prefix is per-exchange (s3://flatfiles/us_futures_<exchange>/...),
-# so BASE_PATH is rebuilt inside the per-exchange loop below.
-if [[ "$ASSET_CLASS" != "futures" ]]; then
-  BASE_PATH="s3://flatfiles/${ASSET_CLASS}"
-fi
-
-# An unparsed date leaves the epoch empty, which the day loop reads as 1970-01-01.
-start_sec=$(date_to_epoch "$START_DATE") || { echo "Error: --start-date '$START_DATE' is not a YYYY-MM-DD date."; exit 1; }
-end_sec=$(date_to_epoch "$END_DATE") || { echo "Error: --end-date '$END_DATE' is not a YYYY-MM-DD date."; exit 1; }
+# Exact YYYY-MM-DD: the range is compared as text against the listed file names, and must also be a real day.
+for flag_date in "--start-date:$START_DATE" "--end-date:$END_DATE"; do
+  if [[ ! "${flag_date#*:}" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]] || ! date_to_epoch "${flag_date#*:}" >/dev/null 2>&1; then
+    echo "Error: ${flag_date%%:*} '${flag_date#*:}' is not a YYYY-MM-DD date."
+    exit 1
+  fi
+done
+start_sec=$(date_to_epoch "$START_DATE")
+end_sec=$(date_to_epoch "$END_DATE")
 
 if (( end_sec < start_sec )); then
   echo "Error: end-date must be after or equal to start-date"
   exit 1
 fi
-
-current_sec=$start_sec
 
 datasets=()
 if [[ "$ALL_DATASETS" == "true" ]]; then
@@ -364,123 +353,140 @@ futures_data_type() {
   fi
 }
 
-# Download a single S3 object with validation:
-#   1. Write to a hidden temp file (.<stem>.tmp.csv.gz) in the destination dir.
-#   2. Verify gzip integrity (gzip -t).
-#   3. Atomic rename to the final filename only on success.
-# A partial or corrupt download never appears as a final filename.
-# Return codes: 0 = success, 1 = real failure, 2 = file not on S3 (skip).
+# Each failure is ONE write of its error line and aws's reason, so parallel workers never split the pair a
+# reader matches on (a 403's status line follows its error line), and one line in FAILURES_FILE for the count.
+record_failure() {
+  local failed_path="$1" message="$2" reason="${3:-}"
+  if [[ -n "$reason" ]]; then
+    printf '%s\n%s\n' "$message" "${reason:0:$MAX_REASON_BYTES}"
+  else
+    printf '%s\n' "$message"
+  fi
+  printf '%s\n' "$failed_path" >> "$FAILURES_FILE"
+}
+
+# One listed object into place: a hidden temp file, checked against the listed size and for gzip integrity,
+# then renamed, so a partial or corrupt download never takes the final name. Always returns 0: failures are
+# counted through record_failure, and a non-zero xargs exit then means a worker died, not a download failed.
 download_with_validation() {
-  local s3_path="$1"
-  local local_file="$2"
-
-  local dir base stem tmp_file stderr_file
-  dir="$(dirname "$local_file")"
+  local s3_path="$1" local_file="$2" listed_size="$3"
+  local base tmp_file reason local_size
   base="$(basename "$local_file")"
-  stem="${base%.csv.gz}"
-  tmp_file="${dir}/.${stem}.tmp.csv.gz"
-  # Glob "${tmp_file}.*" mops up aws-cli multipart intermediates with random suffixes.
-  cleanup_tmp() { rm -f "$tmp_file" "$tmp_file".*; }
-
-  mkdir -p "$dir"
+  tmp_file="$(dirname "$local_file")/.${base%.csv.gz}.tmp.csv.gz"
 
   echo "Downloading $s3_path -> $local_file"
-  stderr_file="$(mktemp)"
-  if ! aws s3 cp "$s3_path" "$tmp_file" $ENDPOINT 2>"$stderr_file"; then
-    local stderr_content
-    stderr_content="$(cat "$stderr_file")"
-    rm -f "$stderr_file"
-    cleanup_tmp
-    # 404 / NoSuchKey = expected (weekend, holiday, future date); not a failure.
-    if echo "$stderr_content" | grep -qE "404|NoSuchKey|does not exist"; then
-      echo "Skip: $s3_path (no file on S3 for this date)"
-      return 2
-    fi
-    echo "Error: aws s3 cp failed for $s3_path"
-    echo "$stderr_content" >&2
-    return 1
+  if ! reason="$(aws s3 cp "$s3_path" "$tmp_file" $ENDPOINT --only-show-errors 2>&1)"; then
+    # Glob "${tmp_file}".* mops up aws-cli multipart intermediates with random suffixes.
+    rm -f "$tmp_file" "$tmp_file".*
+    record_failure "$s3_path" "Error: aws s3 cp failed for $s3_path" "$reason"
+    return 0
   fi
-  rm -f "$stderr_file"
 
-  if [[ ! -s "$tmp_file" ]]; then
-    echo "Error: empty file after download for $s3_path"
-    cleanup_tmp
-    return 1
+  local_size="$(wc -c < "$tmp_file" | tr -d ' ')"
+  if [[ "$local_size" != "$listed_size" ]]; then
+    rm -f "$tmp_file"
+    record_failure "$s3_path" "Error: size mismatch for $s3_path (S3 lists $listed_size, local is $local_size)"
+    return 0
   fi
 
   if ! gzip -t "$tmp_file" 2>/dev/null; then
-    echo "Error: gzip integrity check failed for $s3_path; removed corrupt temp file."
-    cleanup_tmp
-    return 1
+    rm -f "$tmp_file"
+    record_failure "$s3_path" "Error: gzip integrity check failed for $s3_path; removed corrupt temp file."
+    return 0
   fi
 
-  # Source-destination size check. Verifies the local file's byte count matches
-  # what S3 reports for the object. Catches the rare case where aws s3 cp
-  # returns 0 but the local file diverges from the canonical S3 object
-  # (e.g., partial multipart that happened to land on a valid gzip boundary).
-  local s3_no_proto="${s3_path#s3://}"
-  local bucket="${s3_no_proto%%/*}"
-  local key="${s3_no_proto#*/}"
-  local expected_size local_size
-  expected_size="$(aws s3api head-object --bucket "$bucket" --key "$key" $ENDPOINT --query 'ContentLength' --output text 2>/dev/null)"
-  local_size="$(wc -c < "$tmp_file" | tr -d ' ')"
-  if [[ -z "$expected_size" || "$expected_size" == "None" ]]; then
-    echo "Warning: could not fetch ContentLength from S3 for $s3_path; skipping size check."
-  elif [[ "$expected_size" != "$local_size" ]]; then
-    echo "Error: size mismatch for $s3_path (S3 says $expected_size, local is $local_size)"
-    cleanup_tmp
-    return 1
+  if ! reason="$(mv -f "$tmp_file" "$local_file" 2>&1)"; then
+    rm -f "$tmp_file"
+    record_failure "$s3_path" "Error: could not rename the download into place as $local_file" "$reason"
+    return 0
   fi
-
-  mv "$tmp_file" "$local_file"
-  return 0
+  echo "Downloaded $local_file ($local_size bytes)"
 }
 
-failure_count=0
+# "size key" for every dated object under one dataset prefix inside [START_DATE, END_DATE], listing one year
+# prefix at a time because Massive keys files <prefix>/YYYY/MM/YYYY-MM-DD.csv.gz. Errors go to stderr: stdout
+# is the listing its caller reads.
+list_dated_objects() {
+  local s3_prefix="$1" year listing stderr_file
+  stderr_file="$(mktemp)"
+  for (( year = ${START_DATE:0:4}; year <= ${END_DATE:0:4}; year++ )); do
+    if ! listing="$(aws s3 ls "s3://flatfiles/${s3_prefix}/${year}/" --recursive $ENDPOINT 2>"$stderr_file")"; then
+      # A prefix holding no objects also exits non-zero, but says nothing.
+      if [[ -s "$stderr_file" ]]; then
+        record_failure "s3://flatfiles/${s3_prefix}/${year}/" \
+          "Error: aws s3 ls failed for s3://flatfiles/${s3_prefix}/${year}/" "$(cat "$stderr_file")" >&2
+      fi
+      continue
+    fi
+    awk -v from="$START_DATE" -v to="$END_DATE" '
+      { n = split($4, parts, "/"); name = parts[n]; day = substr(name, 1, 10) }
+      name ~ /^[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]\.csv\.gz$/ && day >= from && day <= to { print $3, $4 }
+    ' <<< "$listing"
+  done
+  rm -f "$stderr_file"
+}
+
+# Appends every listed file of one dataset (and exchange) that is not already on disk at its listed size to
+# JOBS_FILE as NUL-separated "s3 path, local file, listed size" triples, in listing (oldest first) order.
+queue_downloads() {
+  local data_type="$1" prefix="$2" exchange="$3"
+  local s3_prefix output_dir name_prefix size key day local_file listed=0
+  if [[ -n "$exchange" ]]; then
+    s3_prefix="us_futures_${exchange}/$(futures_data_type "$data_type")"
+    output_dir="${DESTINATION}/${ASSET_CLASS}/${prefix}/${exchange}"
+    name_prefix="${ASSET_FILENAME_PREFIX}_${prefix}_${exchange}"
+  else
+    s3_prefix="${ASSET_CLASS}/${data_type}"
+    output_dir="${DESTINATION}/${ASSET_CLASS}/${prefix}"
+    name_prefix="${ASSET_FILENAME_PREFIX}_${prefix}"
+  fi
+  mkdir -p "$output_dir"
+
+  while read -r size key; do
+    listed=$((listed + 1))
+    day="${key##*/}"
+    local_file="${output_dir}/${name_prefix}_${day}"
+    if [[ -f "$local_file" && "$(wc -c < "$local_file" | tr -d ' ')" == "$size" ]]; then
+      already_on_disk=$((already_on_disk + 1))
+      continue
+    fi
+    printf '%s\0%s\0%s\0' "s3://flatfiles/${key}" "$local_file" "$size" >> "$JOBS_FILE"
+    queued=$((queued + 1))
+  done < <(list_dated_objects "$s3_prefix")
+
+  if (( listed == 0 )); then
+    echo "Warning: Massive lists no files under s3://flatfiles/${s3_prefix}/ from $START_DATE to $END_DATE"
+  fi
+}
+
+JOBS_FILE="$(mktemp)"
+FAILURES_FILE="$(mktemp)"
+trap 'rm -f "$JOBS_FILE" "$FAILURES_FILE"' EXIT
+queued=0
+already_on_disk=0
 
 for dataset in "${datasets[@]}"; do
   IFS=":" read -r data_type prefix <<< "$dataset"
-
   if [[ "$ASSET_CLASS" == "futures" ]]; then
-    futures_dt="$(futures_data_type "$data_type")"
-    exchanges_to_iterate=("${EXCHANGES[@]}")
-  else
-    exchanges_to_iterate=("")  # single sentinel iteration for non-futures
-  fi
-
-  for exchange in "${exchanges_to_iterate[@]}"; do
-    if [[ "$ASSET_CLASS" == "futures" ]]; then
-      output_dir="${DESTINATION}/${ASSET_CLASS}/${prefix}/${exchange}"
-    else
-      output_dir="${DESTINATION}/${ASSET_CLASS}/${prefix}"
-    fi
-    mkdir -p "$output_dir"
-
-    current_sec=$start_sec
-    while (( current_sec <= end_sec )); do
-      current_date=$(epoch_to_date "$current_sec")
-      year=$(epoch_to_year "$current_sec")
-      month=$(epoch_to_month "$current_sec")
-
-      if [[ "$ASSET_CLASS" == "futures" ]]; then
-        s3_path="s3://flatfiles/us_futures_${exchange}/$futures_dt/$year/$month/$current_date.csv.gz"
-        local_file="$output_dir/${ASSET_FILENAME_PREFIX}_${prefix}_${exchange}_${current_date}.csv.gz"
-      else
-        s3_path="$BASE_PATH/$data_type/$year/$month/$current_date.csv.gz"
-        local_file="$output_dir/${ASSET_FILENAME_PREFIX}_${prefix}_${current_date}.csv.gz"
-      fi
-
-      download_with_validation "$s3_path" "$local_file"
-      rc=$?
-      # rc=0 success, rc=2 file-not-on-S3 (skip), rc=1 real failure.
-      if (( rc == 1 )); then
-        failure_count=$((failure_count + 1))
-      fi
-      current_sec=$((current_sec + 86400))
+    for exchange in "${EXCHANGES[@]}"; do
+      queue_downloads "$data_type" "$prefix" "$exchange"
     done
-  done
+  else
+    queue_downloads "$data_type" "$prefix" ""
+  fi
 done
 
+echo "Queued $queued file(s) to download, $PARALLEL_DOWNLOADS at a time; $already_on_disk already on disk at the listed size."
+if (( queued > 0 )); then
+  export -f download_with_validation record_failure
+  export ENDPOINT FAILURES_FILE MAX_REASON_BYTES
+  if ! xargs -0 -n 3 -P "$PARALLEL_DOWNLOADS" bash -c 'download_with_validation "$@"' _ < "$JOBS_FILE"; then
+    echo "Error: a download worker ended abnormally; files it held are neither downloaded nor counted below."
+    printf '%s\n' "download worker" >> "$FAILURES_FILE"
+  fi
+fi
+
+failure_count="$(wc -l < "$FAILURES_FILE" | tr -d ' ')"
 if (( failure_count > 0 )); then
   echo "Done with $failure_count download error(s). Check messages above."
   exit 1
