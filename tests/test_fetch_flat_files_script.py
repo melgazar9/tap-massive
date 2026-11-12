@@ -9,6 +9,7 @@ import subprocess
 import sys
 import time
 from dataclasses import dataclass, field
+from datetime import date, timedelta
 from pathlib import Path
 from typing import ClassVar
 
@@ -16,13 +17,14 @@ import pytest
 
 
 class StubAws:
-    """An `aws` executable that answers `s3 ls --recursive` and `s3 cp` from FAKE_S3_ROOT, the way aws-cli v2 does.
+    """An `aws` executable that answers `s3 ls --recursive` and `s3 cp` from FAKE_S3_ROOT, the way aws-cli v2 does,
+    beside stand-ins for the `mv`, `sleep` and `date` a test must control.
 
     Everything else (s3api head-object included) exits 2, so a test sees any call the script should no longer make.
     """
 
     SOURCE: ClassVar[str] = r"""
-import json, os, shutil, sys, time
+import gzip, json, os, shutil, sys, time
 from pathlib import Path
 
 args = sys.argv[1:]
@@ -39,17 +41,29 @@ with open(os.environ["FAKE_AWS_LOG"], "a") as log:
 def keys_in(env_name):
     return {k for k in os.environ.get(env_name, "").split(",") if k}
 
+def first_time(key, marker_dir):
+    marker = root / marker_dir / key
+    if marker.exists():
+        return False
+    marker.parent.mkdir(parents=True, exist_ok=True)
+    marker.touch()
+    return True
+
 if args[:2] == ["s3", "ls"] and "--recursive" in args:
     prefix = args[2].removeprefix("s3://flatfiles/")
     if any(prefix.startswith(denied) for denied in keys_in("FAKE_S3_DENY_LIST")):
         sys.stderr.write("An error occurred (AccessDenied) when calling the ListObjectsV2 operation: Access Denied\n")
         sys.exit(1)
     bucket = root / "flatfiles"
-    found = sorted(p for p in (bucket / prefix).rglob("*") if p.is_file()) if (bucket / prefix).is_dir() else []
+    found = sorted(
+        p for p in bucket.rglob("*") if p.is_file() and p.relative_to(bucket).as_posix().startswith(prefix)
+    ) if bucket.is_dir() else []
     if not found:
         sys.exit(1)
     for path in found:
-        print(f"2026-11-10 10:00:00 {path.stat().st_size:>10} {path.relative_to(bucket).as_posix()}")
+        # LastModified in the local zone, as aws-cli's ls prints it.
+        modified = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(path.stat().st_mtime))
+        print(f"{modified} {path.stat().st_size:>10} {path.relative_to(bucket).as_posix()}")
     sys.exit(0)
 
 if args[:2] == ["s3", "cp"]:
@@ -58,10 +72,19 @@ if args[:2] == ["s3", "cp"]:
     if key in keys_in("FAKE_S3_FORBIDDEN"):
         sys.stderr.write("fatal error: An error occurred (403) when calling the HeadObject operation: Forbidden\n")
         sys.exit(1)
-    data = (root / "flatfiles" / key).read_bytes()
+    if key in keys_in("FAKE_S3_FAIL_ALWAYS") or (key in keys_in("FAKE_S3_FAIL_FIRST") and first_time(key, ".failed")):
+        sys.exit(1)
+    source = root / "flatfiles" / key
+    if key in keys_in("FAKE_S3_REPLACE_DURING_CP") and first_time(key, ".replaced"):
+        listed_mtime = source.stat().st_mtime
+        source.write_bytes(gzip.compress(gzip.decompress(source.read_bytes()) + b"ZNM7,late,1\n" * 500))
+        os.utime(source, (listed_mtime + 3600, listed_mtime + 3600))
+    data = source.read_bytes()
     if key in keys_in("FAKE_S3_TRUNCATE"):
         data = data[: len(data) // 2]
     destination.write_bytes(data)
+    # aws-cli stamps a download with the object's LastModified.
+    os.utime(destination, (source.stat().st_mtime, source.stat().st_mtime))
     sys.exit(0)
 
 sys.stderr.write(f"stub aws: unexpected call {args}\n")
@@ -77,10 +100,35 @@ if sys.argv[-1] in os.environ.get("FAKE_MV_LOCKED", "").split(","):
 os.execv("/bin/mv", ["mv", *sys.argv[1:]])
 """
 
+    # Retry pauses would make every failure test wait for real.
+    SLEEP_SOURCE: ClassVar[str] = "import sys\nsys.exit(0)\n"
+
+    # FAKE_NOW pins the clock the script reads; a date given with -d is the script's own arithmetic.
+    DATE_SOURCE: ClassVar[str] = r"""
+import os, sys
+here = os.path.dirname(os.path.abspath(__file__))
+real = next(
+    path
+    for directory in os.environ["PATH"].split(os.pathsep)
+    if os.path.abspath(directory) != here and os.access(path := os.path.join(directory, "date"), os.X_OK)
+)
+args = sys.argv[1:]
+now = os.environ.get("FAKE_NOW")
+if now and not any(arg in ("-d", "-r") or arg.startswith("--date") for arg in args):
+    args = ["-d", now, *args]
+os.execv(real, [real, *args])
+"""
+
     @classmethod
     def install(cls, bin_dir: Path) -> None:
         bin_dir.mkdir(parents=True)
-        for name, source in (("aws", cls.SOURCE), ("mv", cls.MV_SOURCE)):
+        tools = (
+            ("aws", cls.SOURCE),
+            ("mv", cls.MV_SOURCE),
+            ("sleep", cls.SLEEP_SOURCE),
+            ("date", cls.DATE_SOURCE),
+        )
+        for name, source in tools:
             path = bin_dir / name
             path.write_text(f"#!{sys.executable}\n{source}")
             path.chmod(0o755)
@@ -414,6 +462,7 @@ class TestReRuns:
         )
         assert locked.read_bytes() == b"older vendor version"
         assert not list(locked.parent.glob(".*"))
+        assert len(run.cp_calls()) == 1
 
 
 class TestFailures:
@@ -441,6 +490,7 @@ class TestFailures:
             line.startswith("Error: size mismatch for s3://flatfiles/")
             for line in run.lines
         )
+        assert len(run.cp_calls()) == 3
         assert not eod_file(world, "cbot", day).exists()
         assert not list(eod_file(world, "cbot", day).parent.glob(".*"))
 
@@ -529,6 +579,7 @@ class TestFailures:
         ]
         assert len(error_rows) == len(forbidden)
         assert all("(403)" in run.lines[i + 1] for i in error_rows)
+        assert len(run.cp_calls()) == len(days)
         assert (
             f"Done with {len(forbidden)} download error(s). Check messages above."
             in run.lines
@@ -593,3 +644,168 @@ class TestParallelism:
 
         assert run.returncode == 1
         assert any(line.startswith("Error: --start-date") for line in run.lines)
+
+
+def one_cbot_eod_run(
+    world: FlatFileWorld, start: str, end: str | None = None
+) -> FetchRun:
+    window = ("--start-date", start, *(("--end-date", end) if end else ()))
+    return world.run("--eod", "--asset-class", "futures", "--exchange", "CBOT", *window)
+
+
+def landed_days(world: FlatFileWorld) -> list[str]:
+    return sorted(
+        p.name[-17:-7]
+        for p in (world.destination / "futures" / "eod" / "cbot").glob("*.csv.gz")
+    )
+
+
+def shift_day(day: str, days: int) -> str:
+    return (date.fromisoformat(day) + timedelta(days=days)).isoformat()
+
+
+class TestEndDateDefault:
+    """Massive finalizes a day's files the next morning, New York time; an earlier copy is a draft it replaces."""
+
+    @pytest.mark.parametrize(
+        "now, last_final",
+        [
+            pytest.param(
+                "2026-11-12 15:30:00 UTC",
+                "2026-11-10",
+                id="10:30-EST-before-the-publish",
+            ),
+            pytest.param(
+                "2026-11-12 16:30:00 UTC",
+                "2026-11-11",
+                id="11:30-EST-after-the-publish",
+            ),
+            pytest.param(
+                "2026-11-13 03:00:00 UTC",
+                "2026-11-11",
+                id="22:00-EST-already-tomorrow-in-UTC",
+            ),
+            pytest.param(
+                "2026-07-15 15:30:00 UTC", "2026-07-14", id="11:30-EDT-in-summer-time"
+            ),
+        ],
+    )
+    def test_no_end_date_stops_at_the_last_day_massive_has_finalized(
+        self, world, now, last_final
+    ):
+        previous = shift_day(last_final, -1)
+        for offset in range(-1, 3):
+            world.put(eod_key("cbot", shift_day(last_final, offset)))
+        world.env_overrides["FAKE_NOW"] = now
+
+        run = one_cbot_eod_run(world, previous)
+
+        assert run.returncode == 0, run.lines
+        assert landed_days(world) == [previous, last_final]
+        assert any(
+            last_final in line and line.startswith("No --end-date given")
+            for line in run.lines
+        )
+
+    def test_an_end_date_past_the_last_finalized_day_is_fetched_with_a_warning(
+        self, world
+    ):
+        for day in ("2026-11-10", "2026-11-11", "2026-11-12"):
+            world.put(eod_key("cbot", day))
+        world.env_overrides["FAKE_NOW"] = "2026-11-12 15:30:00 UTC"
+
+        run = one_cbot_eod_run(world, "2026-11-10", "2026-11-12")
+
+        assert run.returncode == 0, run.lines
+        assert landed_days(world) == ["2026-11-10", "2026-11-11", "2026-11-12"]
+        assert any(
+            line.startswith("Warning:") and "2026-11-10" in line for line in run.lines
+        )
+
+
+class TestReplacedObjects:
+    """Massive can replace a published file under the same name, with a new LastModified."""
+
+    def test_an_object_replaced_after_the_listing_lands_at_its_new_size_in_one_download(
+        self, world
+    ):
+        day = "2026-11-10"
+        key = eod_key("cbot", day)
+        world.put(key, rows=200)
+        world.env_overrides["FAKE_S3_REPLACE_DURING_CP"] = key
+
+        run = one_cbot_eod_run(world, day, day)
+
+        assert run.returncode == 0, run.lines
+        assert (
+            eod_file(world, "cbot", day).read_bytes()
+            == (world.bucket / key).read_bytes()
+        )
+        assert len(run.cp_calls()) == 1
+        assert not any(line.startswith("Error") for line in run.lines)
+
+    def test_a_same_size_replacement_is_fetched_on_the_next_run(self, world):
+        day = "2026-11-10"
+        key = eod_key("cbot", day)
+        body = b"ticker,session_end_date,close\nZNZ6,2026-11-10,112\n"
+        world.put_raw(key, gzip.compress(body, mtime=0))
+        assert one_cbot_eod_run(world, day, day).returncode == 0
+        replacement = gzip.compress(body, mtime=1)
+        world.put_raw(key, replacement)
+        published = (world.bucket / key).stat().st_mtime + 3600
+        os.utime(world.bucket / key, (published, published))
+
+        rerun = one_cbot_eod_run(world, day, day)
+
+        assert rerun.returncode == 0, rerun.lines
+        assert len(rerun.cp_calls()) == 1
+        assert eod_file(world, "cbot", day).read_bytes() == replacement
+
+    def test_a_local_copy_written_after_the_listed_time_is_kept(self, world):
+        day = "2026-11-10"
+        key = eod_key("cbot", day)
+        data = world.put(key)
+        written_elsewhere = eod_file(world, "cbot", day)
+        written_elsewhere.parent.mkdir(parents=True)
+        written_elsewhere.write_bytes(data)
+        later = (world.bucket / key).stat().st_mtime + 3600
+        os.utime(written_elsewhere, (later, later))
+
+        run = one_cbot_eod_run(world, day, day)
+
+        assert run.returncode == 0, run.lines
+        assert run.cp_calls() == []
+
+
+class TestRetries:
+    def test_a_silent_aws_failure_is_retried_and_the_file_lands(self, world):
+        day = "2026-11-11"
+        key = eod_key("cbot", day)
+        data = world.put(key)
+        world.env_overrides["FAKE_S3_FAIL_FIRST"] = key
+
+        run = one_cbot_eod_run(world, day, day)
+
+        assert run.returncode == 0, run.lines
+        assert eod_file(world, "cbot", day).read_bytes() == data
+        assert len(run.cp_calls()) == 2
+        assert any(
+            line.startswith("Warning: attempt 1 of 3 failed for s3://flatfiles/")
+            for line in run.lines
+        )
+        assert not any(line.startswith("Error") for line in run.lines)
+
+    def test_a_download_that_keeps_failing_ends_naming_awss_exit_status(self, world):
+        day = "2026-11-11"
+        key = eod_key("cbot", day)
+        world.put(key)
+        world.env_overrides["FAKE_S3_FAIL_ALWAYS"] = key
+
+        run = one_cbot_eod_run(world, day, day)
+
+        assert run.returncode == 1
+        assert len(run.cp_calls()) == 3
+        error_row = run.lines.index(f"Error: aws s3 cp failed for s3://flatfiles/{key}")
+        assert run.lines[error_row + 1] == "aws exit 1: no message"
+        assert "Done with 1 download error(s). Check messages above." in run.lines
+        assert not list(eod_file(world, "cbot", day).parent.glob("*"))

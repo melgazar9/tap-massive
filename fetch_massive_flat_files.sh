@@ -26,10 +26,18 @@ export AWS_EC2_METADATA_DISABLED="true"
 # Massive answers an occasional 503; aws retries it with jittered exponential backoff up to this many attempts.
 export AWS_RETRY_MODE="standard"
 export AWS_MAX_ATTEMPTS=10
+# aws prints listing times, and stat file times, in this zone: the two are compared as text.
+export TZ=UTC
 
 ENDPOINT="--endpoint-url https://files.massive.com"
 # Bytes of aws's own error text kept per failure: an error and its reason must stay one atomic write between workers.
 MAX_REASON_BYTES=2000
+# Tries per file before its failure counts; aws's own retries already cover throttling within each try.
+DOWNLOAD_ATTEMPTS=3
+# Seconds before a retry, multiplied by the attempts made so far.
+RETRY_PAUSE_SECONDS=10
+# Hour (ET) of the next day by which Massive documents a day's files as final; until then they can be replaced.
+FINALIZED_BY_HOUR_ET=11
 
 usage() {
   echo "Usage: $0 --trades|--quotes|--bars-1m|--eod|--values|--all [--exclude TYPE,...] [--exchange LIST] [--destination DIR] [--parallel N] --start-date YYYY-MM-DD [--end-date YYYY-MM-DD] --asset-class ASSET_CLASS"
@@ -39,7 +47,8 @@ usage() {
   echo "  global_forex, global_crypto, futures"
   echo ""
   echo "Options:"
-  echo "  --end-date DATE     Last date to download (default: today, UTC)"
+  echo "  --end-date DATE     Last date to download (default: the last day Massive has finalized;"
+  echo "                      it finalizes a day by ${FINALIZED_BY_HOUR_ET}:00 ET the next day)"
   echo "  --destination DIR   Base directory for downloads (default: \$HOME/massive_data)"
   echo "  --exclude TYPE,...  Exclude dataset types when using --all."
   echo "                      Valid types: trades, quotes, bars-1m, eod, values"
@@ -51,8 +60,11 @@ usage() {
   echo "Notes:"
   echo "  - All downloads are validated (listed size, gzip integrity) before being renamed from"
   echo "    .<file>.tmp to <file>, so a partial or corrupt download never takes the final name."
+  echo "    A failed file is tried $DOWNLOAD_ATTEMPTS times; one Massive replaced since the listing is"
+  echo "    checked against its current size."
   echo "  - The files to fetch are the ones Massive lists in the date range; a file already on disk"
-  echo "    at the listed size is kept, so a re-run fetches only what is missing or changed."
+  echo "    is kept unless its size differs or Massive lists a newer copy, so a re-run fetches only"
+  echo "    what is missing or changed."
   echo "  - Indices flat files support minute aggregates, day aggregates (--eod), and values."
   echo "  - Forex flat files support quotes and minute/eod aggregates only."
   echo "  - Crypto flat files support trades and minute/eod aggregates only."
@@ -89,16 +101,42 @@ if [[ "$OS_NAME" == "Darwin" ]]; then
   fi
 fi
 
-today_date() {
-  TZ=UTC "$DATE_BIN" +%Y-%m-%d
-}
-
 date_to_epoch() {
   local d="$1"
   if [[ "$DATE_STYLE" == "gnu" ]]; then
     TZ=UTC "$DATE_BIN" -d "$d" +%s
   else
     TZ=UTC "$DATE_BIN" -j -f "%Y-%m-%d" "$d" +%s
+  fi
+}
+
+epoch_to_date() {
+  if [[ "$DATE_STYLE" == "gnu" ]]; then
+    TZ=UTC "$DATE_BIN" -d "@$1" +%Y-%m-%d
+  else
+    TZ=UTC "$DATE_BIN" -r "$1" +%Y-%m-%d
+  fi
+}
+
+# Yesterday in New York once that morning's publish hour has passed, the day before it until then.
+last_finalized_date() {
+  local et_today et_hour days_back=1
+  et_today="$(TZ=America/New_York "$DATE_BIN" +%Y-%m-%d)"
+  et_hour="$(TZ=America/New_York "$DATE_BIN" +%H)"
+  if (( 10#$et_hour < FINALIZED_BY_HOUR_ET )); then
+    days_back=2
+  fi
+  epoch_to_date $(( $(date_to_epoch "$et_today") - days_back * 86400 ))
+}
+
+# "size YYYY-MM-DD HH:MM:SS" of a local file, its modification time in the zone aws lists in.
+size_and_modified() {
+  if [[ "$OS_NAME" == "Darwin" ]]; then
+    stat -f '%z %Sm' -t '%Y-%m-%d %H:%M:%S' "$1"
+  else
+    local size day clock
+    read -r size day clock _ < <(stat -c '%s %y' "$1")
+    echo "$size $day ${clock%.*}"
   fi
 }
 
@@ -171,12 +209,10 @@ if [[ -z "$START_DATE" || -z "$ASSET_CLASS" ]]; then
   usage
 fi
 
-# --end-date is optional; default to today (UTC, matching the date helpers above).
-# Dates with no file on S3 yet (today before publish, weekends, holidays) are
-# skipped by download_with_validation's 404 handling, not treated as failures.
+LAST_FINALIZED_DATE="$(last_finalized_date)"
 if [[ -z "$END_DATE" ]]; then
-  END_DATE="$(today_date)"
-  echo "No --end-date given; defaulting to today (UTC): $END_DATE"
+  END_DATE="$LAST_FINALIZED_DATE"
+  echo "No --end-date given; defaulting to the last day Massive has finalized: $END_DATE"
 fi
 
 if [[ "$ALL_DATASETS" == "true" && -n "$DATA_TYPE" ]]; then
@@ -259,6 +295,9 @@ end_sec=$(date_to_epoch "$END_DATE")
 if (( end_sec < start_sec )); then
   echo "Error: end-date must be after or equal to start-date"
   exit 1
+fi
+if [[ "$END_DATE" > "$LAST_FINALIZED_DATE" ]]; then
+  echo "Warning: Massive has finalized days only through $LAST_FINALIZED_DATE; a later day's files can still be replaced."
 fi
 
 datasets=()
@@ -356,57 +395,99 @@ futures_data_type() {
   fi
 }
 
-# Each failure is ONE write of its error line and aws's reason, so parallel workers never split the pair a
-# reader matches on (a 403's status line follows its error line), and one line in FAILURES_FILE for the count.
-record_failure() {
-  local failed_path="$1" message="$2" reason="${3:-}"
+# A message and aws's reason as ONE write, so parallel workers never split the pair a reader matches on (a 403's
+# status line follows its error line).
+print_with_reason() {
+  local message="$1" reason="${2:-}"
   if [[ -n "$reason" ]]; then
     printf '%s\n%s\n' "$message" "${reason:0:$MAX_REASON_BYTES}"
   else
     printf '%s\n' "$message"
   fi
+}
+
+# Each failure is its error line with aws's reason, and one line in FAILURES_FILE for the count.
+record_failure() {
+  local failed_path="$1" message="$2" reason="${3:-}"
+  print_with_reason "$message" "$reason"
   printf '%s\n' "$failed_path" >> "$FAILURES_FILE"
 }
 
-# One listed object into place: a hidden temp file, checked against the listed size and for gzip integrity,
-# then renamed, so a partial or corrupt download never takes the final name. Always returns 0: failures are
-# counted through record_failure, and a non-zero xargs exit then means a worker died, not a download failed.
-download_with_validation() {
-  local s3_path="$1" local_file="$2" listed_size="$3"
-  local base tmp_file reason local_size
-  base="$(basename "$local_file")"
-  tmp_file="$(dirname "$local_file")/.${base%.csv.gz}.tmp.csv.gz"
+# The size Massive lists for one object now, empty when it lists none.
+current_listed_size() {
+  aws s3 ls "$1" --recursive $ENDPOINT | awk -v key="${1#s3://flatfiles/}" '$4 == key { print $3 }'
+}
 
-  echo "Downloading $s3_path -> $local_file"
-  if ! reason="$(aws s3 cp "$s3_path" "$tmp_file" $ENDPOINT --only-show-errors 2>&1)"; then
+# One try at putting a listed object into place: a hidden temp file, checked for size and gzip integrity, then
+# renamed, so a partial or corrupt download never takes the final name. On failure it leaves the error line and
+# aws's reason in try_error and try_reason, and returns 1 when another try can help, 2 when it cannot.
+try_download() {
+  local s3_path="$1" local_file="$2" tmp_file="$3" listed_size="$4"
+  local aws_exit local_size current_size
+  try_error="" try_reason=""
+
+  try_reason="$(aws s3 cp "$s3_path" "$tmp_file" $ENDPOINT --only-show-errors 2>&1)"
+  aws_exit=$?
+  if (( aws_exit != 0 )); then
     # Glob "${tmp_file}".* mops up aws-cli multipart intermediates with random suffixes.
     rm -f "$tmp_file" "$tmp_file".*
-    record_failure "$s3_path" "Error: aws s3 cp failed for $s3_path" "$reason"
-    return 0
+    try_error="Error: aws s3 cp failed for $s3_path"
+    try_reason="aws exit $aws_exit: ${try_reason:-no message}"
+    # A 403 or 404 is Massive's answer, not a glitch: asking again gets the same one.
+    [[ "$try_reason" == *"(403)"* || "$try_reason" == *"(404)"* ]] && return 2
+    return 1
   fi
+  try_reason=""
 
   local_size="$(wc -c < "$tmp_file" | tr -d ' ')"
+  # Massive may have replaced the object since it was listed: what it lists now decides.
   if [[ "$local_size" != "$listed_size" ]]; then
-    rm -f "$tmp_file"
-    record_failure "$s3_path" "Error: size mismatch for $s3_path (S3 lists $listed_size, local is $local_size)"
-    return 0
+    current_size="$(current_listed_size "$s3_path")"
+    if [[ "$local_size" != "$current_size" ]]; then
+      rm -f "$tmp_file"
+      try_error="Error: size mismatch for $s3_path (S3 lists ${current_size:-nothing}, local is $local_size)"
+      return 1
+    fi
   fi
 
   if ! gzip -t "$tmp_file" 2>/dev/null; then
     rm -f "$tmp_file"
-    record_failure "$s3_path" "Error: gzip integrity check failed for $s3_path; removed corrupt temp file."
-    return 0
+    try_error="Error: gzip integrity check failed for $s3_path; removed corrupt temp file."
+    return 1
   fi
 
-  if ! reason="$(mv -f "$tmp_file" "$local_file" 2>&1)"; then
+  if ! try_reason="$(mv -f "$tmp_file" "$local_file" 2>&1)"; then
     rm -f "$tmp_file"
-    record_failure "$s3_path" "Error: could not rename the download into place as $local_file" "$reason"
-    return 0
+    try_error="Error: could not rename the download into place as $local_file"
+    return 2
   fi
   echo "Downloaded $local_file ($local_size bytes)"
 }
 
-# "size key" for every dated object under one dataset prefix inside [START_DATE, END_DATE], listing one year
+# One listed object, tried until it lands or the attempts run out. Always returns 0: failures are counted through
+# record_failure, and a non-zero xargs exit then means a worker died, not a download failed.
+download_with_validation() {
+  local s3_path="$1" local_file="$2" listed_size="$3"
+  local base tmp_file attempt try_exit
+  base="$(basename "$local_file")"
+  tmp_file="$(dirname "$local_file")/.${base%.csv.gz}.tmp.csv.gz"
+
+  echo "Downloading $s3_path -> $local_file"
+  for (( attempt = 1; ; attempt++ )); do
+    try_download "$s3_path" "$local_file" "$tmp_file" "$listed_size"
+    try_exit=$?
+    (( try_exit == 0 )) && return 0
+    if (( try_exit == 2 || attempt == DOWNLOAD_ATTEMPTS )); then
+      record_failure "$s3_path" "$try_error" "$try_reason"
+      return 0
+    fi
+    print_with_reason \
+      "Warning: attempt $attempt of $DOWNLOAD_ATTEMPTS failed for $s3_path, retrying: ${try_error#Error: }" "$try_reason"
+    sleep $(( attempt * RETRY_PAUSE_SECONDS ))
+  done
+}
+
+# "size day time key" for every dated object under one dataset prefix inside [START_DATE, END_DATE], listing one year
 # prefix at a time because Massive keys files <prefix>/YYYY/MM/YYYY-MM-DD.csv.gz. Errors go to stderr: stdout
 # is the listing its caller reads.
 list_dated_objects() {
@@ -423,17 +504,19 @@ list_dated_objects() {
     fi
     awk -v from="$START_DATE" -v to="$END_DATE" '
       { n = split($4, parts, "/"); name = parts[n]; day = substr(name, 1, 10) }
-      name ~ /^[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]\.csv\.gz$/ && day >= from && day <= to { print $3, $4 }
+      name ~ /^[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]\.csv\.gz$/ && day >= from && day <= to { print $3, $1, $2, $4 }
     ' <<< "$listing"
   done
   rm -f "$stderr_file"
 }
 
-# Appends every listed file of one dataset (and exchange) that is not already on disk at its listed size to
-# JOBS_FILE as NUL-separated "s3 path, local file, listed size" triples, in listing (oldest first) order.
+# Appends every listed file of one dataset (and exchange) missing on disk, at another size there, or listed as
+# modified after the local copy, to JOBS_FILE as NUL-separated "s3 path, local file, listed size" triples, in
+# listing (oldest first) order.
 queue_downloads() {
   local data_type="$1" prefix="$2" exchange="$3"
-  local s3_prefix output_dir name_prefix size key day local_file listed=0
+  local s3_prefix output_dir name_prefix size listed_day listed_clock key day local_file listed=0
+  local local_size local_day local_clock
   if [[ -n "$exchange" ]]; then
     s3_prefix="us_futures_${exchange}/$(futures_data_type "$data_type")"
     output_dir="${DESTINATION}/${ASSET_CLASS}/${prefix}/${exchange}"
@@ -445,13 +528,17 @@ queue_downloads() {
   fi
   mkdir -p "$output_dir"
 
-  while read -r size key; do
+  while read -r size listed_day listed_clock key; do
     listed=$((listed + 1))
     day="${key##*/}"
     local_file="${output_dir}/${name_prefix}_${day}"
-    if [[ -f "$local_file" && "$(wc -c < "$local_file" | tr -d ' ')" == "$size" ]]; then
-      already_on_disk=$((already_on_disk + 1))
-      continue
+    if [[ -f "$local_file" ]]; then
+      read -r local_size local_day local_clock < <(size_and_modified "$local_file")
+      # aws stamps a download with the object's LastModified, so a later listed time means Massive replaced it.
+      if [[ "$local_size" == "$size" && ! "$listed_day $listed_clock" > "$local_day $local_clock" ]]; then
+        already_on_disk=$((already_on_disk + 1))
+        continue
+      fi
     fi
     printf '%s\0%s\0%s\0' "s3://flatfiles/${key}" "$local_file" "$size" >> "$JOBS_FILE"
     queued=$((queued + 1))
@@ -479,10 +566,10 @@ for dataset in "${datasets[@]}"; do
   fi
 done
 
-echo "Queued $queued file(s) to download, $PARALLEL_DOWNLOADS at a time; $already_on_disk already on disk at the listed size."
+echo "Queued $queued file(s) to download, $PARALLEL_DOWNLOADS at a time; $already_on_disk already on disk and current."
 if (( queued > 0 )); then
-  export -f download_with_validation record_failure
-  export ENDPOINT FAILURES_FILE MAX_REASON_BYTES
+  export -f download_with_validation try_download current_listed_size record_failure print_with_reason
+  export ENDPOINT FAILURES_FILE MAX_REASON_BYTES DOWNLOAD_ATTEMPTS RETRY_PAUSE_SECONDS
   if ! xargs -0 -n 3 -P "$PARALLEL_DOWNLOADS" bash -c 'download_with_validation "$@"' _ < "$JOBS_FILE"; then
     echo "Error: a download worker ended abnormally; files it held are neither downloaded nor counted below."
     printf '%s\n' "download worker" >> "$FAILURES_FILE"
