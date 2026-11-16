@@ -96,6 +96,8 @@ plugins:
       - stock_13f_filings.*
       - stock_form3_filings.*
       - stock_form4_filings.*
+      - stock_insider_activity.*
+      - stock_insider_holdings.*
       - stock_filings_index.*
       - stock_risk_factors.*
       - stock_risk_categories.*
@@ -136,6 +138,8 @@ plugins:
       - options_previous_day_bar.*
 #      - options_trades.*
 #      - options_quotes.*
+      - options_unusual_trades.*
+      - options_open_interest.*
 #      - options_last_trade.*
       - options_contract_snapshot.*
       - options_chain_snapshot.*
@@ -1045,6 +1049,22 @@ plugins:
         other_params:
           use_cached_tickers: false
 
+      stock_insider_activity:
+        query_params:
+          transaction_date__gte: "2025-01-05"
+          sort: transaction_date.asc
+          limit: 10000
+        other_params:
+          use_cached_tickers: false
+
+      stock_insider_holdings:
+        query_params:
+          last_filing_date__gte: "2025-01-05"
+          sort: last_filing_date.asc
+          limit: 10000
+        other_params:
+          use_cached_tickers: false
+
       stock_filings_index:
         query_params:
           filing_date__gte: "1999-05-23"
@@ -1286,6 +1306,18 @@ plugins:
           timestamp__lte: "2025-02-19T23:59:59Z"
           sort: timestamp
           order: asc
+          limit: 50000
+
+      options_unusual_trades:
+        query_params:
+          sip_timestamp__gte: "2025-02-18T00:00:00Z"
+          sort: sip_timestamp.asc
+          limit: 50000
+
+      options_open_interest:
+        query_params:
+          date__gte: "2025-02-18"
+          sort: date.asc
           limit: 50000
 
       options_last_trade:

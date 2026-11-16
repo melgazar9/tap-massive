@@ -1054,6 +1054,93 @@ class StockForm4FilingsStream(OptionalTickerPartitionStream):
         return row
 
 
+class StockInsiderActivityStream(OptionalTickerPartitionStream):
+    """Aggregated daily insider buying/selling per issuer (Forms 4 and 5).
+
+    One row per issuer per transaction_date, so PK = (issuer_cik, transaction_date).
+    The API only filters on transaction_date, so incremental runs will not pick up
+    rows for older transaction dates that are revised by late filings.
+    """
+
+    name = "stock_insider_activity"
+
+    primary_keys = ["issuer_cik", "transaction_date"]
+    replication_key = "transaction_date"
+    replication_method = "INCREMENTAL"
+    is_timestamp_replication_key = True
+
+    _use_cached_tickers_default = False
+    _incremental_timestamp_is_date = True
+    _ticker_in_query_params = True
+    _ticker_param = "tickers"
+
+    schema = th.PropertiesList(
+        th.Property("issuer_cik", th.StringType),
+        th.Property("issuer_name", th.StringType),
+        th.Property("tickers", th.ArrayType(th.StringType)),
+        th.Property("transaction_date", th.DateType),
+        th.Property("last_filing_date", th.DateType),
+        th.Property("net_shares", th.NumberType),
+        th.Property("net_value", th.NumberType),
+        th.Property("planned_purchase_value", th.NumberType),
+        th.Property("planned_sale_value", th.NumberType),
+        th.Property("purchase_count", th.IntegerType),
+        th.Property("purchase_shares", th.NumberType),
+        th.Property("purchase_value", th.NumberType),
+        th.Property("purchaser_count", th.IntegerType),
+        th.Property("sale_count", th.IntegerType),
+        th.Property("sale_shares", th.NumberType),
+        th.Property("sale_value", th.NumberType),
+        th.Property("seller_count", th.IntegerType),
+    ).to_dict()
+
+    def get_url(self, context: Context = None):
+        return f"{self.url_base}/stocks/insiders/vX/activity"
+
+
+class StockInsiderHoldingsStream(OptionalTickerPartitionStream):
+    """Current holdings roster: one row per insider (owner) per issuer.
+
+    PK = (issuer_cik, owner_cik). Any change to a holding comes from a new
+    Form 3/4/5 filing, which advances last_filing_date, so that is the
+    replication key.
+    """
+
+    name = "stock_insider_holdings"
+
+    primary_keys = ["issuer_cik", "owner_cik"]
+    replication_key = "last_filing_date"
+    replication_method = "INCREMENTAL"
+    is_timestamp_replication_key = True
+
+    _use_cached_tickers_default = False
+    _incremental_timestamp_is_date = True
+    _ticker_in_query_params = True
+    _ticker_param = "tickers"
+
+    schema = th.PropertiesList(
+        th.Property("issuer_cik", th.StringType),
+        th.Property("issuer_name", th.StringType),
+        th.Property("owner_cik", th.StringType),
+        th.Property("owner_name", th.StringType),
+        th.Property("tickers", th.ArrayType(th.StringType)),
+        th.Property("roles", th.ArrayType(th.StringType)),
+        th.Property("officer_title", th.StringType),
+        th.Property("filing_count", th.IntegerType),
+        th.Property("first_filing_date", th.DateType),
+        th.Property("last_filing_date", th.DateType),
+        th.Property("oldest_position_date", th.DateType),
+        th.Property("position_count", th.IntegerType),
+        th.Property("shares_owned", th.NumberType),
+        th.Property("shares_owned_direct", th.NumberType),
+        th.Property("shares_owned_indirect", th.NumberType),
+        th.Property("ownership_pct", th.NumberType),
+    ).to_dict()
+
+    def get_url(self, context: Context = None):
+        return f"{self.url_base}/stocks/insiders/vX/holdings"
+
+
 # --- News Stream ---
 
 
