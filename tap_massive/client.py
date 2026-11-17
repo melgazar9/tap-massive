@@ -385,9 +385,27 @@ class MassiveRestStream(RESTStream):
             return ts
         return None
 
-    def get_starting_replication_key_value(
-        self, context: Context | None
+    def _state_replication_value(
+        self, context: Context | None, furthest_read: t.Any | None = None
     ) -> t.Any | None:
+        """The furthest value an unsorted run has read so far, else its bookmark."""
+        if furthest_read is not None:
+            return furthest_read
+        state = self.get_context_state(context)
+        if not state:
+            return None
+        return state.get(
+            "replication_key_value", state.get("starting_replication_value")
+        )
+
+    def get_starting_replication_key_value(
+        self, context: Context | None, furthest_read: t.Any | None = None
+    ) -> t.Any | None:
+        """The value a stream starts from, or its pagination cutoffs judge mid-run.
+
+        `furthest_read` is the furthest value an unsorted run has read so far: the
+        cutoffs judge it while the bookmark stays where the run began.
+        """
         if (
             not self.is_timestamp_replication_key
             or self.replication_method != "INCREMENTAL"
@@ -395,12 +413,7 @@ class MassiveRestStream(RESTStream):
             return None
 
         state = self.get_context_state(context)
-
-        state_replication_value = (
-            state.get("replication_key_value", state.get("starting_replication_value"))
-            if state
-            else None
-        )
+        state_replication_value = self._state_replication_value(context, furthest_read)
 
         state_dt = self.safe_parse_datetime(state_replication_value)
         cfg_dt = self.safe_parse_datetime(self._cfg_starting_timestamp_value)
@@ -584,6 +597,7 @@ class MassiveRestStream(RESTStream):
         )
 
         state = self.get_context_state(context)
+        furthest_read = None
 
         while True:
             request_url = next_url or self.get_url(request_context)
@@ -681,14 +695,12 @@ class MassiveRestStream(RESTStream):
                     is_sorted=self.is_sorted,
                     check_sorted=self.check_sorted,
                 )
-
-                if (
-                    "progress_markers" in state
-                    and "replication_key_value" in state["progress_markers"]
-                ):
-                    state["replication_key_value"] = state["progress_markers"][
-                        "replication_key_value"
-                    ]
+                # The SDK promotes an unsorted stream's progress marker once the sync
+                # completes; copied into the bookmark mid-run, a run cut off here would
+                # resume past rows it never read.
+                furthest_read = state.get("progress_markers", {}).get(
+                    "replication_key_value", furthest_read
+                )
 
             if isinstance(data, list):
                 logging.info(
@@ -701,7 +713,9 @@ class MassiveRestStream(RESTStream):
                 context, query_params, path_params, pop_timestamp=True
             )
 
-            replication_key_value = self.get_starting_replication_key_value(context)
+            replication_key_value = self.get_starting_replication_key_value(
+                context, furthest_read
+            )
             if self._break_loop_check(next_url, replication_key_value):
                 break
 

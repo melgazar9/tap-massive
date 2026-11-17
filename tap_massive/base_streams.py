@@ -944,17 +944,12 @@ class _NanosecondIncrementalMixin:
         return value if value_dt is not None else start_date_value
 
     def get_starting_replication_key_value(
-        self, context: Context | None
+        self, context: Context | None, furthest_read: t.Any | None = None
     ) -> t.Any | None:
         if self.replication_method != "INCREMENTAL" or not self.replication_key:
             return None
 
-        state = self.get_context_state(context)
-        state_replication_value = (
-            state.get("replication_key_value", state.get("starting_replication_value"))
-            if state
-            else None
-        )
+        state_replication_value = self._state_replication_value(context, furthest_read)
         cfg_value = self._cfg_starting_timestamp_value
         start_date_config = self.config.get("start_date")
 

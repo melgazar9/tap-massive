@@ -374,7 +374,7 @@ class BaseEarningsQuoteStream(_NanosecondIncrementalMixin, MassiveRestStream):
     _unix_timestamp_unit = "ns"
 
     def get_starting_replication_key_value(
-        self, context: Context | None
+        self, context: Context | None, furthest_read: t.Any | None = None
     ) -> t.Any | None:
         """Only use state for incremental recovery; ignore global start_date.
 
@@ -384,13 +384,9 @@ class BaseEarningsQuoteStream(_NanosecondIncrementalMixin, MassiveRestStream):
         """
         if self.replication_method != "INCREMENTAL" or not self.replication_key:
             return None
-        state = self.get_context_state(context)
-        if state:
-            val = state.get(
-                "replication_key_value", state.get("starting_replication_value")
-            )
-            if val is not None and isinstance(val, (int, float)):
-                return int(val)
+        val = self._state_replication_value(context, furthest_read)
+        if isinstance(val, (int, float)):
+            return int(val)
         return None
 
     def _get_earnings_calendar(self) -> EarningsCalendar:
