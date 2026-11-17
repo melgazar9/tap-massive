@@ -907,8 +907,9 @@ class BaseTopMarketMoversStream(
                     self.post_process(record)
                     yield record
             elif response_data.get("status") == "NOT_AUTHORIZED":
-                self.logger.warning(
-                    f"Not authorized for top market movers: {response_data.get('message')}"
+                raise PermissionError(
+                    f"NOT_AUTHORIZED for top market movers direction={direction}: "
+                    f"{response_data.get('message')}"
                 )
 
     def post_process(self, row: Record, context: Context | None = None) -> dict | None:

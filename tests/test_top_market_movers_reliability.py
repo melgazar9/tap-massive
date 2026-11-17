@@ -60,6 +60,16 @@ def test_top_movers_403_fails_the_stream_instead_of_skipping_a_direction():
     assert stream.get_response.call_count == 1
 
 
+def test_top_movers_not_authorized_body_fails_the_stream():
+    stream = _make_stream(direction="gainers")
+    response = MagicMock()
+    response.json.return_value = {"status": "NOT_AUTHORIZED", "message": "plan"}
+    stream.get_response = MagicMock(return_value=response)
+
+    with pytest.raises(PermissionError, match="NOT_AUTHORIZED"):
+        list(stream.get_records(None))
+
+
 def test_top_movers_single_direction_calls_once():
     stream = _make_stream(direction="gainers")
     stream.get_response = MagicMock(
