@@ -88,6 +88,8 @@ class MassiveRestStream(RESTStream):
             "last_updated",
             "transaction_date",
             "processed_date",
+            "sip_timestamp",
+            "last_filing_date",
         ]
         self.record_timestamp_keys = [
             "timestamp",
@@ -113,6 +115,7 @@ class MassiveRestStream(RESTStream):
             "end_date",
             "settlement_date",
             "transaction_date",
+            "last_filing_date",
         ]
 
         timestamp_filter_suffixes = ["gt", "gte", "lt", "lte"]

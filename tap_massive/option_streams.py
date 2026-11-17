@@ -22,6 +22,7 @@ from tap_massive.base_streams import (
     BaseTickerPartitionStream,
     BaseTickerStream,
     BaseTradeStream,
+    _NanosecondIncrementalMixin,
     _SnapshotNormalizationMixin,
 )
 from tap_massive.client import MassiveRestStream, OptionalTickerPartitionStream
@@ -59,6 +60,19 @@ OPTIONS_QUOTE_SNAPSHOT_SCHEMA = th.PropertiesList(
     th.Property("trf_timestamp", th.IntegerType),
     th.Property("asof_timestamp", th.IntegerType),
 ).to_dict()
+
+
+# Binary option fields on /v3/reference/options/contracts (list and overview).
+# All are absent on standard contracts; KPI-only fields are absent on equity binaries.
+BINARY_OPTION_CONTRACT_PROPERTIES = (
+    th.Property("type", th.StringType),
+    th.Property("underlying_type", th.StringType),
+    th.Property("company_ticker", th.StringType),
+    th.Property("metric", th.StringType),
+    th.Property("scale", th.IntegerType),
+    th.Property("report_time", th.StringType),
+    th.Property("reporting_period", th.StringType),
+)
 
 
 def _rename_to_option_ticker(row: dict, context: dict | None) -> dict:
@@ -105,6 +119,7 @@ class OptionsContractsStream(BaseTickerStream):
                 )
             ),
         ),
+        *BINARY_OPTION_CONTRACT_PROPERTIES,
     ).to_dict()
 
     # Prefer shared options ticker selector, then fall back to market/name defaults.
@@ -287,6 +302,7 @@ class OptionsContractOverviewStream(OptionsTickerPartitionStream):
                 )
             ),
         ),
+        *BINARY_OPTION_CONTRACT_PROPERTIES,
     ).to_dict()
 
     def get_url(self, context: Context) -> str:
@@ -549,6 +565,74 @@ class OptionsQuoteStream(OptionsTickerPartitionStream, BaseQuoteStream):
             "sip_timestamp",
         }
         return {k: row.get(k) for k in allowed if k in row}
+
+
+class OptionsUnusualTradesStream(_NanosecondIncrementalMixin, MassiveRestStream):
+    """Unusual options trades across the US options tape (/options/v1/unusual-trades).
+
+    Market-wide feed: filter via query_params (ticker, ticker.any_of, sip_timestamp
+    ranges) rather than per-contract partitioning. PK mirrors options_quotes:
+    sequence_number is unique per ticker within a session and resets daily, so
+    sip_timestamp disambiguates across sessions.
+    """
+
+    name = "options_unusual_trades"
+    primary_keys = ["ticker", "sip_timestamp", "sequence_number"]
+    replication_key = "sip_timestamp"
+    replication_method = "INCREMENTAL"
+    is_timestamp_replication_key = True
+    is_sorted = False
+
+    _use_cached_tickers_default = False
+    _api_expects_unix_timestamp = True
+    _unix_timestamp_unit = "ns"
+
+    schema = th.PropertiesList(
+        th.Property("ticker", th.StringType),
+        th.Property("underlying_ticker", th.StringType),
+        th.Property("root", th.StringType),
+        th.Property("conditions", th.ArrayType(th.IntegerType)),
+        th.Property("exchange", th.IntegerType),
+        th.Property("flags", th.ArrayType(th.StringType)),
+        th.Property("price", th.NumberType),
+        th.Property("sequence_number", th.IntegerType),
+        th.Property("sip_timestamp", th.IntegerType),
+        th.Property("size", th.IntegerType),
+    ).to_dict()
+
+    def get_url(self, context: Context = None) -> str:
+        return f"{self.url_base}/options/v1/unusual-trades"
+
+
+class OptionsOpenInterestStream(MassiveRestStream):
+    """Daily end-of-day open interest per options contract (/options/v1/open-interest).
+
+    Market-wide feed: filter via query_params (ticker, root, contract_type,
+    expiration_date, date ranges). One row per contract per trading day.
+    """
+
+    name = "options_open_interest"
+    primary_keys = ["ticker", "date"]
+    replication_key = "date"
+    replication_method = "INCREMENTAL"
+    is_timestamp_replication_key = True
+
+    _use_cached_tickers_default = False
+    _incremental_timestamp_is_date = True
+
+    schema = th.PropertiesList(
+        th.Property("ticker", th.StringType),
+        th.Property("underlying_ticker", th.StringType),
+        th.Property("root", th.StringType),
+        th.Property("contract_type", th.StringType),
+        th.Property("date", th.DateType),
+        th.Property("expiration_date", th.DateType),
+        th.Property("strike_price", th.NumberType),
+        th.Property("open_interest", th.IntegerType),
+    ).to_dict()
+
+    def get_url(self, context: Context = None) -> str:
+        return f"{self.url_base}/options/v1/open-interest"
 
 
 class OptionsExchangesStream(BaseExchangesStream):
