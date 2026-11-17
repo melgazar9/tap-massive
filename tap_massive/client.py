@@ -614,18 +614,8 @@ class MassiveRestStream(RESTStream):
                     break
                 data = response.json()
             except requests.exceptions.RequestException as e:
-                # For 403 errors, log and continue to next ticker instead of breaking
-                if (
-                    isinstance(e, requests.exceptions.HTTPError)
-                    and e.response is not None
-                    and e.response.status_code == 403
-                ):
-                    logging.warning(
-                        f"*** Access denied (403) for {self.name} at {request_url}: {e} - skipping this ticker ***"
-                    )
-                    break  # Break the pagination loop for this ticker, but don't crash
-                # Retries are exhausted by here; ending the stream quietly would advance its bookmark past the
-                # pages never read.
+                # A refusal, 403 included, fails the stream: ending it quietly reports a complete sync and would
+                # advance its bookmark past the pages never read.
                 logging.exception(
                     f"*** Request failed for {self.name} at {request_url}: {e} ***"
                 )

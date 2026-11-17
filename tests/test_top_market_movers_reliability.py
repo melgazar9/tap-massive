@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock
 
+import pytest
 import requests
 
 from tap_massive.stock_streams import StockTopMarketMoversStream
@@ -44,7 +45,7 @@ def test_top_movers_uses_get_response_for_both_directions():
     assert stream.get_response.call_count == 2
 
 
-def test_top_movers_403_is_logged_and_skips_direction():
+def test_top_movers_403_fails_the_stream_instead_of_skipping_a_direction():
     stream = _make_stream(direction="both")
     http_403 = requests.exceptions.HTTPError(response=MagicMock(status_code=403))
     stream.get_response = MagicMock(
@@ -54,11 +55,9 @@ def test_top_movers_403_is_logged_and_skips_direction():
         ]
     )
 
-    records = list(stream.get_records(None))
-
-    assert len(records) == 1
-    assert records[0]["direction"] == "losers"
-    assert stream.logger.warning.called
+    with pytest.raises(requests.exceptions.HTTPError):
+        list(stream.get_records(None))
+    assert stream.get_response.call_count == 1
 
 
 def test_top_movers_single_direction_calls_once():

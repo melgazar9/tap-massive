@@ -7,7 +7,6 @@ import typing as t
 from datetime import datetime
 from decimal import Decimal
 
-import requests
 from singer_sdk import typing as th
 from singer_sdk.helpers.types import Context, Record
 
@@ -895,15 +894,7 @@ class BaseTopMarketMoversStream(
 
         for direction in directions:
             url = self.get_url(context={"direction": direction})
-            try:
-                response = self.get_response(url=url, query_params=self.query_params)
-            except requests.exceptions.HTTPError as err:
-                if err.response is not None and err.response.status_code == 403:
-                    self.logger.warning(
-                        f"Access denied (403) for top market movers direction={direction}; skipping."
-                    )
-                    continue
-                raise
+            response = self.get_response(url=url, query_params=self.query_params)
 
             if response is None:
                 continue

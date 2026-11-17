@@ -91,8 +91,9 @@ def no_retry_sleep() -> t.Iterator[None]:
         yield
 
 
-def test_a_run_cut_off_mid_stream_keeps_the_bookmark_where_it_began():
-    pages = Contracts.pages(next_page=(500, {"status": "ERROR"}))
+@pytest.mark.parametrize("status", [500, 403])
+def test_a_run_cut_off_mid_stream_keeps_the_bookmark_where_it_began(status):
+    pages = Contracts.pages(next_page=(status, {"status": "ERROR"}))
     read: list[dict] = []
     with LocalMassive(pages.respond) as server:
         stream = pages.stream(server)
