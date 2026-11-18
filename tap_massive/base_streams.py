@@ -459,7 +459,8 @@ class BaseDailyTickerSummaryStream(BaseTickerPartitionStream):
     ).to_dict()
 
     def get_url(self, context: Context):
-        date = self.path_params.get("date")
+        # The date loop advances the request path_params; self.path_params is the start.
+        date = context.get("path_params", {}).get("date")
         ticker = context.get(self._ticker_param)
         if date is None:
             date = datetime.today().date().isoformat()
