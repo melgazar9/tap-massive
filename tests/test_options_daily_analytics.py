@@ -18,8 +18,8 @@ from singer_sdk.exceptions import ConfigValidationError
 
 from tap_massive.option_streams import (
     OptionsGreeksStream,
+    OptionsOpenInterestByContractStream,
     OptionsOpenInterestByUnderlyingStream,
-    OptionsOpenInterestStream,
 )
 from tap_massive.tap import TapMassive
 
@@ -27,7 +27,7 @@ from .local_massive import LocalMassive
 from .test_unsorted_bookmark import LocalPages
 
 STREAMS = [
-    OptionsOpenInterestStream,
+    OptionsOpenInterestByContractStream,
     OptionsOpenInterestByUnderlyingStream,
     OptionsGreeksStream,
 ]

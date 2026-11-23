@@ -673,14 +673,14 @@ class _OptionsDailyAnalyticsStream(MassiveRestStream):
         return f"{self.url_base}{self._url_path}"
 
 
-class OptionsOpenInterestStream(_OptionsDailyAnalyticsStream):
+class OptionsOpenInterestByContractStream(_OptionsDailyAnalyticsStream):
     """Daily end-of-day open interest per options contract (/options/v1/open-interest).
 
     Market-wide feed: filter via query_params (ticker, root, contract_type,
     expiration_date, date ranges). One row per contract per trading day.
     """
 
-    name = "options_open_interest"
+    name = "options_open_interest_by_contract"
     primary_keys = ["ticker", "date"]
     _url_path = "/options/v1/open-interest"
 

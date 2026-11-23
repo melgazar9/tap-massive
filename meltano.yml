@@ -139,7 +139,7 @@ plugins:
 #      - options_trades.*
 #      - options_quotes.*
       - options_unusual_trades.*
-      - options_open_interest.*
+      - options_open_interest_by_contract.*
       - options_open_interest_by_underlying.*
       - options_greeks.*
       - options_admin_messages.*
@@ -1317,7 +1317,7 @@ plugins:
           sort: sip_timestamp.asc
           limit: 50000
 
-      options_open_interest:
+      options_open_interest_by_contract:
         query_params:
           date__gte: "2025-02-18"
           sort: date.asc
