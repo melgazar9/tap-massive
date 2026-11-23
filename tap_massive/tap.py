@@ -209,6 +209,7 @@ from tap_massive.indices_streams import (
 )
 from tap_massive.option_streams import (
     ActiveOptionsContractsStream,
+    OptionsAdminMessagesStream,
     OptionsBars1DayStream,
     OptionsBars1HourStream,
     OptionsBars1MinuteStream,
@@ -226,8 +227,10 @@ from tap_massive.option_streams import (
     OptionsDailyTickerSummaryStream,
     OptionsEmaStream,
     OptionsExchangesStream,
+    OptionsGreeksStream,
     OptionsLastTradeStream,
     OptionsMACDStream,
+    OptionsOpenInterestByUnderlyingStream,
     OptionsOpenInterestStream,
     OptionsPreviousDayBarStream,
     OptionsQuoteSnapshot1HourStream,
@@ -792,6 +795,9 @@ class TapMassive(Tap):
             OptionsQuoteStream(self),
             OptionsUnusualTradesStream(self),
             OptionsOpenInterestStream(self),
+            OptionsOpenInterestByUnderlyingStream(self),
+            OptionsGreeksStream(self),
+            OptionsAdminMessagesStream(self),
             OptionsQuoteSnapshot1SecondStream(self),
             OptionsQuoteSnapshot30SecondStream(self),
             OptionsQuoteSnapshot1MinuteStream(self),
