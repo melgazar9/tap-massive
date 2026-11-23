@@ -140,6 +140,9 @@ plugins:
 #      - options_quotes.*
       - options_unusual_trades.*
       - options_open_interest.*
+      - options_open_interest_by_underlying.*
+      - options_greeks.*
+      - options_admin_messages.*
 #      - options_last_trade.*
       - options_contract_snapshot.*
       - options_chain_snapshot.*
@@ -1318,6 +1321,24 @@ plugins:
         query_params:
           date__gte: "2025-02-18"
           sort: date.asc
+          limit: 50000
+
+      options_open_interest_by_underlying:
+        query_params:
+          date__gte: "2025-02-18"
+          sort: date.asc
+          limit: 50000
+
+      options_greeks:
+        query_params:
+          date__gte: "2025-02-18"
+          sort: date.asc
+          limit: 50000
+
+      options_admin_messages:
+        query_params:
+          timestamp__gte: "2025-02-18T00:00:00Z"
+          sort: timestamp.asc
           limit: 50000
 
       options_last_trade:

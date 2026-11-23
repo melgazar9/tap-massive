@@ -604,7 +604,62 @@ class OptionsUnusualTradesStream(_NanosecondIncrementalMixin, MassiveRestStream)
         return f"{self.url_base}/options/v1/unusual-trades"
 
 
-class OptionsOpenInterestStream(MassiveRestStream):
+class OptionsAdminMessagesStream(_NanosecondIncrementalMixin, MassiveRestStream):
+    """Raw OPRA admin messages, incl. FLEX trades (/options/v1/admin-messages).
+
+    Market-wide feed: filter via query_params (exchange, timestamp ranges).
+    ``id`` combines SIP timestamp and sequence number; PK mirrors options_trades.
+    """
+
+    name = "options_admin_messages"
+    primary_keys = ["exchange", "id"]
+    replication_key = "timestamp"
+    replication_method = "INCREMENTAL"
+    is_timestamp_replication_key = True
+    is_sorted = False
+
+    _use_cached_tickers_default = False
+    _api_expects_unix_timestamp = True
+    _unix_timestamp_unit = "ns"
+
+    schema = th.PropertiesList(
+        th.Property("exchange", th.IntegerType),
+        th.Property("id", th.StringType),
+        th.Property("message", th.StringType),
+        th.Property("retransmission", th.BooleanType),
+        th.Property(
+            "sequence_number",
+            th.IntegerType(
+                minimum=0,
+                maximum=9_223_372_036_854_775_807,
+            ),
+        ),
+        th.Property("timestamp", th.IntegerType),
+    ).to_dict()
+
+    def get_url(self, context: Context = None) -> str:
+        return f"{self.url_base}/options/v1/admin-messages"
+
+
+class _OptionsDailyAnalyticsStream(MassiveRestStream):
+    """Base for market-wide, end-of-day options analytics keyed by trading ``date``.
+
+    Subclasses set ``name``, ``primary_keys``, ``schema`` and ``_url_path``.
+    """
+
+    replication_key = "date"
+    replication_method = "INCREMENTAL"
+    is_timestamp_replication_key = True
+
+    _use_cached_tickers_default = False
+    _incremental_timestamp_is_date = True
+    _url_path: str
+
+    def get_url(self, context: Context = None) -> str:
+        return f"{self.url_base}{self._url_path}"
+
+
+class OptionsOpenInterestStream(_OptionsDailyAnalyticsStream):
     """Daily end-of-day open interest per options contract (/options/v1/open-interest).
 
     Market-wide feed: filter via query_params (ticker, root, contract_type,
@@ -613,12 +668,7 @@ class OptionsOpenInterestStream(MassiveRestStream):
 
     name = "options_open_interest"
     primary_keys = ["ticker", "date"]
-    replication_key = "date"
-    replication_method = "INCREMENTAL"
-    is_timestamp_replication_key = True
-
-    _use_cached_tickers_default = False
-    _incremental_timestamp_is_date = True
+    _url_path = "/options/v1/open-interest"
 
     schema = th.PropertiesList(
         th.Property("ticker", th.StringType),
@@ -631,8 +681,64 @@ class OptionsOpenInterestStream(MassiveRestStream):
         th.Property("open_interest", th.IntegerType),
     ).to_dict()
 
-    def get_url(self, context: Context = None) -> str:
-        return f"{self.url_base}/options/v1/open-interest"
+
+class OptionsOpenInterestByUnderlyingStream(_OptionsDailyAnalyticsStream):
+    """Daily open interest rolled up per underlying (/options/v1/open-interest/underlying).
+
+    Totals span every root on the underlying. One row per underlying per trading day.
+    """
+
+    name = "options_open_interest_by_underlying"
+    primary_keys = ["underlying_ticker", "date"]
+    _url_path = "/options/v1/open-interest/underlying"
+
+    schema = th.PropertiesList(
+        th.Property("underlying_ticker", th.StringType),
+        th.Property("date", th.DateType),
+        th.Property("open_interest", th.IntegerType),
+        th.Property("open_interest_calls", th.IntegerType),
+        th.Property("open_interest_puts", th.IntegerType),
+    ).to_dict()
+
+
+class OptionsGreeksStream(_OptionsDailyAnalyticsStream):
+    """Daily end-of-day greeks and implied volatility (/options/v1/analytics).
+
+    One row per listed contract per trading day; greeks/IV are null when the
+    contract cannot be priced, with the solver inputs still populated.
+    """
+
+    name = "options_greeks"
+    primary_keys = ["ticker", "date"]
+    _url_path = "/options/v1/analytics"
+
+    schema = th.PropertiesList(
+        th.Property("ticker", th.StringType),
+        th.Property("underlying_ticker", th.StringType),
+        th.Property("root", th.StringType),
+        th.Property("contract_type", th.StringType),
+        th.Property("exercise_style", th.StringType),
+        th.Property("date", th.DateType),
+        th.Property("expiration_date", th.DateType),
+        th.Property("strike_price", th.NumberType),
+        th.Property("model", th.StringType),
+        th.Property("delta", th.NumberType),
+        th.Property("gamma", th.NumberType),
+        th.Property("theta", th.NumberType),
+        th.Property("vega", th.NumberType),
+        th.Property("rho", th.NumberType),
+        th.Property("implied_volatility", th.NumberType),
+        th.Property("option_price", th.NumberType),
+        th.Property("bid", th.NumberType),
+        th.Property("ask", th.NumberType),
+        th.Property("quote_timestamp", th.IntegerType),
+        th.Property("underlying_price", th.NumberType),
+        th.Property("underlying_timestamp", th.IntegerType),
+        th.Property("dividend_yield", th.NumberType),
+        th.Property("risk_free_rate", th.NumberType),
+        th.Property("open_interest", th.IntegerType),
+        th.Property("volume", th.IntegerType),
+    ).to_dict()
 
 
 class OptionsExchangesStream(BaseExchangesStream):
