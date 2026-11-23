@@ -8,6 +8,7 @@ import logging
 import typing as t
 
 from singer_sdk import typing as th
+from singer_sdk.exceptions import ConfigValidationError
 from singer_sdk.helpers.types import Context
 
 from tap_massive.base_streams import (
@@ -650,10 +651,23 @@ class _OptionsDailyAnalyticsStream(MassiveRestStream):
     replication_key = "date"
     replication_method = "INCREMENTAL"
     is_timestamp_replication_key = True
+    # Rows are asked for in date order, so an interrupted backfill resumes.
+    is_sorted = True
 
     _use_cached_tickers_default = False
     _incremental_timestamp_is_date = True
     _url_path: str
+    _required_sort = "date.asc"
+
+    def __init__(self, tap):
+        super().__init__(tap)
+        # The API defaults to date.desc, which would bookmark the newest day first
+        # and leave every earlier day unread.
+        sort = self.query_params.setdefault("sort", self._required_sort)
+        if sort != self._required_sort:
+            raise ConfigValidationError(
+                f"Stream {self.name} must sort by '{self._required_sort}', got '{sort}'."
+            )
 
     def get_url(self, context: Context = None) -> str:
         return f"{self.url_base}{self._url_path}"
